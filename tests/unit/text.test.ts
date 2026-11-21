@@ -137,3 +137,10 @@ describe('escaped dollar math', () => {
     expect(normalizeMd('gives \\$\\tilde x = 201\\$, costs \\$5')).toBe('gives $\\tilde x = 201$, costs \\$5')
   })
 })
+
+describe('look-alike dollar signs', () => {
+  it('turns entities and full-width dollars into math delimiters', () => {
+    expect(normalizeMd('near &#36;1&#36; and &dollar;x&dollar;')).toBe('near $1$ and $x$')
+    expect(normalizeMd('near ＄10^{6}＄')).toBe('near $10^{6}$')
+  })
+})

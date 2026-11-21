@@ -13,6 +13,8 @@ export function fixTex(s: string): string {
 
 export function normalizeMd(src: string): string {
   let s = fixTex(String(src ?? ''))
+  // Dollar signs that look right but are not "$" to the parser: HTML entities, full-width and small dollar signs.
+  s = s.replace(/&#0*36;|&#x0*24;|&dollar;/gi, '$').replace(/[＄﹩]/g, '$')
   // Markdown-escaped math delimiters (\$x\$) would render literally. A span closed by another \$ is math; a lone \$5 stays.
   s = s.replace(/\\\$([^$\n]+?)\\\$/g, (_m, x: string) => `$${x}$`)
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, x: string) => `\n$$\n${x.trim()}\n$$\n`)

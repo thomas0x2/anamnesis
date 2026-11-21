@@ -2783,3 +2783,34 @@ kbd {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ------------------------------------------------------------ reasoning (spoken or typed) */
+.reasoning-toggle {
+  margin-top: 10px;
+}
+.reasoning-box {
+  margin-top: 12px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reasoning-box .label {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.reasoning-box .tiny {
+  flex: 1;
+  min-width: 0;
+}
+.reasoning-done {
+  margin-top: 10px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}

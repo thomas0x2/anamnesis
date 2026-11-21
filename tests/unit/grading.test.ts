@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blankMatches, gradeFill, gradeMcq, gradeNumeric, gradeOrder, normalizeAnswer } from '../../src/shared/grading'
+import { blankMatches, combineWithReasoning, gradeFill, gradeMcq, gradeNumeric, gradeOrder, normalizeAnswer } from '../../src/shared/grading'
 import type { Interaction } from '../../src/shared/types'
 
 const item = (patch: Partial<Interaction>): Interaction => ({ type: 'mcq', prompt: 'q', hints: [], solution: '', confidence: true, conceptIds: ['c'], ...patch })
@@ -99,5 +99,26 @@ describe('fill in the blanks', () => {
     expect(g.detail).toEqual({ '1': true, '2': false })
     expect(g).toMatchObject({ score: 0.5, verdict: 'partial' })
     expect(gradeFill(it, { '1': 'n', '2': 'O(n log n)' }).verdict).toBe('correct')
+  })
+})
+
+describe('reasoning folded into the grade', () => {
+  const right = { score: 1, verdict: 'correct' as const, feedback: [] }
+  const wrong = { score: 0, verdict: 'incorrect' as const, feedback: [] }
+  it('keeps a right answer with sound reasoning correct', () => {
+    expect(combineWithReasoning(right, { score: 1, feedback: 'ok' })).toMatchObject({ score: 1, verdict: 'correct', feedback: ['ok'] })
+  })
+  it('drops a right answer with a guess or wrong argument to partial', () => {
+    const g = combineWithReasoning(right, { score: 0.1, feedback: 'why?' })
+    expect(g.verdict).toBe('partial')
+    expect(g.score).toBeLessThan(0.8)
+  })
+  it('gives partial credit, never full, for a slip after sound reasoning', () => {
+    const g = combineWithReasoning(wrong, { score: 1, feedback: 'slip in the last step' })
+    expect(g.verdict).toBe('partial')
+    expect(g.score).toBeLessThanOrEqual(0.6)
+  })
+  it('keeps a wrong answer with wrong reasoning incorrect', () => {
+    expect(combineWithReasoning(wrong, { score: 0.2, feedback: '' }).verdict).toBe('incorrect')
   })
 })

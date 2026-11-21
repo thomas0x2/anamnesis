@@ -230,6 +230,8 @@ export interface CardResponse {
   latencyMs: number
   feedback: string | null
   missing?: string[] | null
+  /** the learner's explanation of how they got the answer (often spoken), graded into the score */
+  reasoning?: string | null
   selfCheck?: 'right' | 'partly' | 'wrong' | null
   at: string
 }

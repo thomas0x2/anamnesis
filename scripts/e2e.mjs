@@ -69,6 +69,7 @@ process.on('SIGINT', () => {
 const step = (msg) => console.log(`· ${msg}`)
 let shotN = 0
 const seenKinds = new Set()
+let reasoned = false
 
 /** Answer whatever the current card asks until the session's done screen appears. */
 async function runSession(page, label) {
@@ -101,6 +102,13 @@ async function runSession(page, label) {
     const num = card.locator('.numeric-input input, input.numeric-input')
     // right for the scripted tutor's practice item (λ0 for nodes 0, 1, 2); wrong for the others, which exercises retries and reveals
     if ((await num.count()) && !(await num.first().inputValue())) await num.first().fill('1/2')
+    // once per run: explain the reasoning behind a numeric answer (graded together with the answer)
+    const explain = card.locator('button.reasoning-toggle')
+    if (label === 'practice' && !reasoned && (await num.count()) && (await explain.count())) {
+      await explain.click()
+      reasoned = true
+      step('practice: explaining the reasoning behind a numeric answer')
+    }
     const ta = card.locator('textarea')
     if ((await ta.count()) && !(await ta.first().inputValue()))
       await ta.first().fill('The weights depend only on the nodes, so they are computed once in O(n^2); dividing by the interpolant of 1 cancels the node polynomial and leaves an O(n) formula per point.')
@@ -108,7 +116,14 @@ async function runSession(page, label) {
     for (let b = 0; b < (await blanks.count()); b++) if (!(await blanks.nth(b).inputValue())) await blanks.nth(b).fill('lam/(t-x)')
     const conf = card.locator('.conf-btn:not([disabled])')
     if (await conf.count()) {
+      const withReasoning = (await card.locator('.reasoning-box textarea').count()) > 0
+      if (withReasoning && shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-reasoning.png`) })
       await conf.nth(2).click()
+      if (withReasoning) {
+        await card.locator('.reasoning-done, .feedback:not(.neutral)').first().waitFor({ timeout: 15_000 })
+        if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-reasoning-graded.png`) })
+        step(`${label}: reasoning graded with the answer`)
+      }
       continue
     }
     const again = card.locator('.actions .btn.primary', { hasText: 'Check again' })

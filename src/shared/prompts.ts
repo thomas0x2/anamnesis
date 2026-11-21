@@ -1,14 +1,23 @@
 // Prompt assembly. The system prompt = stable pedagogy rules + session context (goal, prerequisite
 // tree, script pages). It stays identical for every call in a session, so it is prompt-cached.
 // The user prompt carries what changes: learner model, transcript, and the task for this call.
-import type { CourseGraph } from './graph'
-import { masteryMean, masterySd, retentionNow } from './mastery'
-import type { Card, CardResponse, ConceptState, Course, LearnerModel, PracticeTarget, Session, StepRecord } from './types'
-import { daysBetween, truncate } from './util'
+import type { CourseGraph } from "./graph";
+import { masteryMean, masterySd, retentionNow } from "./mastery";
+import type {
+  Card,
+  CardResponse,
+  ConceptState,
+  Course,
+  LearnerModel,
+  PracticeTarget,
+  Session,
+  StepRecord,
+} from "./types";
+import { daysBetween, truncate } from "./util";
 
 export interface ScriptPage {
-  page: number
-  text: string
+  page: number;
+  text: string;
 }
 
 export const CORE_RULES = String.raw`You are Anamnesis, a one-to-one tutor for the ETH Zurich course "Numerical Methods for CS" (NumCS, lecture notes "Numerische Methoden" by V. Gradinaru, in German). You run inside a desktop learning app. You never chat freely: every reply is one JSON object that the app renders as a short sequence of interactive cards. Write in English; when you introduce a term, give the script's German term once in parentheses, e.g. divided differences (dividierte Differenzen).
@@ -92,267 +101,449 @@ speech: what the app reads aloud, 1-3 natural sentences with math spoken out ("p
 notes: for concepts where you learned something new, 1-2 sentences on the learner's current understanding (this replaces the previous note). misconceptions: newly observed ones (status active) or ones now clearly fixed (status resolved), phrased as the wrong belief ("thinks the DFT returns values on the fine grid"). profile: rare, stable observations about how this learner learns best; only new information.
 
 # Output
-Exactly one JSON object matching the schema, fields in this order: assessment (one sentence on what the latest answers show, or null), cards, plan (PLAN only, else null), model, control. Card counts: probe 1-3, plan 1, teach 3-4, wrap 2, practice 1, review 1-2.`
+Exactly one JSON object matching the schema, fields in this order: assessment (one sentence on what the latest answers show, or null), cards, plan (PLAN only, else null), model, control. Card counts: probe 1-3, plan 1, teach 3-4, wrap 2, practice 1, review 1-2.`;
 
 function conceptLine(graph: CourseGraph, id: string): string {
-  const c = graph.get(id)
-  if (!c) return `- ${id}`
-  const pages = c.pages.length ? ` [pp. ${c.pages[0]}-${c.pages[1]}]` : ''
-  return `- ${c.id}: ${c.title} (${c.de})${pages}. ${c.summary}`
+  const c = graph.get(id);
+  if (!c) return `- ${id}`;
+  const pages = c.pages.length ? ` [pp. ${c.pages[0]}-${c.pages[1]}]` : "";
+  return `- ${c.id}: ${c.title} (${c.de})${pages}. ${c.summary}`;
 }
 
-function sessionContext(course: Course, graph: CourseGraph, session: Session, pages: ScriptPage[]): string {
-  const out: string[] = ['# This session']
-  if (session.type === 'learn' && session.goalConceptId) {
-    const g = graph.get(session.goalConceptId)
-    out.push(`Type: LEARN (probe → plan → teach → wrap). Goal concept: ${g?.title ?? session.goalConceptId} (id ${session.goalConceptId}).`)
+function sessionContext(
+  course: Course,
+  graph: CourseGraph,
+  session: Session,
+  pages: ScriptPage[],
+): string {
+  const out: string[] = ["# This session"];
+  if (session.type === "learn" && session.goalConceptId) {
+    const g = graph.get(session.goalConceptId);
+    out.push(
+      `Type: LEARN (probe → plan → teach → wrap). Goal concept: ${g?.title ?? session.goalConceptId} (id ${session.goalConceptId}).`,
+    );
     if (g) {
-      out.push(`Goal summary: ${g.summary}`, `Why it matters: ${g.why}`, `Script references: ${g.refs.join(', ') || 'none'}${g.pages.length ? `; PDF pages ${g.pages[0]}-${g.pages[1]}` : ''}.`)
+      out.push(
+        `Goal summary: ${g.summary}`,
+        `Why it matters: ${g.why}`,
+        `Script references: ${g.refs.join(", ") || "none"}${g.pages.length ? `; PDF pages ${g.pages[0]}-${g.pages[1]}` : ""}.`,
+      );
     }
-    const anc = graph.ancestors(session.goalConceptId, 3)
-    if (anc.length) out.push('', 'Prerequisites in the course graph (nearest first):', ...anc.map((id) => conceptLine(graph, id)))
-    const next = graph.descendants(session.goalConceptId, 1)
-    if (next.length) out.push('', 'What this goal enables next:', ...next.map((id) => `- ${id}: ${graph.title(id)}`))
+    const anc = graph.ancestors(session.goalConceptId, 3);
+    if (anc.length)
+      out.push(
+        "",
+        "Prerequisites in the course graph (nearest first):",
+        ...anc.map((id) => conceptLine(graph, id)),
+      );
+    const next = graph.descendants(session.goalConceptId, 1);
+    if (next.length)
+      out.push(
+        "",
+        "What this goal enables next:",
+        ...next.map((id) => `- ${id}: ${graph.title(id)}`),
+      );
   } else {
-    out.push(`Type: ${session.type.toUpperCase()}. Concepts in scope:`)
-    const ids = [...new Set([...session.scope, ...session.queue.map((q) => q.conceptId)])].slice(0, 40)
-    out.push(...ids.map((id) => conceptLine(graph, id)))
+    out.push(`Type: ${session.type.toUpperCase()}. Concepts in scope:`);
+    const ids = [
+      ...new Set([...session.scope, ...session.queue.map((q) => q.conceptId)]),
+    ].slice(0, 40);
+    out.push(...ids.map((id) => conceptLine(graph, id)));
   }
-  out.push('', `Course: ${course.title} (${course.courseNumber}), ${course.term}. Exam: ${course.exam.format}`)
+  out.push(
+    "",
+    `Course: ${course.title} (${course.courseNumber}), ${course.term}. Exam: ${course.exam.format}`,
+  );
   if (pages.length) {
     out.push(
-      '',
-      '# Script excerpts',
-      'Text extracted from the learner\'s own PDF of the lecture notes (German; formulas may be garbled by extraction, so rely on your own knowledge of the math and use the script for notation, labels and emphasis). The author permits this use in the app; do not reproduce long passages.'
-    )
-    for (const p of pages) out.push(`\n[PDF page ${p.page}]\n${p.text.trim()}`)
+      "",
+      "# Script excerpts",
+      "Text extracted from the learner's own PDF of the lecture notes (German; formulas may be garbled by extraction, so rely on your own knowledge of the math and use the script for notation, labels and emphasis). The author permits this use in the app; do not reproduce long passages.",
+    );
+    for (const p of pages) out.push(`\n[PDF page ${p.page}]\n${p.text.trim()}`);
   }
-  return out.join('\n')
+  return out.join("\n");
 }
 
-export function buildSystemPrompt(course: Course, graph: CourseGraph, session: Session, pages: ScriptPage[]): string {
-  return `${CORE_RULES}\n\n${sessionContext(course, graph, session, pages)}`
+export function buildSystemPrompt(
+  course: Course,
+  graph: CourseGraph,
+  session: Session,
+  pages: ScriptPage[],
+): string {
+  return `${CORE_RULES}\n\n${sessionContext(course, graph, session, pages)}`;
 }
 
 // ---------------------------------------------------------------- learner model section
 function fmtPct(x: number | null): string {
-  return x === null ? 'n/a' : `${Math.round(x * 100)}%`
+  return x === null ? "n/a" : `${Math.round(x * 100)}%`;
 }
 
-export function conceptModelLine(graph: CourseGraph, cs: ConceptState | undefined, id: string, now: Date): string {
-  const title = graph.title(id)
-  if (!cs || cs.evidence.length === 0) return `- ${id} "${title}": no evidence yet`
-  const r = retentionNow(cs, now)
-  const last = cs.lastSeen ? `${Math.max(0, Math.round(daysBetween(cs.lastSeen, now)))}d ago` : 'never'
+export function conceptModelLine(
+  graph: CourseGraph,
+  cs: ConceptState | undefined,
+  id: string,
+  now: Date,
+): string {
+  const title = graph.title(id);
+  if (!cs || cs.evidence.length === 0)
+    return `- ${id} "${title}": no evidence yet`;
+  const r = retentionNow(cs, now);
+  const last = cs.lastSeen
+    ? `${Math.max(0, Math.round(daysBetween(cs.lastSeen, now)))}d ago`
+    : "never";
   const lines = [
-    `- ${id} "${title}": ${cs.status} · mastery ${fmtPct(masteryMean(cs))} (±${Math.round(masterySd(cs) * 100)}) · recall now ${fmtPct(r)} · practice level ${cs.level} · ${cs.evidence.length} items, last ${last}`
-  ]
-  const active = cs.misconceptions.filter((m) => m.status === 'active')
-  if (active.length) lines.push(`  active misconceptions: ${active.map((m) => `"${truncate(m.text, 140)}"`).join('; ')}`)
-  const resolved = cs.misconceptions.filter((m) => m.status === 'resolved').slice(-2)
-  if (resolved.length) lines.push(`  resolved earlier: ${resolved.map((m) => `"${truncate(m.text, 100)}"`).join('; ')}`)
-  if (cs.tutorNote) lines.push(`  tutor note: ${truncate(cs.tutorNote, 300)}`)
-  if (cs.userNote) lines.push(`  learner's own note (trust this): ${truncate(cs.userNote, 300)}`)
-  return lines.join('\n')
+    `- ${id} "${title}": ${cs.status} · mastery ${fmtPct(masteryMean(cs))} (±${Math.round(masterySd(cs) * 100)}) · recall now ${fmtPct(r)} · practice level ${cs.level} · ${cs.evidence.length} items, last ${last}`,
+  ];
+  const active = cs.misconceptions.filter((m) => m.status === "active");
+  if (active.length)
+    lines.push(
+      `  active misconceptions: ${active.map((m) => `"${truncate(m.text, 140)}"`).join("; ")}`,
+    );
+  const resolved = cs.misconceptions
+    .filter((m) => m.status === "resolved")
+    .slice(-2);
+  if (resolved.length)
+    lines.push(
+      `  resolved earlier: ${resolved.map((m) => `"${truncate(m.text, 100)}"`).join("; ")}`,
+    );
+  if (cs.tutorNote) lines.push(`  tutor note: ${truncate(cs.tutorNote, 300)}`);
+  if (cs.userNote)
+    lines.push(
+      `  learner's own note (trust this): ${truncate(cs.userNote, 300)}`,
+    );
+  return lines.join("\n");
 }
 
-export function relevantConcepts(graph: CourseGraph, session: Session, target: PracticeTarget | null): string[] {
-  const ids = new Set<string>()
+export function relevantConcepts(
+  graph: CourseGraph,
+  session: Session,
+  target: PracticeTarget | null,
+): string[] {
+  const ids = new Set<string>();
   if (session.goalConceptId) {
-    ids.add(session.goalConceptId)
-    for (const a of graph.ancestors(session.goalConceptId, 3)) ids.add(a)
+    ids.add(session.goalConceptId);
+    for (const a of graph.ancestors(session.goalConceptId, 3)) ids.add(a);
   }
-  for (const n of session.plan?.plan.nodes ?? []) if (n.conceptId) ids.add(n.conceptId)
+  for (const n of session.plan?.plan.nodes ?? [])
+    if (n.conceptId) ids.add(n.conceptId);
   if (target) {
-    ids.add(target.conceptId)
-    for (const c of target.compose) ids.add(c)
+    ids.add(target.conceptId);
+    for (const c of target.compose) ids.add(c);
   }
-  return [...ids].filter((id) => graph.get(id)).slice(0, 30)
+  return [...ids].filter((id) => graph.get(id)).slice(0, 30);
 }
 
-function learnerSection(graph: CourseGraph, learner: LearnerModel, ids: string[], now: Date): string {
-  const out = ['# Learner model (relevant concepts)']
-  out.push(...ids.map((id) => conceptModelLine(graph, learner.concepts[id], id, now)))
+function learnerSection(
+  graph: CourseGraph,
+  learner: LearnerModel,
+  ids: string[],
+  now: Date,
+): string {
+  const out = ["# Learner model (relevant concepts)"];
+  out.push(
+    ...ids.map((id) => conceptModelLine(graph, learner.concepts[id], id, now)),
+  );
   if (learner.profile.length) {
-    out.push('', '# Learner profile')
-    out.push(...learner.profile.slice(-12).map((p) => `- ${p.text}${p.source === 'tutor' ? '' : ' (from the learner)'}`))
+    out.push("", "# Learner profile");
+    out.push(
+      ...learner.profile
+        .slice(-12)
+        .map(
+          (p) =>
+            `- ${p.text}${p.source === "tutor" ? "" : " (from the learner)"}`,
+        ),
+    );
   }
-  return out.join('\n')
+  return out.join("\n");
 }
 
 // ---------------------------------------------------------------- transcript
-export function describeResponse(card: Card, r: CardResponse | undefined): string {
-  if (!r) return 'not answered yet'
-  if (card.interaction?.type === 'continue' || r.verdict === 'seen') return 'read'
-  if (r.verdict === 'dontknow') return `said "I don't know"${r.hintsUsed ? ` after ${r.hintsUsed} hint(s)` : ''}`
-  const parts = [`answered ${truncate(r.answerText, 220)}`]
-  if (r.score !== null) parts.push(r.verdict === 'correct' ? '✓ correct' : r.verdict === 'partial' ? `~ partial (${Math.round(r.score * 100)}%)` : '✗ incorrect')
-  if (r.selfCheck) parts.push(`self-check: ${r.selfCheck}`)
-  if (r.attempts > 1) parts.push(`${r.attempts} attempts`)
-  if (r.hintsUsed) parts.push(`${r.hintsUsed} hint(s)`)
-  if (r.revealed) parts.push('looked at the solution')
-  if (r.confidence) parts.push(`confidence ${r.confidence}/4`)
-  if (r.missing?.length) parts.push(`missing: ${truncate(r.missing.join('; '), 160)}`)
-  return parts.join(', ')
+export function describeResponse(
+  card: Card,
+  r: CardResponse | undefined,
+): string {
+  if (!r) return "not answered yet";
+  if (card.interaction?.type === "continue" || r.verdict === "seen")
+    return "read";
+  if (r.verdict === "dontknow")
+    return `said "I don't know"${r.hintsUsed ? ` after ${r.hintsUsed} hint(s)` : ""}`;
+  const parts = [`answered ${truncate(r.answerText, 220)}`];
+  if (r.score !== null)
+    parts.push(
+      r.verdict === "correct"
+        ? "✓ correct"
+        : r.verdict === "partial"
+          ? `~ partial (${Math.round(r.score * 100)}%)`
+          : "✗ incorrect",
+    );
+  if (r.selfCheck) parts.push(`self-check: ${r.selfCheck}`);
+  if (r.attempts > 1) parts.push(`${r.attempts} attempts`);
+  if (r.hintsUsed) parts.push(`${r.hintsUsed} hint(s)`);
+  if (r.revealed) parts.push("looked at the solution");
+  if (r.confidence) parts.push(`confidence ${r.confidence}/4`);
+  if (r.missing?.length)
+    parts.push(`missing: ${truncate(r.missing.join("; "), 160)}`);
+  return parts.join(", ");
 }
 
 function cardHeadline(card: Card): string {
-  const it = card.interaction
-  const text = card.title ?? card.blocks.find((b) => b.type === 'text')?.md ?? ''
-  const q = it && it.type !== 'continue' ? ` Q: ${truncate(it.prompt, 220)}` : ''
+  const it = card.interaction;
+  const text =
+    card.title ?? card.blocks.find((b) => b.type === "text")?.md ?? "";
+  const q =
+    it && it.type !== "continue" ? ` Q: ${truncate(it.prompt, 220)}` : "";
   const key =
-    it?.type === 'mcq'
-      ? ` [options: ${(it.options ?? []).map((o) => `${o.id}${o.correct ? '*' : ''}) ${truncate(o.md, 50)}`).join(' | ')}]`
-      : it?.type === 'numeric'
+    it?.type === "mcq"
+      ? ` [options: ${(it.options ?? []).map((o) => `${o.id}${o.correct ? "*" : ""}) ${truncate(o.md, 50)}`).join(" | ")}]`
+      : it?.type === "numeric"
         ? ` [key ${it.answer?.value}]`
-        : ''
-  return `${card.kind}${it && it.type !== 'continue' ? ` (${it.type})` : ''}: ${truncate(text, 120)}${q}${key}`
+        : "";
+  return `${card.kind}${it && it.type !== "continue" ? ` (${it.type})` : ""}: ${truncate(text, 120)}${q}${key}`;
 }
 
 export function transcript(session: Session, maxSteps = 14): string {
-  const steps = session.steps.slice(-maxSteps)
-  if (!steps.length) return '# Session so far\n(nothing yet: this is the first step)'
-  const out = ['# Session so far']
-  if (session.steps.length > steps.length) out.push(`(${session.steps.length - steps.length} earlier steps omitted)`)
+  const steps = session.steps.slice(-maxSteps);
+  if (!steps.length)
+    return "# Session so far\n(nothing yet: this is the first step)";
+  const out = ["# Session so far"];
+  if (session.steps.length > steps.length)
+    out.push(`(${session.steps.length - steps.length} earlier steps omitted)`);
   for (const [k, rec] of steps.entries()) {
-    const idx = session.steps.length - steps.length + k + 1
-    const tgt = rec.target ? ` target ${rec.target.conceptId} L${rec.target.level}` : ''
-    out.push(`\n## Step ${idx} · ${rec.phase.toUpperCase()}${rec.nodeId ? ` node ${rec.nodeId}` : ''}${tgt}`)
-    if (rec.step.assessment) out.push(`(your assessment then: ${truncate(rec.step.assessment, 200)})`)
-    rec.step.cards.forEach((c, i) => out.push(`[${i + 1}] ${cardHeadline(c)}\n    → ${describeResponse(c, rec.responses[i])}`))
+    const idx = session.steps.length - steps.length + k + 1;
+    const tgt = rec.target
+      ? ` target ${rec.target.conceptId} L${rec.target.level}`
+      : "";
+    out.push(
+      `\n## Step ${idx} · ${rec.phase.toUpperCase()}${rec.nodeId ? ` node ${rec.nodeId}` : ""}${tgt}`,
+    );
+    if (rec.step.assessment)
+      out.push(`(your assessment then: ${truncate(rec.step.assessment, 200)})`);
+    rec.step.cards.forEach((c, i) =>
+      out.push(
+        `[${i + 1}] ${cardHeadline(c)}\n    → ${describeResponse(c, rec.responses[i])}`,
+      ),
+    );
   }
   if (session.plan) {
-    out.push('\n# Plan state')
-    for (const n of session.plan.plan.nodes) out.push(`- ${n.id} "${n.title}" (${n.kind}) requires [${n.requires.join(', ')}]: ${session.plan.nodeState[n.id] ?? 'pending'}`)
+    out.push("\n# Plan state");
+    for (const n of session.plan.plan.nodes)
+      out.push(
+        `- ${n.id} "${n.title}" (${n.kind}) requires [${n.requires.join(", ")}]: ${session.plan.nodeState[n.id] ?? "pending"}`,
+      );
   }
   if (session.chat.length) {
-    out.push('\n# Side questions the learner asked')
-    for (const t of session.chat.slice(-6)) out.push(`${t.role === 'user' ? 'Learner' : 'You'}: ${truncate(t.text, 240)}`)
+    out.push("\n# Side questions the learner asked");
+    for (const t of session.chat.slice(-6))
+      out.push(
+        `${t.role === "user" ? "Learner" : "You"}: ${truncate(t.text, 240)}`,
+      );
   }
-  return out.join('\n')
+  return out.join("\n");
 }
 
 // ---------------------------------------------------------------- tasks
 export interface StepTask {
-  phase: 'probe' | 'plan' | 'teach' | 'wrap' | 'practice' | 'review'
-  nodeId?: string | null
-  attempt?: number
-  target?: PracticeTarget | null
-  itemIndex?: number
-  itemsGoal?: number
-  probeRound?: number
-  allowPlanNow?: boolean
-  relearn?: boolean
-  targetPages?: ScriptPage[]
+  phase: "probe" | "plan" | "teach" | "wrap" | "practice" | "review";
+  nodeId?: string | null;
+  attempt?: number;
+  target?: PracticeTarget | null;
+  itemIndex?: number;
+  itemsGoal?: number;
+  probeRound?: number;
+  allowPlanNow?: boolean;
+  relearn?: boolean;
+  targetPages?: ScriptPage[];
   /** prepared in advance while the learner still works on the previous step */
-  speculative?: boolean
+  speculative?: boolean;
 }
 
-const LEVEL_TEXT = ['', 'L1 recall/recognize', 'L2 apply one step', 'L3 compose or unfamiliar representation', 'L4 multi-step, unfamiliar cue, exam-style discrimination', 'L5 exam transfer']
+const LEVEL_TEXT = [
+  "",
+  "L1 recall/recognize",
+  "L2 apply one step",
+  "L3 compose or unfamiliar representation",
+  "L4 multi-step, unfamiliar cue, exam-style discrimination",
+  "L5 exam transfer",
+];
 
-export function taskText(task: StepTask, graph: CourseGraph, session: Session, learner: LearnerModel, now: Date): string {
-  const goal = session.goalConceptId ? graph.title(session.goalConceptId) : ''
+export function taskText(
+  task: StepTask,
+  graph: CourseGraph,
+  session: Session,
+  learner: LearnerModel,
+  now: Date,
+): string {
+  const goal = session.goalConceptId ? graph.title(session.goalConceptId) : "";
   switch (task.phase) {
-    case 'probe':
+    case "probe":
       return [
         `# Your task: PROBE (round ${task.probeRound ?? 1})`,
         `Goal: ${goal}. Ask 1-3 diagnostic questions (card kind "probe") that best separate what the learner knows from what they do not, across the goal's prerequisites and the goal itself. Use the learner model to skip what is already well established. Quick formats: mcq, numeric, short free. confidence true. control.next "continue".`,
         task.allowPlanNow
           ? 'If the transcript and the model already let you place every relevant prerequisite as known, shaky or missing, do not probe further: instead output the PLAN now (plan field filled, one "message" card) and set control.next "phase_done".'
-          : ''
+          : "",
       ]
         .filter(Boolean)
-        .join('\n')
-    case 'plan':
-      return `# Your task: PLAN\nBuild the dependency tree from what the learner already understands (per the probe answers and the model) to the goal "${goal}". Fill plan (goal, approach in one sentence, 3-8 nodes) and output one "message" card that explains the path and invites the learner to adjust it. control.next "phase_done".`
-    case 'teach': {
-      const node = session.plan?.plan.nodes.find((n) => n.id === task.nodeId)
+        .join("\n");
+    case "plan":
+      return `# Your task: PLAN\nBuild the dependency tree from what the learner already understands (per the probe answers and the model) to the goal "${goal}". Fill plan (goal, approach in one sentence, 3-8 nodes) and output one "message" card that explains the path and invites the learner to adjust it. control.next "phase_done".`;
+    case "teach": {
+      const node = session.plan?.plan.nodes.find((n) => n.id === task.nodeId);
       const reqs = (node?.requires ?? []).map((r) => {
-        const m = session.plan?.plan.nodes.find((n) => n.id === r)
-        return `${r} "${m?.title ?? r}" (${session.plan?.nodeState[r] ?? 'pending'})`
-      })
-      const done = (session.plan?.plan.nodes ?? []).filter((n) => ['done', 'known'].includes(session.plan?.nodeState[n.id] ?? '')).map((n) => n.id)
+        const m = session.plan?.plan.nodes.find((n) => n.id === r);
+        return `${r} "${m?.title ?? r}" (${session.plan?.nodeState[r] ?? "pending"})`;
+      });
+      const done = (session.plan?.plan.nodes ?? [])
+        .filter((n) =>
+          ["done", "known"].includes(session.plan?.nodeState[n.id] ?? ""),
+        )
+        .map((n) => n.id);
       return [
-        `# Your task: TEACH node ${node?.id} "${node?.title}"${node?.kind === 'goal' ? ' (the goal)' : ''}`,
+        `# Your task: TEACH node ${node?.id} "${node?.title}"${node?.kind === "goal" ? " (the goal)" : ""}`,
         `Step to teach: ${node?.detail}`,
-        `Builds on: ${reqs.join(', ') || 'nothing (anchor)'}. Already in place: ${done.join(', ') || 'none'}.`,
-        node?.kind === 'shaky' ? 'This node is shaky: a compact refresher (predict → short explain → check) is enough.' : '',
+        `Builds on: ${reqs.join(", ") || "nothing (anchor)"}. Already in place: ${done.join(", ") || "none"}.`,
+        node?.kind === "shaky"
+          ? "This node is shaky: a compact refresher (predict → short explain → check) is enough."
+          : "",
         (task.attempt ?? 1) > 1
           ? `Attempt ${task.attempt}: the learner's previous check on this node failed (see transcript). Diagnose the likely misconception, re-explain with a different representation, then a new check in a new surface. Record the misconception in model.misconceptions.`
-          : '',
-        `Cards: predict → explain (1-2) → check, all with nodeId "${node?.id}". control.nodeId "${node?.id}". control.nodeStatus "needs_more" when this is remediation, else null.`
+          : "",
+        `Cards: predict → explain (1-2) → check, all with nodeId "${node?.id}". control.nodeId "${node?.id}". control.nodeStatus "needs_more" when this is remediation, else null.`,
       ]
         .filter(Boolean)
-        .join('\n')
+        .join("\n");
     }
-    case 'wrap':
-      return `# Your task: WRAP\nThe learner walked the plan to "${goal}". One "reflect" card (free, allowVoice true, rubric 3-5 points, modelAnswer) asking them to explain the chain from the anchors to the goal in their own words, then one "summary" card (2-4 takeaways, script pages to reread, what to practice next). Update model.notes for the concepts involved. control.next "session_done".`
-    case 'practice':
-    case 'review': {
-      const t = task.target!
-      const cs = learner.concepts[t.conceptId]
-      const r = cs ? retentionNow(cs, now) : null
+    case "wrap":
+      return `# Your task: WRAP\nThe learner walked the plan to "${goal}". One "reflect" card (free, allowVoice true, rubric 3-5 points, modelAnswer) asking them to explain the chain from the anchors to the goal in their own words, then one "summary" card (2-4 takeaways, script pages to reread, what to practice next). Update model.notes for the concepts involved. control.next "session_done".`;
+    case "practice":
+    case "review": {
+      const t = task.target!;
+      const cs = learner.concepts[t.conceptId];
+      const r = cs ? retentionNow(cs, now) : null;
       const lines = [
-        `# Your task: ${task.phase.toUpperCase()} item ${(task.itemIndex ?? 0) + 1} of ${task.itemsGoal ?? '?'}`,
+        `# Your task: ${task.phase.toUpperCase()} item ${(task.itemIndex ?? 0) + 1} of ${task.itemsGoal ?? "?"}`,
         `Target concept: ${t.conceptId} "${graph.title(t.conceptId)}". Level ${LEVEL_TEXT[t.level]}. Cue: ${t.cue}. Mode: ${t.mode}.`,
-        t.compose.length ? `Compose with: ${t.compose.map((c) => `${c} "${graph.title(c)}"`).join(', ')}. The item must genuinely need these together.` : '',
-        task.phase === 'review'
-          ? `Spaced review: last seen ${cs?.lastSeen ? Math.round(daysBetween(cs.lastSeen, now)) + ' days ago' : 'unknown'}, predicted recall ${fmtPct(r)}. Use a fresh surface the learner has not seen in this session.`
-          : '',
+        t.compose.length
+          ? `Compose with: ${t.compose.map((c) => `${c} "${graph.title(c)}"`).join(", ")}. The item must genuinely need these together.`
+          : "",
+        task.phase === "review"
+          ? `Spaced review: last seen ${cs?.lastSeen ? Math.round(daysBetween(cs.lastSeen, now)) + " days ago" : "unknown"}, predicted recall ${fmtPct(r)}. Use a fresh surface the learner has not seen in this session.`
+          : "",
         task.relearn
           ? 'The learner failed this concept earlier in this session. First one compact re-explanation card (kind "explain", under 120 words, one visual or worked example), then a new retrieval item (kind "review") in a different surface.'
           : `One card of kind "${task.phase}" with a graded interaction (mcq, numeric, order, fill, or free for L4-L5 derivations). Set interaction.level ${t.level} and cue "${t.cue}"; 3-4 hints; a full worked solution.`,
-        'Do not repeat or lightly reword items already in the transcript.',
-        'control.next "continue".'
-      ]
-      return lines.filter(Boolean).join('\n')
+        "Do not repeat or lightly reword items already in the transcript.",
+        'control.next "continue".',
+      ];
+      return lines.filter(Boolean).join("\n");
     }
   }
 }
 
-export function buildStepPrompt(graph: CourseGraph, learner: LearnerModel, session: Session, task: StepTask, now: Date): string {
-  const ids = relevantConcepts(graph, session, task.target ?? null)
-  const parts = [learnerSection(graph, learner, ids, now), transcript(session), taskText(task, graph, session, learner, now)]
+export function buildStepPrompt(
+  graph: CourseGraph,
+  learner: LearnerModel,
+  session: Session,
+  task: StepTask,
+  now: Date,
+): string {
+  const ids = relevantConcepts(graph, session, task.target ?? null);
+  const parts = [
+    learnerSection(graph, learner, ids, now),
+    transcript(session),
+    taskText(task, graph, session, learner, now),
+  ];
   if (task.speculative)
     parts.push(
-      'Note: this step is prepared in advance while the learner is still answering the latest step, so its answers are not in the transcript yet. Assume it goes well; do not refer to its results or to "your last answer".'
-    )
+      'Note: this step is prepared in advance while the learner is still answering the latest step, so its answers are not in the transcript yet. Assume it goes well; do not refer to its results or to "your last answer".',
+    );
   if (task.targetPages?.length) {
     parts.splice(
       2,
       0,
-      ['# Script pages for this item', ...task.targetPages.map((p) => `[PDF page ${p.page}]\n${p.text.trim()}`)].join('\n')
-    )
+      [
+        "# Script pages for this item",
+        ...task.targetPages.map(
+          (p) => `[PDF page ${p.page}]\n${p.text.trim()}`,
+        ),
+      ].join("\n"),
+    );
   }
-  return parts.join('\n\n')
+  return parts.join("\n\n");
 }
 
-export function buildGradePrompt(card: Card, answer: string, attempt: number, previousFeedback: string | null): string {
-  const it = card.interaction!
+export function buildGradePrompt(
+  card: Card,
+  answer: string,
+  attempt: number,
+  previousFeedback: string | null,
+): string {
+  const it = card.interaction!;
   return [
-    '# Your task: GRADE one answer',
-    'Do not produce cards. Grade the learner\'s answer to the item below. Score 0..1 by correctness and rubric coverage; equivalent formulations, notation and spelling differences count as correct. verdict: correct (score ≥ 0.8), partial (0.4-0.8) or incorrect. feedback: 1-3 sentences in Markdown with LaTeX: what is right, and for partial or incorrect answers a nudge (a question or a pointer) toward what is missing. Do not give away the full answer in feedback. missing: rubric points not covered. misconceptions: wrong beliefs visible in the answer, phrased as the belief.',
+    "# Your task: GRADE one answer",
+    "Do not produce cards. Grade the learner's answer to the item below. Score 0..1 by correctness and rubric coverage; equivalent formulations, notation and spelling differences count as correct. verdict: correct (score ≥ 0.8), partial (0.4-0.8) or incorrect. feedback: 1-3 sentences in Markdown with LaTeX: what is right, and for partial or incorrect answers a nudge (a question or a pointer) toward what is missing. Do not give away the full answer in feedback. missing: rubric points not covered. misconceptions: wrong beliefs visible in the answer, phrased as the belief.",
     `\nItem (${card.kind}): ${it.prompt}`,
-    it.rubric?.length ? `Rubric:\n${it.rubric.map((r) => `- ${r}`).join('\n')}` : '',
+    it.rubric?.length
+      ? `Rubric:\n${it.rubric.map((r) => `- ${r}`).join("\n")}`
+      : "",
     `Model answer (for you only): ${it.modelAnswer ?? it.solution}`,
-    attempt > 1 ? `This is attempt ${attempt}. Your previous feedback: ${previousFeedback ?? ''}` : '',
-    `\nLearner's answer:\n"""\n${answer.slice(0, 4000)}\n"""`
+    attempt > 1
+      ? `This is attempt ${attempt}. Your previous feedback: ${previousFeedback ?? ""}`
+      : "",
+    `\nLearner's answer:\n"""\n${answer.slice(0, 4000)}\n"""`,
   ]
     .filter(Boolean)
-    .join('\n')
+    .join("\n");
 }
 
-export function buildChatPrompt(graph: CourseGraph, learner: LearnerModel, session: Session, question: string, current: Card | null, now: Date): string {
-  const ids = relevantConcepts(graph, session, null)
+/** Grades the reasoning behind a closed-format answer (choice, number, order, blanks), often transcribed from speech. */
+export function buildReasoningGradePrompt(
+  card: Card,
+  answer: string,
+  answerCorrect: boolean,
+  reasoning: string,
+  attempt: number,
+  previousFeedback: string | null,
+): string {
+  const it = card.interaction!;
+  return [
+    "# Your task: GRADE the reasoning behind one answer",
+    "Do not produce cards. The learner answered the item below and explained how they got there; the explanation is often transcribed from speech, so ignore filler words, false starts and transcription errors in formulas. The final answer was already checked automatically. Grade the REASONING only. score 0..1: 1 = a sound argument that leads to the answer (it may skip routine steps), 0.5 = the right idea with a real gap or a wrong step, 0 = a guess, no argument, or a wrong idea. If the final answer is wrong but the reasoning is sound, say where the slip is. If the final answer is right but the reasoning is wrong or a guess, score low and say what is missing. verdict: correct (score ≥ 0.8), partial (0.4-0.8) or incorrect. feedback: 1-3 sentences in Markdown with LaTeX on the reasoning: what holds up and, if anything is off, a nudge (a question or a pointer). Do not give away the full answer. missing: steps or ideas the reasoning lacks. misconceptions: wrong beliefs visible in the reasoning, phrased as the belief.",
+    `\nItem (${card.kind}): ${it.prompt}`,
+    it.rubric?.length
+      ? `Rubric:\n${it.rubric.map((r) => `- ${r}`).join("\n")}`
+      : "",
+    `Worked solution (for you only): ${it.solution || it.modelAnswer || ""}`,
+    attempt > 1
+      ? `This is attempt ${attempt}. Your previous feedback: ${previousFeedback ?? ""}`
+      : "",
+    `\nLearner's answer: ${answer.slice(0, 600)} (automatic check: ${answerCorrect ? "correct" : "not correct"})`,
+    `Learner's reasoning:\n"""\n${reasoning.slice(0, 6000)}\n"""`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildChatPrompt(
+  graph: CourseGraph,
+  learner: LearnerModel,
+  session: Session,
+  question: string,
+  current: Card | null,
+  now: Date,
+): string {
+  const ids = relevantConcepts(graph, session, null);
   const pending =
-    current?.interaction && current.interaction.type !== 'continue'
+    current?.interaction && current.interaction.type !== "continue"
       ? `The learner is currently working on: "${truncate(current.interaction.prompt, 300)}". If the question would give away this item's answer, reply with a nudge (a guiding question or the relevant idea) instead.`
-      : ''
+      : "";
   return [
     learnerSection(graph, learner, ids, now),
     transcript(session, 8),
-    `# Your task: ANSWER A SIDE QUESTION\nThe learner asks: """${question.slice(0, 2000)}"""\n${pending}\nAnswer like a good tutor: short (under 120 words), concrete, with an equation or a visual block if it helps; end with a question that checks understanding when appropriate. Output blocks and speech only.`
-  ].join('\n\n')
+    `# Your task: ANSWER A SIDE QUESTION\nThe learner asks: """${question.slice(0, 2000)}"""\n${pending}\nAnswer like a good tutor: short (under 120 words), concrete, with an equation or a visual block if it helps; end with a question that checks understanding when appropriate. Output blocks and speech only.`,
+  ].join("\n\n");
 }
 
-export const TEST_PROMPT = 'Reply with ok = true and the name of the model you are.'
+export const TEST_PROMPT =
+  "Reply with ok = true and the name of the model you are.";

@@ -13,6 +13,8 @@ export function fixTex(s: string): string {
 
 export function normalizeMd(src: string): string {
   let s = fixTex(String(src ?? ''))
+  // Markdown-escaped math delimiters (\$x\$) would render literally. A span closed by another \$ is math; a lone \$5 stays.
+  s = s.replace(/\\\$([^$\n]+?)\\\$/g, (_m, x: string) => `$${x}$`)
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, x: string) => `\n$$\n${x.trim()}\n$$\n`)
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, x: string) => `$${x.trim()}$`)
   // $$...$$ inside a running line (not a list item or table row) becomes its own display block

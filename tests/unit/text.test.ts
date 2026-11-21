@@ -131,3 +131,9 @@ describe('small utilities', () => {
     expect(deepMerge(base, undefined)).toBe(base)
   })
 })
+
+describe('escaped dollar math', () => {
+  it('turns \\$...\\$ spans back into math and leaves a lone \\$ alone', () => {
+    expect(normalizeMd('gives \\$\\tilde x = 201\\$, costs \\$5')).toBe('gives $\\tilde x = 201$, costs \\$5')
+  })
+})

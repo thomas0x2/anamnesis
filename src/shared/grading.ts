@@ -101,3 +101,20 @@ export function gradeFill(it: Interaction, values: Record<string, string>): Loca
   const score = ok / blanks.length
   return { score, verdict: verdictOf(score), feedback: [], detail }
 }
+
+/** Minimum length of an explanation before it is graded (shorter text is treated as no reasoning). */
+export const MIN_REASONING_CHARS = 12
+
+/**
+ * Folds the grade of the learner's spoken or typed reasoning into the grade of the answer itself.
+ * A right answer needs sound reasoning to count as fully correct (a lucky guess or a wrong argument
+ * drops to partial); a wrong answer reached by sound reasoning with a slip earns partial credit,
+ * capped below "correct" so the item still has to be done right.
+ */
+export function combineWithReasoning(answer: LocalGrade, reasoning: { score: number; feedback: string }): LocalGrade {
+  const r = Math.min(1, Math.max(0, reasoning.score))
+  const right = answer.verdict === 'correct'
+  const score = right ? Math.min(1, 0.4 + 0.6 * r) : Math.min(0.6, answer.score + 0.6 * r * (1 - answer.score))
+  const verdict: LocalGrade['verdict'] = right && score >= 0.8 ? 'correct' : score >= 0.4 ? 'partial' : 'incorrect'
+  return { ...answer, score: Math.round(score * 100) / 100, verdict, feedback: [...answer.feedback, reasoning.feedback].filter(Boolean) }
+}

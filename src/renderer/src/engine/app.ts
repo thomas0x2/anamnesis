@@ -146,7 +146,7 @@ export class AppController {
 
   toast(t: Omit<Toast, 'id'>, ms = 4200): void {
     const id = uid('t_')
-    this.ui.set((u) => ({ ...u, toasts: [...u.toasts.slice(-4), { ...t, id }] }))
+    this.ui.set((u) => ({ ...u, toasts: [...u.toasts.slice(-2), { ...t, id }] }))
     setTimeout(() => this.ui.set((u) => ({ ...u, toasts: u.toasts.filter((x) => x.id !== id) })), ms)
   }
 

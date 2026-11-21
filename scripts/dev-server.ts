@@ -64,7 +64,11 @@ const server = createServer((req, res) => {
         case 'GET /api/store-list':
           return send(res, 200, { names: await store.list(url.searchParams.get('prefix') ?? '') })
         case 'GET /api/script': {
-          if (!scriptPath) return send(res, 404, { error: 'no script configured (set ANAMNESIS_SCRIPT)' })
+          // 204, not 404: having no PDF is a normal state and should not log an error in the browser
+          if (!scriptPath) {
+            res.writeHead(204, { 'cache-control': 'no-store' })
+            return res.end()
+          }
           const data = await readFile(scriptPath)
           res.writeHead(200, { 'content-type': 'application/pdf', 'cache-control': 'no-store' })
           return res.end(data)

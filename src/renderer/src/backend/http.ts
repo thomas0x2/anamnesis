@@ -45,7 +45,7 @@ export function createHttpBackend(base: string): Backend {
     setSettings: (patch: DeepPartial<Settings>) => j<Settings>('/api/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }),
     async readScript() {
       const r = await fetch(base + '/api/script')
-      if (!r.ok) return null
+      if (!r.ok || r.status === 204) return null
       return new Uint8Array(await r.arrayBuffer())
     },
     chooseScript: async () => null,

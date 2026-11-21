@@ -1,0 +1,216 @@
+// End-to-end run of the whole demo flow with the scripted tutor, in a real browser or in Electron.
+//
+//   npm run e2e                 browser: starts the dev server (fake tutor, empty temp data) and Vite
+//   npm run e2e -- --electron   the built desktop app (run `npm run build` first; on Linux CI wrap in xvfb-run)
+//   E2E_HEADED=1                show the browser window
+//   E2E_SHOTS=/some/dir         save a screenshot of every new card kind
+//
+// It walks onboarding, a full learn session (probe → plan → teach → wrap), a practice session,
+// and opens every main screen. It fails on any page error or console error.
+// Needs Playwright: `npm i -D playwright && npx playwright install chromium` if it is not installed globally.
+import { spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+
+const require = createRequire(import.meta.url)
+let playwright
+try {
+  playwright = require('playwright')
+} catch {
+  console.error('Playwright is not installed. Run: npm i -D playwright && npx playwright install chromium')
+  process.exit(2)
+}
+
+const root = resolve(import.meta.dirname, '..')
+const electronMode = process.argv.includes('--electron')
+const shotsDir = process.env.E2E_SHOTS ? resolve(process.env.E2E_SHOTS) : null
+const dataDir = mkdtempSync(join(tmpdir(), 'anamnesis-e2e-'))
+if (shotsDir) mkdirSync(shotsDir, { recursive: true })
+
+const children = []
+const errors = []
+let failed = false
+
+function start(cmd, args, env = {}) {
+  const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+  let log = ''
+  p.stdout.on('data', (d) => (log += d))
+  p.stderr.on('data', (d) => (log += d))
+  p.log = () => log
+  children.push(p)
+  return p
+}
+
+async function waitFor(url, ms = 60_000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    try {
+      const r = await fetch(url)
+      if (r.ok) return
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  throw new Error(`timed out waiting for ${url}`)
+}
+
+function cleanup() {
+  for (const c of children) if (c.exitCode === null) c.kill('SIGTERM')
+  rmSync(dataDir, { recursive: true, force: true })
+}
+process.on('SIGINT', () => {
+  cleanup()
+  process.exit(130)
+})
+
+const step = (msg) => console.log(`· ${msg}`)
+let shotN = 0
+const seenKinds = new Set()
+
+/** Answer whatever the current card asks until the session's done screen appears. */
+async function runSession(page, label) {
+  for (let i = 0; i < 400; i++) {
+    await page.waitForTimeout(200)
+    if (await page.locator('.done-hero').count()) {
+      const pts = Number(((await page.locator('.done-hero .pts').textContent()) ?? '').replace(/[^\d]/g, ''))
+      step(`${label}: done after ${i} moves, +${pts} insight points`)
+      return pts
+    }
+    const walk = page.getByRole('button', { name: /Start walking the tree/ })
+    if (await walk.count()) {
+      await walk.click()
+      continue
+    }
+    const card = page.locator('.card.current').last()
+    if (!(await card.count())) continue
+    const kind = ((await card.locator('.kind').first().textContent().catch(() => '')) || '').trim()
+    if (shotsDir && kind && !seenKinds.has(kind)) {
+      seenKinds.add(kind)
+      await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-${kind.replace(/\W+/g, '_')}.png`) })
+    }
+    const next = card.locator('.actions .btn.primary', { hasText: /Continue|Next|Finish|See results/ })
+    if (await next.count()) {
+      await next.first().click()
+      continue
+    }
+    const opts = card.locator('.option:not([disabled])')
+    if ((await opts.count()) && !(await card.locator('.option.selected').count())) await opts.first().click()
+    const num = card.locator('.numeric-input input, input.numeric-input')
+    // right for the scripted tutor's practice item (λ0 for nodes 0, 1, 2); wrong for the others, which exercises retries and reveals
+    if ((await num.count()) && !(await num.first().inputValue())) await num.first().fill('1/2')
+    const ta = card.locator('textarea')
+    if ((await ta.count()) && !(await ta.first().inputValue()))
+      await ta.first().fill('The weights depend only on the nodes, so they are computed once in O(n^2); dividing by the interpolant of 1 cancels the node polynomial and leaves an O(n) formula per point.')
+    const blanks = card.locator('input.blank')
+    for (let b = 0; b < (await blanks.count()); b++) if (!(await blanks.nth(b).inputValue())) await blanks.nth(b).fill('lam/(t-x)')
+    const conf = card.locator('.conf-btn:not([disabled])')
+    if (await conf.count()) {
+      await conf.nth(2).click()
+      continue
+    }
+    const again = card.locator('.actions .btn.primary', { hasText: 'Check again' })
+    if (await again.count()) {
+      const reveal = card.locator('button', { hasText: 'Show solution' })
+      if (await reveal.count()) {
+        await reveal.first().click()
+        continue
+      }
+    }
+    const check = card.locator('.actions .btn.primary:not([disabled])')
+    if (await check.count()) {
+      await check.first().click()
+      continue
+    }
+    const dk = card.locator('button', { hasText: "I don't know yet" })
+    if (await dk.count()) await dk.first().click()
+  }
+  throw new Error(`${label}: the session did not finish`)
+}
+
+const nav = (page, name) => page.locator('nav.sidebar').getByRole('button', { name, exact: true })
+
+async function flow(page) {
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(`[console] ${m.text()}`)
+  })
+  page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
+
+  step('onboarding')
+  const welcome = page.getByRole('dialog', { name: 'Welcome' })
+  await welcome.waitFor({ timeout: 90_000 })
+  await welcome.getByRole('button', { name: /Next/ }).click()
+  await welcome.getByRole('button', { name: 'Use the demo tutor' }).click()
+  await welcome.getByRole('button', { name: 'Using the demo tutor' }).waitFor()
+  await welcome.getByRole('button', { name: /Next/ }).click()
+  await welcome.getByRole('button', { name: 'Skip' }).click()
+  await welcome.locator('.check-item input').first().check()
+  await welcome.getByRole('button', { name: 'Start learning' }).click()
+  await welcome.waitFor({ state: 'detached' })
+
+  step('learn session')
+  await page.getByRole('button', { name: 'Start with a probe' }).click()
+  if (!((await runSession(page, 'learn')) > 0)) throw new Error('the learn session earned no points')
+
+  step('practice session')
+  await nav(page, 'Today').click()
+  await page.getByRole('button', { name: 'Practice a mix' }).click()
+  if (!((await runSession(page, 'practice')) > 0)) throw new Error('the practice session earned no points')
+
+  for (const [name, heading] of [
+    ['Course map', 'Course map'],
+    ['Mind model', 'Mind model'],
+    ['Stats', 'Stats'],
+    ['Script', 'Script']
+  ]) {
+    await nav(page, name).click()
+    await page.getByRole('heading', { name: heading, level: 1 }).waitFor()
+    step(`${name} screen renders`)
+  }
+  await page.locator('nav.sidebar').getByRole('button', { name: /Settings/ }).click()
+  await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
+  step('Settings screen renders')
+}
+
+try {
+  if (electronMode) {
+    step('launching the built desktop app')
+    const args = [join(root, 'out/main/index.js')]
+    if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox')
+    const app = await playwright._electron.launch({ executablePath: require('electron'), args, env: { ...process.env, ANAMNESIS_DATA_DIR: dataDir } })
+    const page = await app.firstWindow()
+    await page.setViewportSize({ width: 1380, height: 900 }).catch(() => {})
+    await flow(page)
+    await app.close()
+  } else {
+    step('starting the dev server (scripted tutor) and Vite')
+    const server = start(join(root, 'node_modules/.bin/jiti'), ['scripts/dev-server.ts'], { PORT: '5318', ANAMNESIS_DATA_DIR: dataDir, ANAMNESIS_FAKE: '1' })
+    const vite = start(join(root, 'node_modules/.bin/vite'), ['--config', 'vite.web.config.ts'])
+    try {
+      await waitFor('http://127.0.0.1:5318/api/info')
+      await waitFor('http://127.0.0.1:5317/')
+    } catch (e) {
+      console.error(server.log(), vite.log())
+      throw e
+    }
+    const browser = await playwright.chromium.launch({ headless: !process.env.E2E_HEADED })
+    const page = await browser.newPage({ viewport: { width: 1380, height: 900 } })
+    await page.goto('http://127.0.0.1:5317/', { waitUntil: 'load', timeout: 90_000 })
+    await flow(page)
+    await browser.close()
+  }
+  if (errors.length) {
+    failed = true
+    console.error(`\n${errors.length} error(s) in the page:\n${errors.slice(0, 20).join('\n')}`)
+  }
+} catch (e) {
+  failed = true
+  console.error(`\nE2E failed: ${e?.stack ?? e}`)
+  if (errors.length) console.error(errors.slice(0, 20).join('\n'))
+} finally {
+  cleanup()
+}
+console.log(failed ? '\nE2E: FAILED' : '\nE2E: passed')
+process.exit(failed ? 1 : 0)

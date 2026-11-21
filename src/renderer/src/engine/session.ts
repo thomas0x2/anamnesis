@@ -296,8 +296,9 @@ export class SessionController {
     const s = this.s
     const q = s.queue[index] ?? s.queue[s.queue.length - 1]
     const learner = this.app.state.get().learner
-    let target: PracticeTarget = q.mode === 'relearn' ? q : makeTarget(this.app.graph, learner, q.conceptId, index)
-    if (s.type === 'review' && q.mode !== 'relearn') target = { ...target, mode: 'recall', level: Math.max(1, Math.min(3, target.level)) }
+    // practice targets are rebuilt so that a level change earlier in the session applies; review and relearn
+    // items keep their queued target (a review sits one level below practice, at most L3, with a shifted cue)
+    const target: PracticeTarget = s.type === 'review' || q.mode === 'relearn' ? q : makeTarget(this.app.graph, learner, q.conceptId, index)
     const settings = this.app.settings.get()
     const c = this.app.graph.get(target.conceptId)
     const targetPages = settings.script.sendPages && c?.pages.length ? this.app.script.range([c.pages[0], Math.min(c.pages[1], c.pages[0] + 2)], 3) : []

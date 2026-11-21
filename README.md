@@ -1,0 +1,111 @@
+# Anamnesis
+
+A dark desktop tutor for **Numerical Methods for CS** (NumCS, ETH Zurich, HS26) that teaches the way memory research says works: short interactive steps, questions before answers, nudges instead of solutions, and a persistent model of your understanding that decides what comes next.
+
+The tutor is Claude, run through the **Claude Code CLI** on your own Claude login. It reads the relevant pages of your copy of the lecture notes, so it uses the script's notation and numbering, and every card can open the exact page.
+
+> *Anamnesis* (ἀνάμνησις): recollection. Plato's idea that learning is remembering. Here, learning is retrieving.
+
+## What it does
+
+**Learn a concept in three phases**
+
+1. **Probe.** A few quick diagnostic questions (with an honest "I don't know" button) find out what you already know about the goal and its prerequisites.
+2. **Plan.** The tutor builds a dependency tree of reasoning steps from what you already understand to the goal. You see it, can mark steps you already know (they are skipped) or have them taught, then start walking it.
+3. **Teach.** Each step runs *predict → explain → check*: you guess the next step first, the tutor builds on your guess, then a check in a new surface shows whether it landed. A failed check gets a different explanation, not the same one again. At the end you explain the whole chain back in your own words (typed or spoken).
+
+**Practice that gets harder.** Each concept has a difficulty staircase from L1 (recall) to L5 (exam transfer). Three clean answers in a row raise the level, one miss lowers it. Harder levels compose concepts and make cues less familiar, and include exam-style "(S)/(M) which statement is wrong" items and numpy code completion. Topics are interleaved.
+
+**Spaced reviews.** Every concept has an FSRS-6 memory model. Reviews come back just before you would forget, least-remembered first.
+
+**Nudges, not answers.** Hints form a ladder from "what is asked?" to almost the whole step. The full solution is always one click away, but using it counts honestly.
+
+**A mind model you can inspect.** Mastery with an uncertainty band, memory strength, practice level, understanding, independence and transfer, misconceptions (active and resolved), the tutor's notes and your own notes, and the evidence behind every number. Everything is editable.
+
+**Honest stats.** Readiness per chapter, calibration (how often you are right when you say you are sure), accuracy by difficulty, activity, upcoming reviews, help needed over time. Every chart has a table view.
+
+**Visual.** Fourteen interactive demos (interpolation and the Runge phenomenon, Lebesgue functions, Chebyshev polynomials, cancellation, Fourier series, roots of unity, trigonometric interpolation, aliasing, splines, quadrature, fixed-point cobwebs, Newton, the SVD, least squares), plots, diagrams and small sketches.
+
+**Voice.** Answers can be spoken: Whisper runs locally on your computer (the model downloads once). Cards can be read aloud with your system voices.
+
+**Insight points.** Points reward evidence of understanding (a prediction you committed to, a check solved without help, an explanation of the whole chain, a confident error you corrected), never time spent or clicks. Every award says what earned it.
+
+## Quick start (macOS)
+
+You need [Node.js](https://nodejs.org) 22 or newer and the Claude Code CLI.
+
+```bash
+# 1. Claude Code, once: install and sign in with your Claude account
+npm install -g @anthropic-ai/claude-code
+claude            # follow the login, then quit
+
+# 2. The app
+git clone https://github.com/thomas0x2/anamnesis.git
+cd anamnesis
+npm install
+npm run dev       # starts the app with hot reload
+```
+
+On first start a short welcome tour connects the tutor (it tests the CLI), asks for your copy of `lnNPIinf26.pdf`, and lets you tick a few notes about how you learn. The PDF is read once and indexed locally.
+
+To build a standalone app: `npm run dist:mac`, then open `dist/mac-arm64/Anamnesis.app` (or `dist/mac/` on Intel). Drag it to Applications if you like.
+
+No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings. It runs a scripted tutor that shows every card type and screen, with generic content.
+
+## Settings worth knowing
+
+* **Model and effort.** By default the CLI uses your Claude Code default model. Settings → Tutor lets you name a model, a fallback model, and the effort level (higher is slower but more careful).
+* **Script pages per step.** How many PDF pages the tutor gets as context for one step (default 8).
+* **Voice.** Whisper model size and language (English, German or auto), speech output, voice and rate.
+* **Learning.** Target retention for reviews (default 90%) and items per practice session.
+* **Data.** Export everything as JSON, import it again, or reset.
+
+## Privacy and the lecture notes
+
+* The PDF never leaves your computer as a file and is not part of this repository. Only the text of the few pages relevant to the current step is sent to Claude, inside your own Claude Code session.
+* The script's title page asks that it not be uploaded to generative AI without the author's consent. The author agreed to this use for this app demo. If that agreement does not cover you, turn off **Settings → Lecture notes → Ground steps in the script**; the tutor then works from section and theorem numbers, and you can still open every page in the app.
+* Your learner model, sessions and settings are JSON files in `~/Library/Application Support/Anamnesis` (written atomically, with one backup each).
+* The CLI runs with no tools, no MCP servers, no slash commands and no session persistence, in an empty working folder. It can only answer.
+
+## Development
+
+```bash
+npm run dev          # Electron with hot reload
+npm test             # unit tests (vitest): learner model, FSRS, grading, numerics, parsing, prompts
+npm run typecheck    # main + renderer
+npm run build        # production build into out/
+npm run e2e          # browser end-to-end run with the scripted tutor (needs Playwright)
+npm run e2e -- --electron   # the same flow in the built desktop app (run npm run build first)
+```
+
+Running the UI in a normal browser (for development or screenshots):
+
+```bash
+ANAMNESIS_FAKE=1 ANAMNESIS_SCRIPT=/path/to/lnNPIinf26.pdf npm run dev-server   # API on 127.0.0.1:5318
+npm run web                                                                   # UI on 127.0.0.1:5317
+```
+
+Leave out `ANAMNESIS_FAKE=1` to use the real CLI from the browser. `?backend=demo` in the URL runs entirely in the browser with the scripted tutor.
+
+`node_modules/.bin/jiti scripts/try-step.ts <conceptId> [phase] [pdfPath]` sends one real tutor step through the CLI and prints the cards and timings, which is handy when changing prompts.
+
+Project layout:
+
+```
+courses/numcs/course.json   the course graph: 87 concepts, prerequisites, script pages, demos
+src/shared/                 pure logic shared by all processes (learner model, FSRS, grading, prompts, schemas, numerics)
+src/node/                   Claude Code CLI runner and JSON storage (used by Electron main and the dev server)
+src/main/, src/preload/     Electron main process and the bridge to the renderer
+src/renderer/src/           React UI: engine/ (app state, sessions, script index), views/, components/, voice/
+scripts/                    dev server, end-to-end run, prompt tryout
+tests/unit/                 unit tests
+docs/                       the learning science behind the design, and the architecture
+```
+
+More: [docs/LEARNING_SCIENCE.md](docs/LEARNING_SCIENCE.md) explains which findings shaped which feature, and [docs/DESIGN.md](docs/DESIGN.md) describes how the app works inside.
+
+## Credits
+
+Inspired by [learnharness](https://github.com/amosblomqvist/learnharness). Memory model: [FSRS-6](https://github.com/open-spaced-repetition) by the open-spaced-repetition project. Built with Electron, React, KaTeX, pdf.js, math.js, Mermaid, dagre and transformers.js.
+
+The course content belongs to the NumCS lecture notes by V. Gradinaru (ETH Zurich). This repository contains only a map of the script's structure (concept names, prerequisites, page ranges), not its text.

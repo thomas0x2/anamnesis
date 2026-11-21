@@ -1,6 +1,9 @@
 // A small SVG chart for function plots and the demos: linear/log axes, lines, points, stems,
 // reference lines, draggable points, a crosshair tooltip and a legend.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { autoRange, fmtNum, logTicks, niceTicks, sample } from '../lib/axes'
+
+export { autoRange, fmtNum, niceTicks, sample }
 
 export const SERIES_COLORS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)']
 
@@ -55,88 +58,6 @@ export interface ChartProps {
   formatX?: (x: number) => string
   formatY?: (y: number) => string
   tooltip?: boolean
-}
-
-export function fmtNum(v: number): string {
-  if (!Number.isFinite(v)) return String(v)
-  if (v === 0) return '0'
-  const a = Math.abs(v)
-  if (a >= 1e5 || a < 1e-3) {
-    const e = Math.floor(Math.log10(a))
-    const m = v / 10 ** e
-    return Math.abs(Math.abs(m) - 1) < 1e-9 ? `${m < 0 ? '−' : ''}1e${e}` : `${m.toFixed(1)}e${e}`
-  }
-  const digits = a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : 3
-  return v
-    .toFixed(digits)
-    .replace(/\.?0+$/, '')
-    .replace('-', '−')
-}
-
-export function niceTicks(lo: number, hi: number, count = 5): number[] {
-  const span = hi - lo
-  if (!(span > 0) || !Number.isFinite(span)) return [lo]
-  const raw = span / count
-  const mag = 10 ** Math.floor(Math.log10(raw))
-  const err = raw / mag
-  const step = (err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1) * mag
-  const out: number[] = []
-  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step) out.push(Number(v.toPrecision(12)))
-  return out
-}
-
-function logTicks(lo: number, hi: number): number[] {
-  const a = Math.floor(Math.log10(lo))
-  const b = Math.ceil(Math.log10(hi))
-  const every = Math.max(1, Math.ceil((b - a) / 7))
-  const out: number[] = []
-  for (let e = a; e <= b; e += every) {
-    const v = 10 ** e
-    if (v >= lo * 0.999 && v <= hi * 1.001) out.push(v)
-  }
-  return out.length >= 2 ? out : [lo, hi]
-}
-
-/** Robust automatic range: ignores poles and extreme outliers. */
-export function autoRange(values: number[], log = false): [number, number] {
-  const v = values.filter((x) => Number.isFinite(x) && (!log || x > 0)).sort((a, b) => a - b)
-  if (!v.length) return log ? [1e-3, 1] : [-1, 1]
-  const q = (p: number): number => v[Math.min(v.length - 1, Math.max(0, Math.round(p * (v.length - 1))))]
-  let lo = v[0]
-  let hi = v[v.length - 1]
-  if (v.length > 30) {
-    const lo2 = q(0.01)
-    const hi2 = q(0.99)
-    const inner = log ? Math.log10(hi2 / lo2) : hi2 - lo2
-    const outer = log ? Math.log10(hi / lo) : hi - lo
-    if (inner > 0 && outer > 12 * inner) {
-      lo = lo2
-      hi = hi2
-    }
-  }
-  if (log) {
-    if (hi / lo < 10) {
-      lo /= 3
-      hi *= 3
-    }
-    return [lo / 1.6, hi * 1.6]
-  }
-  if (hi - lo < 1e-12) {
-    const d = Math.abs(lo) * 0.1 || 1
-    return [lo - d, hi + d]
-  }
-  const pad = (hi - lo) * 0.07
-  return [lo - pad, hi + pad]
-}
-
-export function sample(fn: (x: number) => number, a: number, b: number, n = 400, log = false): [number, number][] {
-  const out: [number, number][] = []
-  for (let i = 0; i <= n; i++) {
-    const t = i / n
-    const x = log ? 10 ** (Math.log10(a) + t * (Math.log10(b) - Math.log10(a))) : a + t * (b - a)
-    out.push([x, fn(x)])
-  }
-  return out
 }
 
 function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {

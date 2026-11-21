@@ -1,0 +1,13 @@
+node_modules/
+out/
+dist/
+coverage/
+*.log
+.DS_Store
+.vite/
+src/renderer/public/ort/
+test-results/
+# never commit the lecture script or anything extracted from it
+*.pdf
+script-cache/
+src/renderer/public/pdfjs/

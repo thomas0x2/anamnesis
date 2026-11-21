@@ -1,0 +1,70 @@
+{
+  "name": "anamnesis",
+  "productName": "Anamnesis",
+  "version": "0.1.0",
+  "description": "An LLM tutor for NumCS built on retrieval practice, spacing and a persistent model of your understanding.",
+  "main": "./out/main/index.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "web": "vite --config vite.web.config.ts",
+    "dev-server": "jiti scripts/dev-server.ts",
+    "e2e": "node scripts/e2e.mjs",
+    "dist:mac": "electron-vite build && electron-builder --mac --dir"
+  },
+  "devDependencies": {
+    "@dagrejs/dagre": "3.1.3",
+    "@huggingface/transformers": "4.3.2",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "katex": "0.19.1",
+    "mathjs": "15.2.0",
+    "mermaid": "12.3.0",
+    "pdfjs-dist": "6.5.438",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  },
+  "author": "thomas0x2",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "build": {
+    "appId": "ch.thomas0x2.anamnesis",
+    "productName": "Anamnesis",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "courses/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "target": [
+        "dir"
+      ],
+      "darkModeSupport": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Anamnesis transcribes your spoken answers locally."
+      }
+    }
+  }
+}

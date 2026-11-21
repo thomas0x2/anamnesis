@@ -1,0 +1,2042 @@
+{
+ "id": "numcs",
+ "version": 1,
+ "title": "Numerical Methods for CS",
+ "short": "NumCS",
+ "term": "HS26",
+ "lecturer": "Vasile Gradinaru",
+ "courseNumber": "401-0663-00",
+ "script": {
+  "title": "Numerische Methoden (lecture notes)",
+  "fileName": "lnNPIinf26.pdf",
+  "language": "de",
+  "printedPageOffset": -1,
+  "note": "Page numbers are PDF pages; the printed page number is one less."
+ },
+ "exam": {
+  "format": "Part 1: multiple choice, marked (S) single-correct or (M) multiple-correct, often 'which statement is wrong'. Part 2: open questions with derivations, error/convergence analysis and code completion (Python/numpy in this course).",
+  "codeLanguage": "Python (numpy, scipy)"
+ },
+ "chapters": [
+  {
+   "number": 0,
+   "title": "Foundations (refreshers)",
+   "de": "Grundlagen",
+   "pages": []
+  },
+  {
+   "number": 1,
+   "title": "Before the start: rounding, cost, matrices",
+   "de": "Vor dem Start",
+   "pages": [
+    7,
+    41
+   ]
+  },
+  {
+   "number": 2,
+   "title": "Polynomial interpolation",
+   "de": "Polynominterpolation",
+   "pages": [
+    42,
+    65
+   ]
+  },
+  {
+   "number": 3,
+   "title": "Trigonometric interpolation",
+   "de": "Trigonometrische Interpolation",
+   "pages": [
+    66,
+    110
+   ]
+  },
+  {
+   "number": 4,
+   "title": "Piecewise polynomial interpolation",
+   "de": "Stückweise polynomiale Interpolation",
+   "pages": [
+    111,
+    119
+   ]
+  },
+  {
+   "number": 5,
+   "title": "Numerical quadrature",
+   "de": "Numerische Quadratur",
+   "pages": [
+    120,
+    194
+   ]
+  },
+  {
+   "number": 6,
+   "title": "Root finding",
+   "de": "Nullstellensuche",
+   "pages": [
+    195,
+    234
+   ]
+  },
+  {
+   "number": 7,
+   "title": "Numerical linear algebra intermezzo",
+   "de": "Intermezzo über (numerische) lineare Algebra",
+   "pages": [
+    235,
+    266
+   ]
+  },
+  {
+   "number": 8,
+   "title": "Least squares and DNNs",
+   "de": "Ausgleichsrechnung",
+   "pages": [
+    267,
+    323
+   ]
+  }
+ ],
+ "concepts": [
+  {
+   "id": "la-bases",
+   "chapter": 0,
+   "title": "Vector spaces, bases and coordinates",
+   "de": "Vektorraum, Basis, Koordinaten",
+   "summary": "A basis lets you write every vector uniquely as a linear combination of basis vectors; the coefficients are its coordinates.",
+   "why": "Interpolation and Fourier methods are all 'pick a basis, find the coordinates'.",
+   "requires": [],
+   "pages": [],
+   "refs": [],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "la-inner-products",
+   "chapter": 0,
+   "title": "Inner products, norms and orthogonality",
+   "de": "Skalarprodukt, Norm, Orthogonalität",
+   "summary": "An inner product ⟨u,v⟩ measures alignment, induces the norm ‖v‖ = √⟨v,v⟩, and u ⟂ v means ⟨u,v⟩ = 0. The same idea works for functions with integrals.",
+   "why": "Fourier coefficients, Chebyshev orthogonality and least squares are all projections defined by an inner product.",
+   "requires": [
+    "la-bases"
+   ],
+   "pages": [
+    235,
+    236
+   ],
+   "refs": [
+    "Def. 7.1.2"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "la-orthonormal",
+   "chapter": 0,
+   "title": "Orthonormal bases and change of basis",
+   "de": "Orthonormalbasis, Basiswechsel",
+   "summary": "In an orthonormal basis the coordinates are simply inner products c_k = ⟨v,q_k⟩, and the basis matrix Q satisfies Q⁻¹ = Qᴴ.",
+   "why": "This is exactly why the DFT is cheap to invert and why QR is stable.",
+   "requires": [
+    "la-inner-products"
+   ],
+   "pages": [
+    235,
+    237
+   ],
+   "refs": [
+    "Bem. 7.1.4",
+    "Bem. 7.1.5"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "complex-exp",
+   "chapter": 0,
+   "title": "Complex numbers and Euler's formula",
+   "de": "Komplexe Zahlen, Eulersche Formel",
+   "summary": "e^{iθ} = cos θ + i sin θ turns rotations into multiplication: |e^{iθ}| = 1 and e^{iθ}e^{iφ} = e^{i(θ+φ)}.",
+   "why": "Trigonometric interpolation and the DFT are written entirely in complex exponentials.",
+   "requires": [],
+   "pages": [],
+   "refs": [],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "taylor",
+   "chapter": 0,
+   "title": "Taylor expansion and remainder",
+   "de": "Taylor-Formel",
+   "summary": "f(x+h) = f(x) + h f'(x) + … + hⁿ f⁽ⁿ⁾(x)/n! + O(hⁿ⁺¹); the remainder tells you how an error scales with h.",
+   "why": "Error orders of difference quotients, quadrature rules and Newton's method all come from Taylor.",
+   "requires": [],
+   "pages": [
+    43,
+    43
+   ],
+   "refs": [
+    "Bsp. 2.1.4"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "float-rounding",
+   "chapter": 1,
+   "title": "Floating-point numbers and rounding errors",
+   "de": "Gleitkommazahlen, Rundungsfehler",
+   "summary": "Doubles carry a relative precision of about ε ≈ 2.2·10⁻¹⁶; every operation adds a relative error of that size, and very small or large numbers under- or overflow.",
+   "why": "Every later accuracy statement is bounded below by these errors.",
+   "requires": [],
+   "pages": [
+    7,
+    9
+   ],
+   "refs": [
+    "Def. 1.1.1",
+    "Bsp. 1.1.2",
+    "Bsp. 1.1.4"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "cancellation",
+   "chapter": 1,
+   "title": "Cancellation and stable reformulation",
+   "de": "Auslöschung",
+   "summary": "Subtracting two nearly equal numbers keeps their absolute error but destroys the relative accuracy; rewriting the formula (e.g. for the roots of a quadratic) avoids it.",
+   "why": "It explains why naive formulas like (f(x+h) − f(x))/h fail for tiny h.",
+   "requires": [
+    "float-rounding"
+   ],
+   "pages": [
+    9,
+    15
+   ],
+   "refs": [
+    "Bsp. 1.1.6",
+    "Bem. 1.1.9",
+    "Bsp. 1.1.10",
+    "Bsp. 1.1.11"
+   ],
+   "demos": [
+    "cancellation"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "complex-step",
+   "chapter": 1,
+   "title": "Complex-step derivative",
+   "de": "Ableitung via rein imaginärem Schritt",
+   "summary": "f'(x) ≈ Im f(x+ih)/h involves no subtraction, so h can be tiny and the result is accurate to machine precision.",
+   "why": "A neat example of designing a formula around cancellation.",
+   "requires": [
+    "cancellation",
+    "complex-exp",
+    "taylor"
+   ],
+   "pages": [
+    16,
+    17
+   ],
+   "refs": [
+    "Bsp. 1.1.18"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "richardson",
+   "chapter": 1,
+   "title": "Richardson extrapolation",
+   "de": "Richardson-Extrapolation",
+   "summary": "If an approximation has an error expansion c·hᵖ + …, combining the results for h and h/2 cancels the leading term and raises the order.",
+   "why": "The same trick powers Romberg integration in chapter 5.",
+   "requires": [
+    "taylor",
+    "cancellation"
+   ],
+   "pages": [
+    18,
+    21
+   ],
+   "refs": [
+    "Bsp. 1.1.20"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "complexity",
+   "chapter": 1,
+   "title": "Computational cost and asymptotic complexity",
+   "de": "Rechenaufwand, asymptotische Komplexität",
+   "summary": "Count elementary operations as a function of the problem size n and keep the dominant term: O(n²) versus O(n log n) decides what is feasible.",
+   "why": "Exam questions often ask for the cost of an algorithm or how to reduce it.",
+   "requires": [],
+   "pages": [
+    22,
+    26
+   ],
+   "refs": [
+    "Def. 1.2.1",
+    "Def. 1.2.2",
+    "Def. 1.2.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "matrix-ops",
+   "chapter": 1,
+   "title": "Matrix products: views, cost and structure",
+   "de": "Rechnen mit Matrizen",
+   "summary": "A matrix product can be read column-wise, row-wise or as a sum of outer products; it costs O(mnp), and structure (diagonal, triangular, blocks) can make it much cheaper.",
+   "why": "Exploiting structure is the main source of speed in numpy code.",
+   "requires": [
+    "complexity",
+    "la-bases"
+   ],
+   "pages": [
+    27,
+    37
+   ],
+   "refs": [
+    "Bem. 1.3.3",
+    "Bem. 1.3.4",
+    "Bsp. 1.3.9",
+    "Bem. 1.3.15"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "low-rank-tricks",
+   "chapter": 1,
+   "title": "Low-rank products and evaluation order",
+   "de": "Matrizen kleinen Ranges",
+   "summary": "For A, B ∈ ℝ^{n×p} with p ≪ n, computing (ABᵀ)x as A(Bᵀx) costs O(np) instead of O(n²p).",
+   "why": "Choosing the evaluation order turns infeasible computations into cheap ones.",
+   "requires": [
+    "matrix-ops"
+   ],
+   "pages": [
+    38,
+    39
+   ],
+   "refs": [
+    "Bsp. 1.3.17",
+    "Bsp. 1.3.19"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "kronecker",
+   "chapter": 1,
+   "title": "Kronecker product",
+   "de": "Kronecker-Produkt",
+   "summary": "A⊗B is the block matrix (a_ij B); (A⊗B)x can be computed by reshaping x into a matrix and doing two small products instead of forming A⊗B.",
+   "why": "Tensor-product structure shows up in multi-dimensional quadrature and in exams.",
+   "requires": [
+    "matrix-ops"
+   ],
+   "pages": [
+    40,
+    41
+   ],
+   "refs": [
+    "Def. 1.3.21",
+    "Bsp. 1.3.22"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "interp-problem",
+   "chapter": 2,
+   "title": "The polynomial interpolation problem",
+   "de": "Interpolationsproblem, Raum der Polynome",
+   "summary": "Given n+1 distinct nodes x_i with values y_i there is exactly one polynomial of degree ≤ n through them, because 𝒫ₙ has dimension n+1.",
+   "why": "Interpolation is the building block for quadrature, differentiation and approximation.",
+   "requires": [
+    "la-bases"
+   ],
+   "pages": [
+    42,
+    44
+   ],
+   "refs": [
+    "Def. 2.1.7",
+    "Thm. 2.1.9",
+    "Thm. 2.1.10"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "monomial-vandermonde",
+   "chapter": 2,
+   "title": "Monomial basis, Vandermonde matrix and Horner",
+   "de": "Monombasis, Vandermonde-Matrix, Horner-Schema",
+   "summary": "Writing p in the monomial basis leads to a Vandermonde system (O(n³) and badly conditioned); Horner's scheme evaluates p(x) in O(n).",
+   "why": "Shows why the choice of basis matters for cost and stability.",
+   "requires": [
+    "interp-problem",
+    "complexity"
+   ],
+   "pages": [
+    44,
+    45
+   ],
+   "refs": [
+    "Bsp. 2.1.11",
+    "Bem. 2.1.12",
+    "Def. 2.1.13"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "newton-basis",
+   "chapter": 2,
+   "title": "Newton basis",
+   "de": "Newton-Basis",
+   "summary": "The Newton basis N₀ = 1, N_j(x) = ∏_{k<j}(x − x_k) makes the interpolation system lower triangular, so adding a node adds only one new coefficient.",
+   "why": "It makes interpolation incremental.",
+   "requires": [
+    "interp-problem"
+   ],
+   "pages": [
+    45,
+    47
+   ],
+   "refs": [
+    "Bsp. 2.2.1",
+    "Thm. 2.2.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "divided-differences",
+   "chapter": 2,
+   "title": "Divided differences and Newton's formula",
+   "de": "Dividierte Differenzen",
+   "summary": "The Newton coefficients are the divided differences y[x₀,…,x_j], computed recursively in a triangular table in O(n²).",
+   "why": "A classic exam computation, and the link to derivatives: y[x₀,…,xₙ] = f⁽ⁿ⁾(ξ)/n!.",
+   "requires": [
+    "newton-basis"
+   ],
+   "pages": [
+    47,
+    49
+   ],
+   "refs": [
+    "Def. 2.2.5",
+    "Thm. 2.2.8",
+    "Bem. 2.2.10"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "interp-error",
+   "chapter": 2,
+   "title": "Interpolation error formula",
+   "de": "Fehler der Polynominterpolation",
+   "summary": "f(x) − p(x) = f⁽ⁿ⁺¹⁾(ξ)/(n+1)! · ∏(x − x_i): the smoothness of f and the node polynomial ∏(x − x_i) control the error.",
+   "why": "This formula explains Runge's phenomenon and motivates Chebyshev nodes.",
+   "requires": [
+    "divided-differences",
+    "taylor"
+   ],
+   "pages": [
+    49,
+    50
+   ],
+   "refs": [
+    "Thm. 2.2.11",
+    "Thm. 2.2.12"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "lagrange",
+   "chapter": 2,
+   "title": "Lagrange polynomials",
+   "de": "Lagrange-Polynome",
+   "summary": "ℓ_j(x) = ∏_{k≠j}(x − x_k)/(x_j − x_k) equals 1 at x_j and 0 at all other nodes, so p(x) = Σ y_j ℓ_j(x) needs no linear system.",
+   "why": "A cardinal basis: the coefficients are the data values themselves.",
+   "requires": [
+    "interp-problem"
+   ],
+   "pages": [
+    50,
+    52
+   ],
+   "refs": [
+    "Def. 2.3.1",
+    "Thm. 2.3.3",
+    "Bem. 2.3.4"
+   ],
+   "demos": [
+    "interpolation"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "barycentric",
+   "chapter": 2,
+   "title": "Barycentric interpolation formula",
+   "de": "Baryzentrische Interpolationsformel",
+   "summary": "With weights λ_j = 1/∏_{k≠j}(x_j − x_k) precomputed in O(n²), p(x) = Σ λ_j y_j/(x − x_j) / Σ λ_j/(x − x_j) evaluates in O(n) and is numerically stable.",
+   "why": "The practical way to evaluate polynomial interpolants.",
+   "requires": [
+    "lagrange",
+    "complexity"
+   ],
+   "pages": [
+    51,
+    53
+   ],
+   "refs": [
+    "Abschnitt 2.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "lebesgue",
+   "chapter": 2,
+   "title": "Lebesgue constant and data errors",
+   "de": "Lebesgue-Konstante",
+   "summary": "Λₙ = max_x Σ|ℓ_j(x)| bounds how much errors in the data are amplified, ‖p − p̃‖_∞ ≤ Λₙ‖y − ỹ‖_∞; it depends only on the nodes.",
+   "why": "Equispaced nodes have exponentially growing Λₙ, Chebyshev nodes only logarithmic growth.",
+   "requires": [
+    "lagrange"
+   ],
+   "pages": [
+    53,
+    54
+   ],
+   "refs": [
+    "Def. 2.3.5",
+    "Thm. 2.3.7",
+    "Thm. 2.3.8"
+   ],
+   "demos": [
+    "lebesgue"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "runge",
+   "chapter": 2,
+   "title": "Runge's phenomenon",
+   "de": "Runge-Phänomen",
+   "summary": "Interpolating 1/(1+25x²) at equispaced nodes diverges near the interval ends as n grows, although the function is perfectly smooth.",
+   "why": "The cautionary tale that motivates choosing nodes carefully.",
+   "requires": [
+    "interp-error",
+    "lebesgue"
+   ],
+   "pages": [
+    54,
+    55
+   ],
+   "refs": [
+    "Bem. 2.3.10",
+    "Bsp. 2.3.11"
+   ],
+   "demos": [
+    "interpolation"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "chebyshev-polys",
+   "chapter": 2,
+   "title": "Chebyshev polynomials",
+   "de": "Chebyshev-Polynome",
+   "summary": "T_n(x) = cos(n arccos x) on [−1,1] with the recurrence T_{n+1} = 2xT_n − T_{n−1}; |T_n| ≤ 1, n zeros, n+1 extrema, leading coefficient 2ⁿ⁻¹.",
+   "why": "Their zeros are the nodes that make the node polynomial as small as possible.",
+   "requires": [
+    "interp-problem"
+   ],
+   "pages": [
+    55,
+    56
+   ],
+   "refs": [
+    "Def. 2.4.1",
+    "Thm. 2.4.3"
+   ],
+   "demos": [
+    "chebyshev"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "chebyshev-nodes",
+   "chapter": 2,
+   "title": "Chebyshev nodes and abscissae",
+   "de": "Chebyshev-Knoten, Chebyshev-Abszissen",
+   "summary": "The zeros cos((2k+1)π/(2(n+1))) or the extrema cos(kπ/n) of the Chebyshev polynomials, mapped affinely to [a,b]; they cluster near the endpoints.",
+   "why": "Clustering at the ends is exactly what suppresses Runge's oscillations.",
+   "requires": [
+    "chebyshev-polys"
+   ],
+   "pages": [
+    56,
+    56
+   ],
+   "refs": [
+    "Def. 2.4.4",
+    "Bem. 2.4.5",
+    "Def. 2.4.6"
+   ],
+   "demos": [
+    "interpolation",
+    "chebyshev"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "chebyshev-orth",
+   "chapter": 2,
+   "title": "Orthogonality of Chebyshev polynomials",
+   "de": "Orthogonalität der Chebyshev-Polynome",
+   "summary": "The T_n are orthogonal with respect to the weight 1/√(1−x²), and also discretely orthogonal on Chebyshev points.",
+   "why": "Gives cheap formulas for Chebyshev coefficients and connects to Gauss quadrature.",
+   "requires": [
+    "chebyshev-polys",
+    "la-inner-products"
+   ],
+   "pages": [
+    56,
+    58
+   ],
+   "refs": [
+    "Thm. 2.4.9",
+    "Thm. 2.4.10"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "chebyshev-error",
+   "chapter": 2,
+   "title": "Chebyshev interpolation error",
+   "de": "Fehlerabschätzung der Chebyshev-Interpolation",
+   "summary": "With Chebyshev nodes the node polynomial is 2⁻ⁿT_{n+1}, so ‖f − p‖_∞ ≤ ‖f⁽ⁿ⁺¹⁾‖_∞/(2ⁿ(n+1)!), and Λₙ grows only like log n.",
+   "why": "Explains why Chebyshev interpolation converges fast for smooth f.",
+   "requires": [
+    "chebyshev-nodes",
+    "interp-error",
+    "lebesgue"
+   ],
+   "pages": [
+    59,
+    61
+   ],
+   "refs": [
+    "Thm. 2.4.11",
+    "Thm. 2.4.13",
+    "Bsp. 2.4.14"
+   ],
+   "demos": [
+    "interpolation",
+    "lebesgue"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "chebyshev-clenshaw",
+   "chapter": 2,
+   "title": "Chebyshev expansion and Clenshaw's algorithm",
+   "de": "Clenshaw-Algorithmus",
+   "summary": "Write p = Σ c_k T_k with coefficients from discrete orthogonality, and evaluate it stably in O(n) with Clenshaw's backward recurrence.",
+   "why": "The standard representation of interpolants in practice.",
+   "requires": [
+    "chebyshev-orth",
+    "chebyshev-nodes"
+   ],
+   "pages": [
+    62,
+    65
+   ],
+   "refs": [
+    "Thm. 2.4.16",
+    "Thm. 2.4.18"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "trig-polys",
+   "chapter": 3,
+   "title": "Trigonometric polynomials",
+   "de": "Trigonometrische Polynome",
+   "summary": "p(x) = Σ_{k=−m}^{m} c_k e^{2πikx} is 1-periodic; it is a polynomial in z = e^{2πix}.",
+   "why": "The natural interpolant for periodic data.",
+   "requires": [
+    "complex-exp"
+   ],
+   "pages": [
+    66,
+    66
+   ],
+   "refs": [
+    "Def. 3.1.1",
+    "Bem. 3.1.2"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "l2-fourier-basis",
+   "chapter": 3,
+   "title": "L² inner product and the Fourier basis",
+   "de": "L²-Skalarprodukt, Orthogonalität von e^{2πikx}",
+   "summary": "On L²(0,1) the inner product ⟨f,g⟩ = ∫₀¹ f ḡ dx makes φ_k(x) = e^{2πikx} an orthonormal system.",
+   "why": "Orthonormality turns 'find the coefficients' into 'compute inner products'.",
+   "requires": [
+    "la-inner-products",
+    "trig-polys"
+   ],
+   "pages": [
+    67,
+    67
+   ],
+   "refs": [
+    "Def. 3.1.3",
+    "Bem. 3.1.5",
+    "Bem. 3.1.6"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "fourier-series",
+   "chapter": 3,
+   "title": "Fourier series and coefficients",
+   "de": "Fourier-Reihe, Fourier-Koeffizienten",
+   "summary": "f̂(k) = ⟨f, φ_k⟩ = ∫₀¹ f(x) e^{−2πikx} dx and f = Σ f̂(k) φ_k in the L² sense; truncating gives the best L² approximation.",
+   "why": "The continuous picture that the DFT approximates.",
+   "requires": [
+    "l2-fourier-basis",
+    "la-orthonormal"
+   ],
+   "pages": [
+    67,
+    68
+   ],
+   "refs": [
+    "Thm. 3.1.9",
+    "Bem. 3.1.10",
+    "Bem. 3.1.11"
+   ],
+   "demos": [
+    "fourier-series"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "parseval-decay",
+   "chapter": 3,
+   "title": "Parseval's identity and coefficient decay",
+   "de": "Parseval'sche Gleichung, Abfall der Koeffizienten",
+   "summary": "‖f‖² = Σ|f̂(k)|²; differentiation multiplies f̂(k) by 2πik, so a smoother f has faster decaying coefficients (a jump gives decay like 1/k).",
+   "why": "The decay rate predicts how well trigonometric approximation will work.",
+   "requires": [
+    "fourier-series"
+   ],
+   "pages": [
+    69,
+    71
+   ],
+   "refs": [
+    "Bem. 3.1.14",
+    "Thm. 3.1.15",
+    "Thm. 3.1.16",
+    "Bsp. 3.1.17"
+   ],
+   "demos": [
+    "fourier-series"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "roots-of-unity",
+   "chapter": 3,
+   "title": "Roots of unity",
+   "de": "Einheitswurzeln",
+   "summary": "ω_N = e^{−2πi/N}; its powers lie on the unit circle and Σ_{j=0}^{N−1} ω_N^{jk} equals N if N divides k and 0 otherwise.",
+   "why": "This sum identity is the reason the DFT basis is orthogonal.",
+   "requires": [
+    "complex-exp"
+   ],
+   "pages": [
+    72,
+    73
+   ],
+   "refs": [
+    "Def. 3.2.1",
+    "Bem. 3.2.2"
+   ],
+   "demos": [
+    "roots-of-unity"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "dft",
+   "chapter": 3,
+   "title": "Discrete Fourier transform and Fourier matrix",
+   "de": "Diskrete Fouriertransformation, Fouriermatrix",
+   "summary": "Replacing the Fourier integral by the trapezoidal sum at N equispaced points gives the DFT with the Fourier matrix F_N = (ω_N^{jk}); F_N/√N is unitary, so the inverse is essentially the conjugate transpose.",
+   "why": "Turns N samples into N frequency coefficients (and back) exactly.",
+   "requires": [
+    "roots-of-unity",
+    "fourier-series",
+    "la-orthonormal"
+   ],
+   "pages": [
+    72,
+    76
+   ],
+   "refs": [
+    "Def. 3.2.3",
+    "Def. 3.2.4",
+    "Def. 3.2.5",
+    "Thm. 3.2.6"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "numpy-fft",
+   "chapter": 3,
+   "title": "numpy FFT conventions and fftshift",
+   "de": "fft, ifft, fftshift",
+   "summary": "np.fft.fft computes Σ y_j ω^{jk} without the factor 1/N, ifft includes 1/N; output index k ≥ N/2 stands for the negative frequency k − N, which fftshift moves to the front.",
+   "why": "Most bugs in the exercises come from scaling and index ordering.",
+   "requires": [
+    "dft"
+   ],
+   "pages": [
+    76,
+    78
+   ],
+   "refs": [
+    "Bem. 3.2.8",
+    "Bem. 3.2.9",
+    "Bsp. 3.2.12"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "dft-applications",
+   "chapter": 3,
+   "title": "Frequency analysis, filtering and compression",
+   "de": "Frequenzanalyse, Kompression",
+   "summary": "The power spectrum |c_k|² reveals dominant frequencies; zeroing small or high-frequency coefficients filters or compresses a signal.",
+   "why": "The 'why care' of the DFT: EKG, MRI and vibration examples.",
+   "requires": [
+    "numpy-fft"
+   ],
+   "pages": [
+    78,
+    82
+   ],
+   "refs": [
+    "Bsp. 3.2.14",
+    "Bsp. 3.2.17",
+    "Bsp. 3.2.23"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "convolution",
+   "chapter": 3,
+   "title": "Circulant matrices and the convolution theorem",
+   "de": "Zirkulante Matrizen, zyklische Faltung",
+   "summary": "Every circulant matrix is diagonalized by the Fourier matrix, so cyclic convolution becomes pointwise multiplication of DFTs: O(N log N) instead of O(N²).",
+   "why": "Fast filtering and fast solution of circulant systems.",
+   "requires": [
+    "dft",
+    "matrix-ops"
+   ],
+   "pages": [
+    83,
+    87
+   ],
+   "refs": [
+    "Def. 3.2.25",
+    "Thm. 3.2.27",
+    "Def. 3.2.29"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "fft",
+   "chapter": 3,
+   "title": "FFT: the fast Fourier transform",
+   "de": "FFT – Schnelle Fourier-Transformation",
+   "summary": "Split the sum into even and odd indices: a DFT of length N becomes two DFTs of length N/2 plus O(N) work, giving O(N log N) overall.",
+   "why": "Makes everything in this chapter practical.",
+   "requires": [
+    "dft",
+    "complexity"
+   ],
+   "pages": [
+    87,
+    91
+   ],
+   "refs": [
+    "Bsp. 3.3.1",
+    "Bem. 3.3.5"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "trig-interp",
+   "chapter": 3,
+   "title": "Trigonometric interpolation via the DFT",
+   "de": "Trigonometrische Interpolation",
+   "summary": "Sample f at n equispaced points, get the coefficients with one FFT, then evaluate the trigonometric interpolant anywhere. The sampling grid (n points) and the evaluation grid (N points) are different things.",
+   "why": "Core exam topic, and it separates 'coefficients' from 'values'.",
+   "requires": [
+    "dft",
+    "numpy-fft"
+   ],
+   "pages": [
+    92,
+    95
+   ],
+   "refs": [
+    "Abschnitt 3.4.1",
+    "Bem. 3.4.1",
+    "Code 3.4.3"
+   ],
+   "demos": [
+    "trig-interp"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "zero-padding",
+   "chapter": 3,
+   "title": "Evaluation by zero-padding",
+   "de": "Zero-Padding",
+   "summary": "To evaluate the interpolant on a finer equispaced grid of N > n points, pad the (shifted) coefficient vector with zeros to length N and apply one inverse FFT.",
+   "why": "Efficient O(N log N) evaluation; the trick behind evaliptrig.",
+   "requires": [
+    "trig-interp"
+   ],
+   "pages": [
+    95,
+    96
+   ],
+   "refs": [
+    "Abschnitt 3.4.2",
+    "Code 3.4.4"
+   ],
+   "demos": [
+    "trig-interp"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "aliasing",
+   "chapter": 3,
+   "title": "Aliasing",
+   "de": "Aliasing",
+   "summary": "On n samples the frequencies k and k + n are indistinguishable, so each discrete coefficient is the sum of the true coefficients f̂(k + ℓn).",
+   "why": "Explains interpolation errors and the sampling theorem.",
+   "requires": [
+    "trig-interp",
+    "parseval-decay"
+   ],
+   "pages": [
+    96,
+    99
+   ],
+   "refs": [
+    "Bsp. 3.5.4",
+    "Thm. 3.5.6",
+    "Kor. 3.5.7"
+   ],
+   "demos": [
+    "aliasing"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "trig-interp-error",
+   "chapter": 3,
+   "title": "Trigonometric interpolation error and the sampling theorem",
+   "de": "Fehler der trigonometrischen Interpolation, Abtasttheorem",
+   "summary": "The error is controlled by the tail Σ_{|k|>n/2} |f̂(k)|: algebraic decay for C^p functions, exponential for analytic ones, and band-limited f is reproduced exactly.",
+   "why": "Lets you predict convergence rates from smoothness, a typical exam question.",
+   "requires": [
+    "aliasing"
+   ],
+   "pages": [
+    100,
+    102
+   ],
+   "refs": [
+    "Thm. 3.5.8",
+    "Kor. 3.5.9",
+    "Thm. 3.5.11"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "dft-chebyshev",
+   "chapter": 3,
+   "title": "Chebyshev interpolation with the DFT",
+   "de": "DFT und Chebyshev-Interpolation",
+   "summary": "With x = cos θ, Chebyshev interpolation becomes cosine interpolation in θ, so the Chebyshev coefficients can be computed with an FFT in O(n log n).",
+   "why": "Links chapters 2 and 3 and is used by Clenshaw–Curtis quadrature.",
+   "requires": [
+    "chebyshev-clenshaw",
+    "fft",
+    "trig-interp"
+   ],
+   "pages": [
+    103,
+    110
+   ],
+   "refs": [
+    "Abschnitt 3.6",
+    "Bem. 3.6.2",
+    "Bem. 3.6.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "piecewise-linear",
+   "chapter": 4,
+   "title": "Piecewise linear interpolation",
+   "de": "Stückweise lineare Interpolation",
+   "summary": "Connect neighbouring data points by straight lines: local, shape-preserving, with error O(h²)·max|f''|.",
+   "why": "Avoids the global wiggles of high-degree polynomials.",
+   "requires": [
+    "interp-error"
+   ],
+   "pages": [
+    111,
+    112
+   ],
+   "refs": [
+    "Abschnitt 4.1"
+   ],
+   "demos": [
+    "splines"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "cubic-hermite",
+   "chapter": 4,
+   "title": "Cubic Hermite interpolation",
+   "de": "Kubische Hermite-Interpolation",
+   "summary": "On each interval use the cubic that matches values and slopes at both ends; the result is C¹ with error O(h⁴) if the slopes are exact.",
+   "why": "Gives smooth curves when derivatives are known or can be estimated.",
+   "requires": [
+    "piecewise-linear"
+   ],
+   "pages": [
+    112,
+    114
+   ],
+   "refs": [
+    "Thm. 4.2.2"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "cubic-splines",
+   "chapter": 4,
+   "title": "Cubic splines",
+   "de": "Kubische Splines",
+   "summary": "Piecewise cubics that are C² at the knots; the two missing conditions come from complete, natural, periodic or not-a-knot end conditions, which leads to a tridiagonal system.",
+   "why": "The default smooth interpolant in practice (scipy CubicSpline).",
+   "requires": [
+    "cubic-hermite",
+    "lu-gauss"
+   ],
+   "pages": [
+    115,
+    118
+   ],
+   "refs": [
+    "Def. 4.3.1",
+    "Def. 4.3.4",
+    "Def. 4.3.5",
+    "Def. 4.3.6",
+    "Bem. 4.3.8"
+   ],
+   "demos": [
+    "splines"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "spline-error",
+   "chapter": 4,
+   "title": "Spline error and minimal curvature",
+   "de": "Fehler kubischer Splines, minimale Krümmung",
+   "summary": "Complete cubic splines have error O(h⁴); the natural spline minimizes ∫(s'')² among all C² interpolants.",
+   "why": "Explains why splines look 'natural'.",
+   "requires": [
+    "cubic-splines"
+   ],
+   "pages": [
+    118,
+    119
+   ],
+   "refs": [
+    "Bem. 4.3.9",
+    "Thm. 4.3.10"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "quad-basics",
+   "chapter": 5,
+   "title": "Quadrature rules: nodes, weights, error",
+   "de": "Quadraturformel, Knoten, Gewichte",
+   "summary": "Approximate ∫_a^b f(x) dx by Σ w_i f(c_i); the quadrature error depends on the rule and on the smoothness of f.",
+   "why": "Most integrals in practice have no closed form.",
+   "requires": [],
+   "pages": [
+    120,
+    122
+   ],
+   "refs": [
+    "Def. 5.3.1",
+    "Def. 5.3.2"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "interpolatory-quad",
+   "chapter": 5,
+   "title": "Interpolatory quadrature",
+   "de": "Quadraturgewichte aus Lagrange-Polynomen",
+   "summary": "Integrate the interpolation polynomial instead of f: w_i = ∫ ℓ_i(x) dx, so the rule is exact for polynomials of degree ≤ n.",
+   "why": "Connects chapter 2 to quadrature.",
+   "requires": [
+    "quad-basics",
+    "lagrange"
+   ],
+   "pages": [
+    123,
+    125
+   ],
+   "refs": [
+    "Bem. 5.3.7"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "quad-order",
+   "chapter": 5,
+   "title": "Order of a quadrature rule",
+   "de": "Ordnung einer Quadraturformel",
+   "summary": "Order s means the rule is exact for all polynomials of degree ≤ s − 1; symmetric rules have even order; rules are transformed affinely to [−1,1].",
+   "why": "The order determines the convergence rate of composite rules.",
+   "requires": [
+    "interpolatory-quad"
+   ],
+   "pages": [
+    126,
+    127
+   ],
+   "refs": [
+    "Def. 5.3.8",
+    "Def. 5.3.9",
+    "Thm. 5.3.11"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "newton-cotes",
+   "chapter": 5,
+   "title": "Midpoint, trapezoidal and Simpson rules",
+   "de": "Mittelpunkt-, Trapez- und Simpson-Regel",
+   "summary": "Equispaced interpolatory rules with orders 2, 2 and 4 and error constants obtained from Taylor expansions.",
+   "why": "The workhorse rules you must be able to derive and apply.",
+   "requires": [
+    "quad-order"
+   ],
+   "pages": [
+    127,
+    129
+   ],
+   "refs": [
+    "Abschnitt 5.4",
+    "Bem. 5.4.1"
+   ],
+   "demos": [
+    "quadrature"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "composite-quad",
+   "chapter": 5,
+   "title": "Composite rules and convergence",
+   "de": "Zusammengesetzte Quadraturformeln",
+   "summary": "Split [a,b] into N subintervals of width h and apply a rule of order s on each: the error is O(h^s) = O(N^{−s}), a line of slope −s in a log-log plot.",
+   "why": "How you read convergence plots in exercises and exams.",
+   "requires": [
+    "newton-cotes",
+    "complexity"
+   ],
+   "pages": [
+    129,
+    132
+   ],
+   "refs": [
+    "Thm. 5.4.4",
+    "Bsp. 5.4.5"
+   ],
+   "demos": [
+    "quadrature"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "trapezoid-periodic",
+   "chapter": 5,
+   "title": "Trapezoidal rule for periodic functions",
+   "de": "Trapez-Regel für periodische Funktionen",
+   "summary": "For smooth periodic integrands the composite trapezoidal rule converges exponentially, because it integrates e^{2πikx} exactly for |k| < N.",
+   "why": "Surprising 'free' accuracy that links quadrature and the DFT.",
+   "requires": [
+    "composite-quad",
+    "aliasing"
+   ],
+   "pages": [
+    132,
+    134
+   ],
+   "refs": [
+    "Bsp. 5.4.8",
+    "Bem. 5.4.10"
+   ],
+   "demos": [
+    "quadrature"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "romberg",
+   "chapter": 5,
+   "title": "Romberg integration",
+   "de": "Romberg-Verfahren",
+   "summary": "The trapezoidal error expands in even powers of h; Richardson extrapolation on successive halvings removes these terms one by one.",
+   "why": "High order from a very simple rule.",
+   "requires": [
+    "composite-quad",
+    "richardson"
+   ],
+   "pages": [
+    134,
+    139
+   ],
+   "refs": [
+    "Bem. 5.4.12"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "gauss-quad",
+   "chapter": 5,
+   "title": "Gauss quadrature",
+   "de": "Gauss-Quadratur",
+   "summary": "With s nodes the maximal order is 2s, reached exactly when the nodes are the zeros of the degree-s orthogonal polynomial (Legendre for weight 1).",
+   "why": "The best accuracy per function evaluation.",
+   "requires": [
+    "quad-order",
+    "chebyshev-orth"
+   ],
+   "pages": [
+    140,
+    144
+   ],
+   "refs": [
+    "Thm. 5.5.1",
+    "Thm. 5.5.2",
+    "Thm. 5.5.3",
+    "Bsp. 5.5.4"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "gauss-legendre",
+   "chapter": 5,
+   "title": "Gauss–Legendre nodes, weights and error",
+   "de": "Gauss-Legendre-Quadratur",
+   "summary": "The nodes are Legendre zeros, the weights are positive (hence stable) and follow from integrals of Lagrange polynomials; the error scales with f^{(2s)}.",
+   "why": "What scipy's fixed_quad does; positivity explains its stability.",
+   "requires": [
+    "gauss-quad"
+   ],
+   "pages": [
+    144,
+    147
+   ],
+   "refs": [
+    "Bem. 5.5.11",
+    "Bem. 5.5.14",
+    "Thm. 5.5.15"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "clenshaw-curtis",
+   "chapter": 5,
+   "title": "Clenshaw–Curtis quadrature",
+   "de": "Clenshaw-Curtis Quadraturformel",
+   "summary": "Interpolate at Chebyshev points and integrate the Chebyshev expansion exactly; weights come from an FFT, nodes are nested, and accuracy is close to Gauss.",
+   "why": "A practical alternative to Gauss with cheap weights.",
+   "requires": [
+    "dft-chebyshev",
+    "interpolatory-quad"
+   ],
+   "pages": [
+    147,
+    151
+   ],
+   "refs": [
+    "Abschnitt 5.5.2"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "adaptive-quad",
+   "chapter": 5,
+   "title": "Adaptive quadrature",
+   "de": "Adaptive Quadratur",
+   "summary": "Estimate the local error on each subinterval by comparing two rules, and refine only where the estimate is large.",
+   "why": "Efficient for integrands whose difficulty is localized.",
+   "requires": [
+    "composite-quad"
+   ],
+   "pages": [
+    152,
+    155
+   ],
+   "refs": [
+    "Bsp. 5.6.1",
+    "Bem. 5.6.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "sparse-grids",
+   "chapter": 5,
+   "title": "Quadrature in higher dimensions and sparse grids",
+   "de": "Quadratur in ℝ^d, dünne Gitter",
+   "summary": "Tensor-product rules need N^d points (curse of dimensionality); sparse grids combine coarse tensor rules to cut this drastically for smooth integrands.",
+   "why": "Why high-dimensional integration needs different ideas.",
+   "requires": [
+    "composite-quad",
+    "kronecker"
+   ],
+   "pages": [
+    155,
+    165
+   ],
+   "refs": [
+    "Abschnitt 5.7"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "monte-carlo",
+   "chapter": 5,
+   "title": "Monte Carlo quadrature",
+   "de": "Monte-Carlo Quadratur",
+   "summary": "Estimate ∫f as the mean of f at random points: the error behaves like σ/√N independent of the dimension, with confidence intervals from the central limit theorem.",
+   "why": "The only practical approach in very high dimensions.",
+   "requires": [
+    "quad-basics"
+   ],
+   "pages": [
+    165,
+    180
+   ],
+   "refs": [
+    "Bem. 5.8.1",
+    "Bem. 5.8.2",
+    "Thm. 5.8.17"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "variance-reduction",
+   "chapter": 5,
+   "title": "Variance reduction",
+   "de": "Methoden zur Reduktion der Varianz",
+   "summary": "Since the error is σ/√N, reduce σ: importance sampling, control variates and antithetic variables.",
+   "why": "The same accuracy with far fewer samples.",
+   "requires": [
+    "monte-carlo"
+   ],
+   "pages": [
+    180,
+    194
+   ],
+   "refs": [
+    "Thm. 5.9.3",
+    "Bsp. 5.9.6",
+    "Bem. 5.9.9"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "iterative-convergence",
+   "chapter": 6,
+   "title": "Iterative methods and convergence order",
+   "de": "Iterative Verfahren, Konvergenzordnung",
+   "summary": "An iteration produces x⁽ᵏ⁾ → x*; order p means ‖e_{k+1}‖ ≈ C‖e_k‖ᵖ: linear convergence is a straight line in a lin-log plot, quadratic convergence doubles the correct digits.",
+   "why": "Reading convergence from error tables and plots is a standard exam task.",
+   "requires": [
+    "la-inner-products"
+   ],
+   "pages": [
+    195,
+    201
+   ],
+   "refs": [
+    "Def. 6.1.1",
+    "Def. 6.1.4",
+    "Def. 6.1.14",
+    "Bem. 6.1.17",
+    "Bem. 6.1.20"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "stopping-criteria",
+   "chapter": 6,
+   "title": "Stopping criteria",
+   "de": "Abbruchkriterien",
+   "summary": "Stop on a small residual, a small correction, or the a-posteriori bound ‖x⁽ᵏ⁾ − x*‖ ≤ L/(1−L)·‖x⁽ᵏ⁾ − x⁽ᵏ⁻¹⁾‖ for linear convergence.",
+   "why": "A small correction does not always mean a small error.",
+   "requires": [
+    "iterative-convergence"
+   ],
+   "pages": [
+    202,
+    203
+   ],
+   "refs": [
+    "Bem. 6.2.2",
+    "Bsp. 6.2.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "fixed-point",
+   "chapter": 6,
+   "title": "Fixed-point iteration and contraction",
+   "de": "Fixpunktiteration, Banach'scher Fixpunktsatz",
+   "summary": "Rewrite F(x) = 0 as x = Φ(x) and iterate. If Φ is a contraction near x* (|Φ'| ≤ L < 1) it converges linearly with rate L; Φ'(x*) = 0 gives higher order.",
+   "why": "The unifying theory behind Newton's method and its relatives.",
+   "requires": [
+    "iterative-convergence",
+    "taylor"
+   ],
+   "pages": [
+    204,
+    209
+   ],
+   "refs": [
+    "Def. 6.3.1",
+    "Def. 6.3.5",
+    "Satz 6.3.7",
+    "Lemma 6.3.16"
+   ],
+   "demos": [
+    "cobweb"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "bisection",
+   "chapter": 6,
+   "title": "Bisection",
+   "de": "Intervallhalbierungsverfahren",
+   "summary": "If f changes sign on [a,b], halving the interval keeps a root inside: robust, with linear convergence of rate 1/2.",
+   "why": "Guaranteed but slow, which makes it a good safeguard.",
+   "requires": [
+    "iterative-convergence"
+   ],
+   "pages": [
+    210,
+    211
+   ],
+   "refs": [
+    "Abschnitt 6.4"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "newton-1d",
+   "chapter": 6,
+   "title": "Newton's method in 1D",
+   "de": "Newton-Verfahren in 1D",
+   "summary": "x_{k+1} = x_k − f(x_k)/f'(x_k) linearizes f at x_k; it converges quadratically near simple roots and only linearly near multiple roots.",
+   "why": "The most important root-finding method.",
+   "requires": [
+    "fixed-point"
+   ],
+   "pages": [
+    211,
+    213
+   ],
+   "refs": [
+    "Bsp. 6.5.3",
+    "Bsp. 6.5.4"
+   ],
+   "demos": [
+    "newton"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "secant",
+   "chapter": 6,
+   "title": "Secant method",
+   "de": "Sekantenverfahren",
+   "summary": "Replace f' by the slope through the last two iterates: no derivatives needed, convergence order (1+√5)/2 ≈ 1.618.",
+   "why": "Often more efficient per function evaluation than Newton.",
+   "requires": [
+    "newton-1d"
+   ],
+   "pages": [
+    213,
+    215
+   ],
+   "refs": [
+    "Bsp. 6.6.3",
+    "Bsp. 6.6.4"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "newton-nd",
+   "chapter": 6,
+   "title": "Newton's method in d dimensions",
+   "de": "Newton-Verfahren in d Dimensionen",
+   "summary": "Solve the linear system DF(x_k) s = −F(x_k) with the Jacobian and set x_{k+1} = x_k + s; simplified Newton reuses an old Jacobian and its LU factors.",
+   "why": "Nonlinear systems are everywhere, including least squares.",
+   "requires": [
+    "newton-1d",
+    "lu-gauss"
+   ],
+   "pages": [
+    215,
+    224
+   ],
+   "refs": [
+    "Bsp. 6.7.4",
+    "Bem. 6.7.9",
+    "Bem. 6.7.10"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "damped-newton",
+   "chapter": 6,
+   "title": "Damped Newton",
+   "de": "Gedämpftes Newton-Verfahren",
+   "summary": "Take x_{k+1} = x_k + λ_k s_k with a step length λ_k chosen by a monotonicity test to enlarge the region of convergence.",
+   "why": "Reduces Newton's dependence on a good starting value, though not always.",
+   "requires": [
+    "newton-nd"
+   ],
+   "pages": [
+    224,
+    229
+   ],
+   "refs": [
+    "Bsp. 6.8.1",
+    "Bsp. 6.8.3",
+    "Bsp. 6.8.7",
+    "Bsp. 6.8.8"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "broyden",
+   "chapter": 6,
+   "title": "Quasi-Newton (Broyden) method",
+   "de": "Quasi-Newton-Verfahren (Broyden)",
+   "summary": "Avoid recomputing Jacobians by updating an approximation J_k with a rank-1 correction that satisfies the secant condition.",
+   "why": "Cheap iterations for large systems, built on low-rank tricks.",
+   "requires": [
+    "newton-nd",
+    "low-rank-tricks"
+   ],
+   "pages": [
+    229,
+    234
+   ],
+   "refs": [
+    "Bem. 6.9.1",
+    "Bsp. 6.9.2",
+    "Bsp. 6.9.5"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "orthogonal-matrices",
+   "chapter": 7,
+   "title": "Orthogonal and unitary matrices",
+   "de": "Orthogonale und unitäre Matrizen",
+   "summary": "QᴴQ = I: the columns are orthonormal, ‖Qx‖ = ‖x‖ and Q⁻¹ = Qᴴ; rotations and permutations are examples.",
+   "why": "Transformations that never amplify errors.",
+   "requires": [
+    "la-orthonormal"
+   ],
+   "pages": [
+    235,
+    237
+   ],
+   "refs": [
+    "Def. 7.1.2",
+    "Bem. 7.1.5",
+    "Bem. 7.1.7"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "gram-schmidt",
+   "chapter": 7,
+   "title": "Gram–Schmidt and the QR decomposition",
+   "de": "Gram-Schmidt-Verfahren, QR-Zerlegung",
+   "summary": "Orthonormalizing the columns of A one after another gives A = QR with R upper triangular.",
+   "why": "The conceptual route to QR (numerically you use Householder).",
+   "requires": [
+    "orthogonal-matrices"
+   ],
+   "pages": [
+    237,
+    238
+   ],
+   "refs": [
+    "Bem. 7.1.10",
+    "Bem. 7.1.11"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "lu-gauss",
+   "chapter": 7,
+   "title": "Gaussian elimination and LU decomposition",
+   "de": "Gauss-Elimination, LU-Zerlegung",
+   "summary": "Elimination factors PA = LU in O(n³); afterwards each solve is just two triangular solves in O(n²).",
+   "why": "Factor once, solve many times: a key to efficient code.",
+   "requires": [
+    "matrix-ops"
+   ],
+   "pages": [
+    238,
+    240
+   ],
+   "refs": [
+    "Bsp. 7.1.12",
+    "Lemma 7.1.15",
+    "Bem. 7.1.16"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "condition-number",
+   "chapter": 7,
+   "title": "Matrix norms and the condition number",
+   "de": "Konditionszahl",
+   "summary": "cond(A) = ‖A‖‖A⁻¹‖ bounds how relative errors in b are amplified in the solution x; orthogonal transformations leave it unchanged.",
+   "why": "Explains when a linear system cannot be solved accurately.",
+   "requires": [
+    "lu-gauss",
+    "la-inner-products"
+   ],
+   "pages": [
+    240,
+    244
+   ],
+   "refs": [
+    "Bem. 7.1.17",
+    "Def. 7.1.18",
+    "Bsp. 7.1.20",
+    "Bem. 7.1.24"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "householder-qr",
+   "chapter": 7,
+   "title": "Householder and Givens QR",
+   "de": "Householder-Spiegelungen, Givens-Rotationen",
+   "summary": "Reflections or rotations zero out entries column by column and give a stable QR decomposition in O(mn²).",
+   "why": "The stable way to orthogonalize, used for least squares.",
+   "requires": [
+    "gram-schmidt",
+    "complexity"
+   ],
+   "pages": [
+    244,
+    256
+   ],
+   "refs": [
+    "Bsp. 7.1.30",
+    "Bem. 7.1.33",
+    "Bem. 7.1.35"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "svd",
+   "chapter": 7,
+   "title": "Singular value decomposition",
+   "de": "Singulärwertzerlegung",
+   "summary": "Every matrix factors as A = UΣVᴴ with unitary U, V and σ₁ ≥ σ₂ ≥ … ≥ 0: A maps the right singular vectors to σ_i times the left ones.",
+   "why": "The master decomposition for rank, norms, low-rank approximation and PCA.",
+   "requires": [
+    "orthogonal-matrices"
+   ],
+   "pages": [
+    256,
+    258
+   ],
+   "refs": [
+    "Thm. 7.1.38",
+    "Def. 7.1.39",
+    "Bem. 7.1.40",
+    "Bem. 7.1.41"
+   ],
+   "demos": [
+    "svd"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "svd-norms-rank",
+   "chapter": 7,
+   "title": "Rank, norms and condition via the SVD",
+   "de": "Rang, 2-Norm, Frobenius-Norm",
+   "summary": "The rank is the number of nonzero σ_i, ‖A‖₂ = σ₁, cond₂(A) = σ₁/σₙ and ‖A‖_F² = Σσ_i²; numerical rank uses a tolerance.",
+   "why": "Reading matrix properties directly from the singular values.",
+   "requires": [
+    "svd",
+    "condition-number"
+   ],
+   "pages": [
+    258,
+    263
+   ],
+   "refs": [
+    "Thm. 7.1.43",
+    "Thm. 7.1.50",
+    "Def. 7.1.52"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "low-rank-pca",
+   "chapter": 7,
+   "title": "Best low-rank approximation and PCA",
+   "de": "Bestapproximation durch Niedrigrangmatrizen, PCA",
+   "summary": "Truncating the SVD after k terms gives the best rank-k approximation in the 2- and Frobenius norm; PCA finds the dominant directions in data.",
+   "why": "Compression and data analysis.",
+   "requires": [
+    "svd-norms-rank"
+   ],
+   "pages": [
+    256,
+    264
+   ],
+   "refs": [
+    "Bsp. 7.1.36",
+    "Bsp. 7.1.45",
+    "Thm. 7.1.53",
+    "Bem. 7.1.54"
+   ],
+   "demos": [
+    "svd"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "linear-lsq",
+   "chapter": 8,
+   "title": "Linear least squares",
+   "de": "Lineare Ausgleichsrechnung",
+   "summary": "For an overdetermined system Ax ≈ b, find the x that minimizes ‖b − Ax‖₂; fitting a model that is linear in its parameters is the typical case.",
+   "why": "Measurements are noisy and plentiful, so exact solutions do not exist.",
+   "requires": [
+    "la-inner-products",
+    "matrix-ops"
+   ],
+   "pages": [
+    267,
+    270
+   ],
+   "refs": [
+    "Bsp. 8.1.1",
+    "Bsp. 8.1.3",
+    "Bem. 8.1.5",
+    "Bem. 8.1.6"
+   ],
+   "demos": [
+    "least-squares"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "normal-equations",
+   "chapter": 8,
+   "title": "Normal equations",
+   "de": "Normalengleichungen",
+   "summary": "The minimizer satisfies AᴴAx = Aᴴb (the residual is orthogonal to the range of A); cheap, but it squares the condition number.",
+   "why": "Simple to derive, and a classic stability pitfall.",
+   "requires": [
+    "linear-lsq",
+    "condition-number"
+   ],
+   "pages": [
+    270,
+    273
+   ],
+   "refs": [
+    "Def. 8.1.9",
+    "Bem. 8.1.10",
+    "Bem. 8.1.11",
+    "Bsp. 8.1.13"
+   ],
+   "demos": [
+    "least-squares"
+   ],
+   "tier": "core"
+  },
+  {
+   "id": "lsq-qr",
+   "chapter": 8,
+   "title": "Least squares via QR",
+   "de": "Lösung mittels orthogonaler Transformationen",
+   "summary": "With A = QR, ‖b − Ax‖ = ‖Qᴴb − Rx‖, so you solve the triangular system R₁x = (Qᴴb)₁; stable because the condition number is not squared.",
+   "why": "The recommended method in practice.",
+   "requires": [
+    "normal-equations",
+    "householder-qr"
+   ],
+   "pages": [
+    273,
+    275
+   ],
+   "refs": [
+    "Abschnitt 8.1.2"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "lsq-svd",
+   "chapter": 8,
+   "title": "Least squares via SVD and the pseudoinverse",
+   "de": "Pseudoinverse",
+   "summary": "x = VΣ⁺Uᴴb is the minimal-norm least squares solution, also when A is rank-deficient.",
+   "why": "Handles rank deficiency and regularization.",
+   "requires": [
+    "lsq-qr",
+    "svd-norms-rank"
+   ],
+   "pages": [
+    275,
+    277
+   ],
+   "refs": [
+    "Def. 8.1.15",
+    "Bsp. 8.1.17"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "total-lsq",
+   "chapter": 8,
+   "title": "Total least squares",
+   "de": "Totale Ausgleichsrechnung",
+   "summary": "When A is noisy too, find the smallest perturbation of [A b] that makes the system consistent; the solution comes from the last right singular vector.",
+   "why": "Fitting when both variables carry errors.",
+   "requires": [
+    "lsq-svd",
+    "low-rank-pca"
+   ],
+   "pages": [
+    277,
+    278
+   ],
+   "refs": [
+    "Abschnitt 8.1.3"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "nonlinear-lsq",
+   "chapter": 8,
+   "title": "Nonlinear least squares",
+   "de": "Nichtlineare Ausgleichsrechnung",
+   "summary": "Minimize ‖F(x)‖² for a model that is nonlinear in its parameters; Newton's method on the gradient needs second derivatives.",
+   "why": "Real models (exponentials, GPS) are nonlinear in the parameters.",
+   "requires": [
+    "linear-lsq",
+    "newton-nd"
+   ],
+   "pages": [
+    278,
+    280
+   ],
+   "refs": [
+    "Bem. 8.2.1",
+    "Abschnitt 8.2.1"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "gauss-newton",
+   "chapter": 8,
+   "title": "Gauss–Newton method",
+   "de": "Gauss-Newton Verfahren",
+   "summary": "Linearize F at x_k and solve a linear least squares problem for the step: no second derivatives, and fast near a good fit.",
+   "why": "The standard method for nonlinear fitting.",
+   "requires": [
+    "nonlinear-lsq",
+    "lsq-qr"
+   ],
+   "pages": [
+    280,
+    290
+   ],
+   "refs": [
+    "Bsp. 8.2.3",
+    "Bsp. 8.2.6",
+    "Bsp. 8.2.9"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "optimizers",
+   "chapter": 8,
+   "title": "BFGS, gradient descent, SGD, CG, Levenberg–Marquardt, Adam",
+   "de": "Weitere Methoden: BFGS, GD, SGD, CG, LM, ADAM",
+   "summary": "Trade-offs between cost per step and convergence: GD and SGD use only gradients, LM blends GD and Gauss–Newton, BFGS builds curvature from updates, Adam adapts step sizes.",
+   "why": "The bridge from numerics to training neural networks.",
+   "requires": [
+    "gauss-newton",
+    "broyden"
+   ],
+   "pages": [
+    290,
+    298
+   ],
+   "refs": [
+    "Abschnitt 8.2.3"
+   ],
+   "demos": [],
+   "tier": "support"
+  },
+  {
+   "id": "dnn-backprop",
+   "chapter": 8,
+   "title": "Neural networks and backpropagation",
+   "de": "DNNs, Backpropagation",
+   "summary": "A DNN composes affine maps and nonlinearities and is fitted by (stochastic) least squares; backpropagation computes the gradient with the chain rule in reverse.",
+   "why": "Shows modern ML as a nonlinear least squares problem.",
+   "requires": [
+    "optimizers"
+   ],
+   "pages": [
+    299,
+    318
+   ],
+   "refs": [
+    "Abschnitt 8.3",
+    "Bsp. 8.3.3"
+   ],
+   "demos": [],
+   "tier": "core"
+  },
+  {
+   "id": "pinns",
+   "chapter": 8,
+   "title": "Physics-informed neural networks",
+   "de": "PINNs",
+   "summary": "Add the residual of a differential equation to the loss so that the network fits data and physics at the same time.",
+   "why": "A current research application of the chapter.",
+   "requires": [
+    "dnn-backprop"
+   ],
+   "pages": [
+    319,
+    323
+   ],
+   "refs": [
+    "Bsp. 8.3.8"
+   ],
+   "demos": [],
+   "tier": "extra"
+  }
+ ]
+}

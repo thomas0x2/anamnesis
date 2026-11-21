@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:" />
+    <title>sketch</title>
+    <style>
+      html, body { margin: 0; background: #0f1117; color: #e6e8ee; font: 14px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Receives one model-written widget from the app and runs it in this opaque-origin sandbox.
+      // The frame has no network (CSP default-src 'none') and no access to the app.
+      window.addEventListener('message', function (e) {
+        if (!e.data || e.data.type !== 'sketch' || typeof e.data.html !== 'string') return
+        document.open()
+        document.write(e.data.html)
+        document.close()
+      }, { once: true })
+      parent.postMessage({ type: 'sketch-ready' }, '*')
+    </script>
+  </body>
+</html>

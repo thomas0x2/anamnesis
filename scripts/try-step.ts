@@ -21,7 +21,7 @@ const concept = graph.get(conceptId)
 if (!concept) throw new Error(`unknown concept ${conceptId}`)
 const learner: LearnerModel = {
   profile: [
-    { id: 'p1', text: 'Linear algebra basics are rusty (inner products, orthonormal bases, change of basis).', source: 'seed', at: new Date().toISOString() },
+    { id: 'p1', text: 'Prefers a picture or a plot before the algebra.', source: 'seed', at: new Date().toISOString() },
     { id: 'p2', text: 'Wants the motivation (why) before formulas.', source: 'seed', at: new Date().toISOString() }
   ],
   concepts: {}

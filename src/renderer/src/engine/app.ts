@@ -51,12 +51,12 @@ export interface UiState {
 
 /** Starting notes the learner can pick during setup (first person: they are shown as-is and read by the tutor). */
 export const SEED_PROFILE = [
-  'My linear algebra is rusty (inner products, orthonormal bases, change of basis): refresh it briefly when a topic relies on it.',
+  'Refresh the prerequisites briefly when a topic relies on them.',
   'I want the motivation (why are we doing this?) before the formulas.',
-  'I learn the concepts first and practice after; jumping straight into exercises does not work for me on a new chapter.',
   'I like a picture or a plot before the algebra.',
-  'In trigonometric interpolation I tend to mix up the sample grid (n points) with the evaluation grid (N points), and coefficients with values.',
-  'Keep explanations short and ask me often; long texts lose me.'
+  'Show me a worked example before I try a problem myself.',
+  'I prefer to understand the concepts before practising exercises.',
+  'Keep explanations short and ask me often.'
 ]
 
 function freshState(): AppState {

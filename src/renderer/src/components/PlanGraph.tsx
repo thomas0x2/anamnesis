@@ -55,7 +55,7 @@ export function PlanGraph({ plan, nodeState, currentId, overrides, onNodeClick, 
       <svg viewBox={`0 0 ${laid.width} ${laid.height}`} width="100%" style={{ maxWidth: laid.width, maxHeight: size === 'side' ? 520 : 460 }} role="img" aria-label="learning plan">
         <defs>
           <marker id="plan-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#4a5470" />
+            <path d="M0,0 L10,5 L0,10 z" fill="#5a5a5a" />
           </marker>
         </defs>
         {laid.edges.map((e, i) => {

@@ -290,7 +290,7 @@ function ConceptDetail({ id }: { id: string }): ReactElement {
           <span>
             <span className="row" style={{ gap: 8 }}>
               <span className="bar" style={{ flex: 1, position: 'relative' }}>
-                <span style={{ left: pct(lo), width: pct(hi - lo), background: 'rgba(57,135,229,0.35)' }} />
+                <span style={{ left: pct(lo), width: pct(hi - lo), background: 'rgba(163,65,232,0.35)' }} />
                 <span style={{ width: pct(mastery ?? 0) }} />
               </span>
               {pct(mastery)}

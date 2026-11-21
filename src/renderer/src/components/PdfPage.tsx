@@ -6,7 +6,7 @@ import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { Icon } from './Icon'
 
-const DARK_PAGE = { background: '#16191f', foreground: '#dde1e8' }
+const DARK_PAGE = { background: '#111111', foreground: '#e6e6e6' }
 
 export function PdfPage({ page, width, scale, dark = false }: { page: number; width?: number; scale?: number; dark?: boolean }): ReactElement {
   const app = useApp()

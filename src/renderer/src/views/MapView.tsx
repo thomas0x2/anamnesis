@@ -357,7 +357,7 @@ export function MapView({ conceptId }: { conceptId?: string }): ReactElement {
                       markerHeight="6"
                       orient="auto-start-reverse"
                     >
-                      <path d="M0,0 L10,5 L0,10 z" fill="#4a5470" />
+                      <path d="M0,0 L10,5 L0,10 z" fill="#5a5a5a" />
                     </marker>
                     <marker
                       id="map-arrow-hl"
@@ -368,7 +368,7 @@ export function MapView({ conceptId }: { conceptId?: string }): ReactElement {
                       markerHeight="6"
                       orient="auto-start-reverse"
                     >
-                      <path d="M0,0 L10,5 L0,10 z" fill="#8b7cf6" />
+                      <path d="M0,0 L10,5 L0,10 z" fill="#a341e8" />
                     </marker>
                   </defs>
                   {laid.edges.map((e) => {

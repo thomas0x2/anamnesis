@@ -36,7 +36,7 @@ function ChartPanel({ title, hint, children, table, footer }: { title: string; h
 }
 
 // one hue, brighter = more answers (the light end clears the chart surface at 2.8:1)
-const ACTIVITY_RAMP = ['var(--surface-3)', '#1c5cab', '#3987e5', '#86b6ef', '#cde2fb']
+const ACTIVITY_RAMP = ['var(--surface-3)', '#5c2a8a', '#7f33bd', '#a341e8', '#d6a3f7']
 const ACTIVITY_BINS = [0, 1, 6, 12, 24]
 const binOf = (n: number): number => (n >= 24 ? 4 : n >= 12 ? 3 : n >= 6 ? 2 : n >= 1 ? 1 : 0)
 

@@ -2100,9 +2100,33 @@ kbd {
   gap: 18px;
   align-items: start;
 }
+.map-wrap {
+  position: relative;
+  min-width: 0;
+}
+.map-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.map-zoom .zoom-pct {
+  min-width: 52px;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
 .map-canvas {
   position: relative;
   overflow: auto;
+  cursor: grab;
+  touch-action: none;
   height: calc(100vh - 210px);
   min-height: 420px;
   border-radius: var(--radius);
@@ -2110,6 +2134,10 @@ kbd {
   background:
     radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 22px 22px,
     var(--surface);
+}
+.map-canvas.panning {
+  cursor: grabbing;
+  user-select: none;
 }
 .map-node {
   width: 100%;

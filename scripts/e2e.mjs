@@ -168,6 +168,13 @@ async function flow(page) {
     await nav(page, name).click()
     await page.getByRole('heading', { name: heading, level: 1 }).waitFor()
     step(`${name} screen renders`)
+    if (name === 'Course map') {
+      const pctButton = page.locator('.map-zoom .zoom-pct')
+      const before = await pctButton.textContent()
+      await page.getByRole('button', { name: 'Zoom out' }).click()
+      await page.waitForFunction((b) => document.querySelector('.map-zoom .zoom-pct')?.textContent !== b, before)
+      step(`course map zooms out (${before} -> ${await pctButton.textContent()})`)
+    }
   }
   await page.locator('nav.sidebar').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()

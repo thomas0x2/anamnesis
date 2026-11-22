@@ -1,65 +1,66 @@
 /* Anamnesis: dark theme. Tokens first; components below. */
 :root {
   color-scheme: dark;
-  /* ETH AI Club palette: black ground, grey UI, one purple; colour comes from marks and art */
+  /* Ma: black ground, ink greys, hairlines instead of boxes, one vermilion point for "you are here" */
   --bg: #0b0b0b;
-  --bg-2: #0e0e0e;
-  --surface: #141414;
-  --surface-2: #1a1a1a;
-  --surface-3: #232323;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-2: rgba(255, 255, 255, 0.11);
-  --text: #ededed;
-  --text-2: #c4c4c4;
-  --muted: #8c8c8c;
-  --faint: #6a6a6a;
-  /* "accent" is now ink: white and greys carry selection and emphasis */
-  --accent: #e6e6e6;
-  --accent-strong: #ececec;
+  --bg-2: #0b0b0b;
+  --surface: #111111;
+  --surface-2: #161616;
+  --surface-3: #1e1e1e;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --text: #ececea;
+  --text-2: #c9c9c5;
+  --muted: #8a8a85;
+  --faint: #5c5c58;
+  /* "accent" is ink: white and greys carry selection and emphasis */
+  --accent: #ececea;
+  --accent-strong: #ececea;
   --accent-hover: #ffffff;
-  --accent-text: #f2f2f2;
-  --accent-soft: rgba(255, 255, 255, 0.07);
+  --accent-text: #f2f2f0;
+  --accent-soft: rgba(255, 255, 255, 0.05);
   --accent-line: rgba(255, 255, 255, 0.24);
   --on-accent: #0b0b0b;
-  /* the one colour, used sparingly: where you are now (current step, active plan node, the brand) */
-  --brand: #a35ee0;
-  --brand-soft: rgba(163, 94, 224, 0.14);
-  --good: #7ddba4;
-  --good-soft: rgba(125, 219, 164, 0.09);
-  --warn: #eebd6b;
-  --warn-soft: rgba(238, 189, 107, 0.1);
-  --bad: #f0a0a0;
-  --bad-soft: rgba(240, 160, 160, 0.09);
-  --info: #bdbdbd;
-  --info-soft: rgba(255, 255, 255, 0.05);
-  /* chart tokens (club highlights, ordered so neighbours stay apart under colour-vision deficiency) */
-  --s1: #2b8cff;
-  --s2: #ffe23d;
-  --s3: #ff2bd6;
-  --s4: #3dff8b;
+  /* the one colour, used sparingly: where you are now (current step, active plan node, the brand dot, due counts) */
+  --brand: #e5603b;
+  --brand-soft: rgba(229, 96, 59, 0.12);
+  --good: #9fd8b0;
+  --good-soft: rgba(159, 216, 176, 0.07);
+  --warn: #e4c08a;
+  --warn-soft: rgba(228, 192, 138, 0.08);
+  --bad: #ec9a8f;
+  --bad-soft: rgba(236, 154, 143, 0.07);
+  --info: #bdbdb8;
+  --info-soft: rgba(255, 255, 255, 0.04);
+  /* chart tokens: muted, still apart under colour-vision deficiency */
+  --s1: #8fb3e0;
+  --s2: #e6c56f;
+  --s3: #d98fb8;
+  --s4: #8fd1a8;
   --grid: rgba(255, 255, 255, 0.06);
   --axis: rgba(255, 255, 255, 0.14);
-  --st-good: #0ca30c;
-  --st-warn: #fab219;
-  --st-serious: #ec835a;
-  --st-critical: #d03b3b;
-  /* mastery: a heat ramp like the club's brain scan (dark violet, purple, pink, yellow), brighter = further along */
-  --m-unseen: #3a3a3a;
-  --m-introduced: #5d2ca0;
-  --m-developing: #a341e8;
-  --m-proficient: #ff8fe6;
-  --m-mastered: #ffe23d;
-  --radius: 20px;
-  --radius-sm: 12px;
+  --st-good: #6fbf85;
+  --st-warn: #e0b25a;
+  --st-serious: #e08a62;
+  --st-critical: #d0645a;
+  /* mastery: ink getting brighter as it settles, from barely there to full white */
+  --m-unseen: #2a2a2a;
+  --m-introduced: #4a4a48;
+  --m-developing: #77776f;
+  --m-proficient: #b3b3ab;
+  --m-mastered: #f0efe9;
+  --radius: 14px;
+  --radius-sm: 8px;
   --radius-pill: 999px;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
   --ease: cubic-bezier(0.22, 0.8, 0.3, 1);
-  --font: Archivo, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-heading: Unbounded, Archivo, system-ui, sans-serif;
-  --font-serif: 'EB Garamond', Georgia, serif;
-  --font-label: 'Martian Mono', ui-monospace, monospace;
-  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: var(--font);
+  --font-serif: var(--font);
+  --font-label: 'IBM Plex Mono', ui-monospace, monospace;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --sidebar-w: 224px;
+  --topbar-h: 64px;
 }
 
 * {
@@ -2830,47 +2831,34 @@ kbd {
   white-space: pre-wrap;
 }
 
-/* ------------------------------------------------------------ ETH AI Club type: Unbounded shouts, Garamond reads, Martian Mono labels */
-.brand-name {
-  font-family: var(--font-heading);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  text-transform: uppercase;
-  font-size: 14px;
-}
+/* ------------------------------------------------------------ type: one sans for words and a mono for labels; math sits in the line */
 .kind,
 .chip,
 .kbd-hint {
   font-family: var(--font-label);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 .kind,
 .chip {
-  font-weight: 500;
-  text-transform: uppercase;
-  font-size: 10.5px;
+  font-weight: 400;
+  text-transform: lowercase;
+  font-size: 11px;
 }
 .card .md,
 .card .prompt,
 .callout .md,
 .solution .md,
 .hint .md {
-  font-family: var(--font-serif);
-  font-size: 18px;
-  line-height: 1.5;
+  font-size: 17px;
+  line-height: 1.65;
 }
 .card .md .katex,
 .card .prompt .katex {
-  font-size: 1.05em;
+  font-size: 1.08em;
 }
 .card-title .md {
   font-family: inherit;
   font-size: inherit;
-}
-.card-title {
-  font-family: var(--font-heading);
-  font-weight: 700;
-  letter-spacing: -0.02em;
 }
 
 /* ---------------------------------------------------------------- tutor chat (agent) */
@@ -2920,7 +2908,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: 'Martian Mono', var(--mono);
+  font-family: var(--mono);
   font-size: 11.5px;
   letter-spacing: 0.02em;
   color: var(--muted);
@@ -3242,7 +3230,7 @@ h1 {
 .card.current {
   border-color: var(--accent-line);
   box-shadow:
-    0 0 0 4px rgba(163, 94, 224, 0.05),
+    0 0 0 4px rgba(255, 255, 255, 0.03),
     0 24px 60px rgba(0, 0, 0, 0.3);
 }
 .card.current::before {
@@ -3388,7 +3376,7 @@ h1 {
 .composer:focus-within {
   border-color: var(--accent-line);
   box-shadow:
-    0 0 0 4px rgba(163, 94, 224, 0.07),
+    0 0 0 4px rgba(255, 255, 255, 0.04),
     0 14px 40px rgba(0, 0, 0, 0.35);
 }
 .composer .btn.icon {
@@ -3439,7 +3427,7 @@ h1 {
 .plan-node.active {
   border-color: var(--brand);
   background: var(--brand-soft);
-  box-shadow: 0 0 0 4px rgba(163, 94, 224, 0.1);
+  box-shadow: 0 0 0 4px rgba(229, 96, 59, 0.1);
 }
 .plan-node.done {
   border-color: rgba(255, 255, 255, 0.3);
@@ -3550,4 +3538,888 @@ h1 {
 }
 .option .letter {
   margin-top: 2px;
+}
+
+/* ================================================================ Ma
+   Space instead of boxes. Type and hairlines carry the structure, ink carries emphasis,
+   and one vermilion point (--brand) marks where you are. This layer comes last on purpose. */
+body {
+  font-weight: 400;
+  font-size: 15px;
+}
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+h1 {
+  font-weight: 300;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+h2 {
+  font-weight: 300;
+  font-size: 22px;
+}
+h3 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* shell: a quiet top bar instead of a sidebar */
+.app {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+}
+.drag-strip {
+  display: none;
+}
+.topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 32px 0 96px; /* room for the macOS window buttons */
+  -webkit-app-region: drag;
+}
+.topbar button {
+  -webkit-app-region: no-drag;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  margin-right: auto;
+}
+.brand-mark {
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  background: var(--brand);
+}
+.brand-name {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  text-transform: lowercase;
+  color: var(--text);
+}
+.brand-sub {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--faint);
+  margin-left: 6px;
+}
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-item {
+  width: auto;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.nav-item:hover {
+  background: transparent;
+  color: var(--text);
+}
+.nav-item.active {
+  background: transparent;
+  color: var(--text);
+}
+.nav-item.icon {
+  padding: 6px 8px;
+}
+.nav-item .count {
+  margin-left: 0;
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--brand);
+}
+.nav-item .count.hot {
+  color: var(--brand);
+}
+.points {
+  margin-left: 12px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.resume-card {
+  width: auto;
+  margin: 0;
+  padding: 0 0 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.resume-card:hover {
+  background: transparent;
+  border-bottom-color: var(--text);
+}
+.resume-card .label {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--brand);
+}
+.resume-card .title {
+  font-size: 13px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.page {
+  max-width: 980px;
+  padding: 36px 48px 96px;
+}
+.page-narrow {
+  max-width: 720px;
+}
+.page-head {
+  margin-bottom: 36px;
+}
+.page-head .sub,
+.eyebrow,
+.side-title,
+.sidebar-section,
+.session-title .eyebrow,
+.action-card .eyebrow,
+.solution .label,
+.panel-title .hint {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+
+/* primitives: text buttons with a hairline, no fills */
+.btn {
+  height: 32px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
+  font-size: 14px;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.btn:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--text);
+}
+.btn.primary,
+.btn.primary:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--text);
+  font-weight: 500;
+}
+.btn.ghost,
+.actions .btn.ghost {
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn.ghost:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+  border-color: transparent;
+}
+.btn.sm {
+  height: 28px;
+  padding: 0 2px;
+  font-size: 13px;
+}
+.btn.lg {
+  height: 38px;
+  padding: 0 2px;
+  font-size: 15px;
+}
+.btn.icon,
+.btn.icon.sm {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.btn.icon:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.row > .btn + .btn,
+.actions > .btn + .btn {
+  margin-left: 12px;
+}
+.input,
+.textarea,
+.select {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  padding: 8px 0;
+}
+.textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-color: var(--text-2);
+  box-shadow: none;
+}
+.panel {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 18px 0 22px;
+}
+.panel-title h3 {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+.chip,
+.chip.accent,
+.chip.info,
+.chip.outline {
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+}
+.chip.good {
+  background: transparent;
+  padding: 0;
+  color: var(--good);
+}
+.chip.warn {
+  background: transparent;
+  padding: 0;
+  color: var(--warn);
+}
+.chip.bad {
+  background: transparent;
+  padding: 0;
+  color: var(--bad);
+}
+.empty {
+  border: 0;
+  padding: 18px 0;
+  text-align: left;
+}
+.bar {
+  height: 1px;
+  background: var(--line);
+  border-radius: 0;
+}
+.bar > span {
+  background: var(--text);
+  border-radius: 0;
+}
+.seg-bar {
+  height: 2px;
+  gap: 1px;
+}
+.seg-bar > span {
+  border-radius: 0;
+}
+.tabs,
+.seg {
+  background: transparent;
+  border: 0;
+  gap: 18px;
+}
+.tabs button,
+.seg button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 4px 0;
+  color: var(--muted);
+}
+.tabs button.active,
+.seg button.on {
+  background: transparent;
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+/* session: one column of thought */
+.session-head {
+  background: rgba(11, 11, 11, 0.86);
+  border-bottom: 0;
+  padding: 10px 32px 12px;
+}
+.session-title .name {
+  font-weight: 400;
+  font-size: 15px;
+}
+.phases {
+  gap: 12px;
+}
+.phase,
+.phase.current,
+.phase.done {
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+.phase {
+  color: var(--faint);
+}
+.phase.done {
+  color: var(--muted);
+}
+.phase.current {
+  color: var(--text);
+}
+.phase .num,
+.phase.done .num {
+  display: none;
+}
+.phase.current .num {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  font-size: 0;
+  background: var(--brand);
+}
+.phase-sep {
+  width: 12px;
+  background: var(--line-2);
+}
+.session-points {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--faint);
+}
+.session-points svg {
+  display: none;
+}
+.session-side {
+  background: transparent;
+  border-left: 1px solid var(--line);
+}
+.stream {
+  padding: 24px 40px 160px;
+}
+.stream-inner {
+  max-width: 680px;
+  gap: 28px;
+}
+.step-divider {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: var(--faint);
+}
+
+/* cards: no box, a hairline above, the current one marked by a single point */
+.card,
+.card.current,
+.card.thinking {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 22px 0 6px;
+}
+.card.current::before {
+  left: -22px;
+  top: 30px;
+  bottom: auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+.card.past {
+  opacity: 0.7;
+}
+.card.compact {
+  padding: 12px 0;
+}
+.card.compact:hover {
+  background: transparent;
+}
+.card.compact:hover .card-title {
+  color: var(--text);
+}
+.card-head {
+  margin-bottom: 14px;
+}
+.card-title {
+  font-family: var(--font);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.kind {
+  font-size: 11px;
+}
+.card .md,
+.card .prompt {
+  color: var(--text);
+}
+.prompt {
+  font-weight: 400;
+}
+.interaction {
+  border-top: 0;
+  padding-top: 4px;
+  margin-top: 20px;
+}
+
+/* options: lines, not tiles; a small ring that fills when chosen */
+.options {
+  gap: 0;
+}
+.option,
+.option:hover:not(:disabled) {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 14px 2px;
+  gap: 16px;
+  color: var(--text-2);
+}
+.option:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.option:hover:not(:disabled) {
+  color: var(--text);
+}
+.option .letter,
+.option.multi .letter {
+  width: 9px;
+  height: 9px;
+  margin-top: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--faint);
+  background: transparent;
+  font-size: 0;
+}
+.option.multi .letter {
+  border-radius: 2px;
+}
+.option:hover:not(:disabled) .letter {
+  border-color: var(--text-2);
+}
+.option.selected {
+  background: transparent;
+  color: var(--text);
+}
+.option.selected .letter {
+  background: var(--text);
+  border-color: var(--text);
+}
+.option.correct,
+.option.wrong {
+  background: transparent;
+  border-color: var(--line);
+}
+.option.correct {
+  color: var(--text);
+}
+.option.correct .letter {
+  background: var(--good);
+  border-color: var(--good);
+}
+.option.wrong .letter {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+.option .md {
+  font-size: 16.5px;
+  line-height: 1.5;
+}
+.option .md .katex {
+  font-size: 1.08em;
+}
+.option-feedback {
+  color: var(--muted);
+}
+.order-item {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.order-item .pos {
+  background: transparent;
+  font-family: var(--font-label);
+  font-weight: 400;
+}
+.blank {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--muted);
+  border-radius: 0;
+}
+
+/* confidence: four quiet words with their odds */
+.confidence {
+  margin-top: 28px;
+}
+.confidence .label {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  margin-bottom: 10px;
+}
+.confidence .row {
+  gap: 28px;
+}
+.conf-btn {
+  flex: none;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 7px;
+  padding: 4px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  color: var(--text-2);
+}
+.conf-btn:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--text);
+}
+.conf-btn .t {
+  font-size: 14px;
+  font-weight: 400;
+}
+.conf-btn .p {
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.actions {
+  margin-top: 24px;
+  gap: 0 22px;
+}
+
+/* tutor feedback, hints, solutions: a thin rule at the side, no fill */
+.hints .hint,
+.feedback,
+.feedback.correct,
+.feedback.partial,
+.feedback.incorrect,
+.feedback.wrong,
+.solution,
+.callout {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line-2);
+  border-radius: 0;
+  padding: 4px 0 4px 18px;
+}
+.feedback.correct {
+  border-left-color: var(--good);
+}
+.feedback.partial {
+  border-left-color: var(--warn);
+}
+.feedback.incorrect,
+.feedback.wrong {
+  border-left-color: var(--bad);
+}
+.reasoning-box {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line-2);
+  border-radius: 0;
+  padding: 2px 0 2px 18px;
+}
+.reasoning-box.recording {
+  border-left-color: var(--brand);
+}
+.reasoning-box .textarea {
+  background: transparent;
+}
+.thinking-orb {
+  width: 7px;
+  height: 7px;
+  margin-top: 8px;
+  background: var(--brand);
+}
+
+/* plan + queue */
+.plan-node {
+  background: transparent;
+  border-color: var(--line-2);
+}
+.plan-node.active {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  box-shadow: none;
+}
+.plan-item,
+.queue-item,
+.next-item,
+.profile-item,
+.misc-item,
+.script-hit,
+.test-result,
+.check-item,
+.principle {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.queue-item.current {
+  background: transparent;
+  color: var(--text);
+}
+
+/* chat */
+.bubble.user {
+  background: var(--surface-2);
+  border: 0;
+}
+.bubble.tutor {
+  background: transparent;
+  border: 0;
+  padding-left: 0;
+}
+.composer,
+.composer:focus-within {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 0 6px 0;
+}
+.composer:focus-within {
+  border-bottom-color: var(--text-2);
+}
+.toast,
+.modal {
+  border-radius: var(--radius);
+}
+
+/* Today: Nocturne's layout, drawn in Ma */
+.today-head {
+  margin-bottom: 28px;
+}
+.today-head h1 em {
+  font-style: normal;
+  color: var(--faint);
+}
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 48px;
+}
+.today-block {
+  border-top: 1px solid var(--line);
+  padding: 18px 0 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.today-block.wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 24px;
+}
+.today-block .grow {
+  flex: 1;
+  min-width: 0;
+}
+.today-block .title {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.3;
+}
+.today-block .big {
+  font-size: 40px;
+  font-weight: 300;
+  line-height: 1;
+}
+.today-block .desc {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 520px;
+}
+.today-block .go {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.today-block.wide .go {
+  align-self: center;
+  margin: 0;
+}
+.next-item {
+  padding: 12px 0;
+}
+.next-item:first-child {
+  border-top: 0;
+}
+.next-item .t {
+  font-weight: 400;
+}
+.chapter-strip {
+  gap: 14px;
+}
+.chapter-row {
+  grid-template-columns: 22px minmax(0, 1fr) 200px 44px;
+}
+.chapter-row .n,
+.chapter-row .v {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.session-row {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+}
+.session-row:first-child {
+  border-top: 0;
+}
+.legend-row {
+  font-family: var(--font-label);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+.chip,
+.kind {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+.chip {
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+}
+.kind svg {
+  display: none;
+}
+.equation {
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+}
+.assistant-msg {
+  font-size: 16.5px;
+  line-height: 1.7;
+  padding: 0;
+}
+.today-block .chapter-row {
+  grid-template-columns: 18px minmax(0, 1fr) 72px 36px;
+  gap: 10px;
+}
+.seg button + button {
+  border-left: 0;
+}
+.plan-item .title,
+.card-title,
+.concept-panel h3,
+strong,
+b {
+  font-weight: 500;
+}
+.tile {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 16px 0 8px;
+}
+.tile .label {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+.page-head .sub {
+  font-family: var(--font);
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.today-head .sub {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+.toast {
+  background: rgba(17, 17, 17, 0.96);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  color: var(--text-2);
+}
+.toast .pts {
+  background: transparent;
+  color: var(--brand);
+  font-family: var(--font-label);
+  font-weight: 400;
+  font-size: 12px;
+  min-width: 0;
+  padding: 0;
+}
+.map-node {
+  font-family: var(--font);
 }

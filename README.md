@@ -1,12 +1,14 @@
 # Anamnesis
 
-A dark desktop tutor for **Numerical Methods for CS** (NumCS, ETH Zurich, HS26) that teaches the way memory research says works: short interactive steps, questions before answers, nudges instead of solutions, and a persistent model of your understanding that decides what comes next.
+A dark desktop tutor that teaches the way memory research says works: short interactive steps, questions before answers, nudges instead of solutions, and a persistent model of your understanding that decides what comes next. It ships with a full course map for **Numerical Methods for CS** (NumCS, ETH Zurich, HS26), and you can add any other course by giving it the course's PDFs.
 
-The tutor is Claude, run through the **Claude Code CLI** on your own Claude login. It reads the relevant pages of your copy of the lecture notes, so it uses the script's notation and numbering, and every card can open the exact page.
+The tutor is Claude, run through the **Claude Code CLI** on your own Claude login. It reads the relevant pages of your course materials, so it uses their notation and numbering, and every card can open the exact page.
 
 > *Anamnesis* (ἀνάμνησις): recollection. Plato's idea that learning is remembering. Here, learning is retrieving.
 
 ## What it does
+
+**Any course, built from its PDFs.** NumCS comes with a hand-made map of 87 concepts. For any other course, choose **New course…** in the course menu next to the logo, then add its materials: the script, each week's slides, problem sets, solutions, old exams. Each PDF is read on your computer and Claude turns it into concepts with their prerequisites, linked to what the map already has; a problem set adds no duplicates but ties each task to the concepts it practises. Point a course at the folder where you save its files and new PDFs are picked up as they appear (when the app opens or comes to the front), so the course map, the "ready to learn" list and practice grow week by week. Every course keeps its own progress; how you like to learn is shared.
 
 **A tutor agent behind every session.** Learning a topic, practice and spaced reviews all run with a tutor agent that builds each card on the fly with its tools: the probe questions, the plan of reasoning steps you review, the explanations with equations, plots and interactive demos, the checks, the right page of the script. It reads your mind model before it decides what to do and writes to it afterwards. The session screen stays the familiar one (phases, plan review, side panel, results), with the tutor's short notes between the cards and a message box at the bottom: type or dictate a question at any moment, even in the middle of a card. The Tutor page starts an open conversation. (Settings → Learning switches back to the fixed guided sessions below.)
 
@@ -48,7 +50,9 @@ npm install
 npm run dev       # starts the app with hot reload
 ```
 
-On first start a short welcome tour connects the tutor (it tests the CLI), asks for your copy of `lnNPIinf26.pdf`, and lets you tick a few notes about how you learn. The PDF is read once and indexed locally.
+On first start a short welcome tour connects the tutor (it tests the CLI), asks for your copy of `lnNPIinf26.pdf` (the NumCS lecture notes), and lets you tick a few notes about how you learn. The PDF is read once and indexed locally.
+
+To add another course: course menu (next to the logo) → **New course…**, fill in the name and, if you know it, the exam format, choose the folder where you keep its PDFs, and let the app read them. Mapping a set of slides takes about a minute; a long script is read in parts and takes a few minutes. The **Materials** page lists every file, what it added to the map, and lets you change a file's kind, map it again or remove it.
 
 To build a standalone app: `npm run dist:mac`, then open `dist/mac-arm64/Anamnesis.app` (or `dist/mac/` on Intel). Drag it to Applications if you like.
 
@@ -64,9 +68,9 @@ No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings.
 
 ## Privacy and the lecture notes
 
-* The PDF never leaves your computer as a file and is not part of this repository. Only the text of the few pages relevant to the current step is sent to Claude, inside your own Claude Code session.
+* PDFs never leave your computer as files and are not part of this repository. Only the text of the few pages relevant to the current step is sent to Claude, inside your own Claude Code session. When you add a material, its text is sent to Claude once (in parts) to build the course map; the map of a course you create is stored in your data folder, not in this repository. Check that your course's materials may be used this way.
 * The script's title page asks that it not be uploaded to generative AI without the author's consent. The author agreed to this use for this app demo. If that agreement does not cover you, turn off **Settings → Lecture notes → Ground steps in the script**; the tutor then works from section and theorem numbers, and you can still open every page in the app.
-* Your learner model, sessions and settings are JSON files in `~/Library/Application Support/Anamnesis` (written atomically, with one backup each).
+* Your learner model, sessions, settings, courses and their maps are JSON files in `~/Library/Application Support/Anamnesis` (written atomically, with one backup each).
 * The CLI runs with no built-in tools, no slash commands and no settings, in an empty working folder. The tutor agent can only use the app's own tools (cards, plan, mind model, script pages), served on 127.0.0.1 with a per-chat token. It cannot read or change anything else on your computer.
 
 ## Development
@@ -94,7 +98,7 @@ Leave out `ANAMNESIS_FAKE=1` to use the real CLI from the browser. `?backend=dem
 Project layout:
 
 ```
-courses/numcs/course.json   the course graph: 87 concepts, prerequisites, script pages, demos
+courses/numcs/course.json   the built-in course graph: 87 concepts, prerequisites, script pages, demos
 src/shared/                 pure logic shared by all processes (learner model, FSRS, grading, prompts, schemas, numerics)
 src/node/                   Claude Code CLI runner, the tutor agent and its MCP tool bridge, JSON storage
 src/main/, src/preload/     Electron main process and the bridge to the renderer
@@ -110,4 +114,4 @@ More: [docs/LEARNING_SCIENCE.md](docs/LEARNING_SCIENCE.md) explains which findin
 
 Inspired by [learnharness](https://github.com/amosblomqvist/learnharness). Memory model: [FSRS-6](https://github.com/open-spaced-repetition) by the open-spaced-repetition project. Built with Electron, React, KaTeX, pdf.js, math.js, Mermaid, dagre and transformers.js.
 
-The course content belongs to the NumCS lecture notes by V. Gradinaru (ETH Zurich). This repository contains only a map of the script's structure (concept names, prerequisites, page ranges), not its text.
+The NumCS course content belongs to the lecture notes by V. Gradinaru (ETH Zurich). This repository contains only a map of the script's structure (concept names, prerequisites, page ranges), not its text. Courses you add are built on your computer from your own files and never become part of the repository.

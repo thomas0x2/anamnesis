@@ -8,6 +8,7 @@ import type {
   CardResponse,
   ConceptState,
   Course,
+  CourseConcept,
   LearnerModel,
   PracticeTarget,
   Session,
@@ -18,6 +19,15 @@ import { daysBetween, truncate } from "./util";
 export interface ScriptPage {
   page: number;
   text: string;
+  /** where the page is, e.g. "Pointers, p. 12" */
+  label?: string;
+}
+
+const LANG_NAMES: Record<string, string> = { en: "English", de: "German", fr: "French", it: "Italian" };
+
+/** One excerpt header: the app page number (what script blocks use) and where it is. */
+export function pageHeader(p: ScriptPage): string {
+  return p.label && p.label !== `p. ${p.page}` ? `[page ${p.page} · ${p.label}]` : `[PDF page ${p.page}]`;
 }
 
 export const CORE_RULES = String.raw`You are Anamnesis, a one-to-one tutor for the ETH Zurich course "Numerical Methods for CS" (NumCS, lecture notes "Numerische Methoden" by V. Gradinaru, in German). You run inside a desktop learning app. You never chat freely: every reply is one JSON object that the app renders as a short sequence of interactive cards. Write in English; when you introduce a term, give the script's German term once in parentheses, e.g. divided differences (dividierte Differenzen).
@@ -103,11 +113,49 @@ notes: for concepts where you learned something new, 1-2 sentences on the learne
 # Output
 Exactly one JSON object matching the schema, fields in this order: assessment (one sentence on what the latest answers show, or null), cards, plan (PLAN only, else null), model, control. Card counts: probe 1-3, plan 1, teach 3-4, wrap 2, practice 1, review 1-2.`;
 
+/**
+ * The tutor rules for a course. The built-in course uses CORE_RULES as written; a course the
+ * learner created gets the same doctrine with its own name, language, exam format and code language.
+ */
+export function coreRules(course: Course): string {
+  if (course.builtin || course.id === "numcs") return CORE_RULES;
+  const lang = course.language ?? course.script?.language ?? "en";
+  const langName = LANG_NAMES[lang] ?? lang;
+  const who = [course.lecturer, course.institution].filter(Boolean).join(", ");
+  const code = course.exam.codeLanguage?.trim();
+  const intro = `You are Anamnesis, a one-to-one tutor for the course "${course.title}"${course.courseNumber ? ` (${course.courseNumber})` : ""}${who ? `, ${who}` : ""}. The course materials (script, slides, problem sets) are the learner's own PDFs${lang !== "en" ? `, in ${langName}` : ""}. You run inside a desktop learning app. You never chat freely: every reply is one JSON object that the app renders as a short sequence of interactive cards. Write in English${lang !== "en" ? `; when you introduce a term, give the materials' ${langName} term once in parentheses` : ""}.`;
+  const exam = course.exam.format?.trim() || "Not known yet. Ask open questions with short derivations and explanations, and multiple-choice items with plausible distractors.";
+  let r = CORE_RULES;
+  r = intro + r.slice(r.indexOf("\n\n# How you teach"));
+  r = r.replace(/# Exam format\n[^#]*\n\n# Blocks/, `# Exam format\n${exam}\n\n# Blocks`);
+  r = r
+    .replace("7. Use the script. Use its notation and labels (e.g. \"Theorem 2.4.11\") and add a script block with the PDF page when it helps the learner look it up. Never paste long passages.", "7. Use the course materials. Use their notation and labels (e.g. \"Theorem 4.7.6\", a slide title) and add a script block with the page when it helps the learner look it up. Never paste long passages.")
+    .replace("If the script's convention differs from other sources, follow the script and say so.", "If the materials' convention differs from other sources, follow the materials and say so.")
+    .replace("L1 recall or recognize a definition, property or formula; cue close to the script.", "L1 recall or recognize a definition, property or formula; cue close to the materials.")
+    .replace("L2 apply one step with familiar notation (compute a divided difference, a quadrature weight, one Newton step).", "L2 apply one step with familiar notation (one computation, one derivation step, tracing one line of code).")
+    .replace("(derivation, convergence or cost analysis, Python/numpy code completion)", code ? `(derivation, analysis, ${code} code completion)` : "(derivation, analysis, design or explanation)")
+    .replace("include exam-style", "include exam-style")
+    .replace(`- script: page = PDF page number of the lecture notes, label (e.g. "Thm. 2.4.11"), md = what to look at there.`, `- script: page = page number of the course materials as given in the excerpts and the concept list, label (e.g. "Thm. 4.7.6" or a slide title), md = what to look at there.`)
+    .replace(`- code: code.language "python", code.source.`, `- code: code.language${code ? ` (usually "${code.toLowerCase().split(/[ ,(]/)[0]}")` : ""}, code.source.`)
+    .replace("# Demos (id: what it shows; params)", "# Demos (id: what it shows; params)\nThese demos come from numerical analysis; use one only when it shows exactly the idea at hand, otherwise use plots, diagrams, tables or a sketch.")
+    .replace(`misconceptions: newly observed ones (status active) or ones now clearly fixed (status resolved), phrased as the wrong belief ("thinks the DFT returns values on the fine grid").`, `misconceptions: newly observed ones (status active) or ones now clearly fixed (status resolved), phrased as the wrong belief ("thinks an array name is a modifiable pointer").`);
+  return r;
+}
+
+/** Where a concept is treated, as the tutor sees it: main pages, other sources, problem-set tasks. */
+export function conceptPlaces(c: CourseConcept): string {
+  const parts: string[] = [];
+  if (c.pages.length >= 2) parts.push(`pp. ${c.pages[0]}-${c.pages[1]}`);
+  for (const s of (c.sources ?? []).slice(0, 4)) parts.push(`${s.label} pp. ${s.pages[0]}-${s.pages[1]}`);
+  const ex = (c.exercises ?? []).slice(0, 4).map((e) => `${e.label} (pp. ${e.pages[0]}-${e.pages[1]})`);
+  return [parts.length ? `pages: ${parts.join("; ")}` : "", ex.length ? `problem sets: ${ex.join("; ")}` : ""].filter(Boolean).join(" · ");
+}
+
 function conceptLine(graph: CourseGraph, id: string): string {
   const c = graph.get(id);
   if (!c) return `- ${id}`;
-  const pages = c.pages.length ? ` [pp. ${c.pages[0]}-${c.pages[1]}]` : "";
-  return `- ${c.id}: ${c.title} (${c.de})${pages}. ${c.summary}`;
+  const places = conceptPlaces(c);
+  return `- ${c.id}: ${c.title}${c.de && c.de !== c.title ? ` (${c.de})` : ""}${places ? ` [${places}]` : ""}. ${c.summary}`;
 }
 
 function sessionContext(
@@ -126,7 +174,7 @@ function sessionContext(
       out.push(
         `Goal summary: ${g.summary}`,
         `Why it matters: ${g.why}`,
-        `Script references: ${g.refs.join(", ") || "none"}${g.pages.length ? `; PDF pages ${g.pages[0]}-${g.pages[1]}` : ""}.`,
+        `Script references: ${g.refs.join(", ") || "none"}${conceptPlaces(g) ? `; ${conceptPlaces(g)}` : ""}.`,
       );
     }
     const anc = graph.ancestors(session.goalConceptId, 3);
@@ -158,9 +206,11 @@ function sessionContext(
     out.push(
       "",
       "# Script excerpts",
-      "Text extracted from the learner's own PDF of the lecture notes (German; formulas may be garbled by extraction, so rely on your own knowledge of the math and use the script for notation, labels and emphasis). The author permits this use in the app; do not reproduce long passages.",
+      course.builtin || course.id === "numcs"
+        ? "Text extracted from the learner's own PDF of the lecture notes (German; formulas may be garbled by extraction, so rely on your own knowledge of the math and use the script for notation, labels and emphasis). The author permits this use in the app; do not reproduce long passages."
+        : "Text extracted from the learner's own PDFs of the course materials (formulas and code may be garbled by extraction, so rely on your own knowledge of the subject and use the excerpts for notation, labels and emphasis). The page number in each header is the one to use in script blocks. Do not reproduce long passages.",
     );
-    for (const p of pages) out.push(`\n[PDF page ${p.page}]\n${p.text.trim()}`);
+    for (const p of pages) out.push(`\n${pageHeader(p)}\n${p.text.trim()}`);
   }
   return out.join("\n");
 }
@@ -171,7 +221,7 @@ export function buildSystemPrompt(
   session: Session,
   pages: ScriptPage[],
 ): string {
-  return `${CORE_RULES}\n\n${sessionContext(course, graph, session, pages)}`;
+  return `${coreRules(course)}\n\n${sessionContext(course, graph, session, pages)}`;
 }
 
 // ---------------------------------------------------------------- learner model section
@@ -465,7 +515,7 @@ export function buildStepPrompt(
       [
         "# Script pages for this item",
         ...task.targetPages.map(
-          (p) => `[PDF page ${p.page}]\n${p.text.trim()}`,
+          (p) => `${pageHeader(p)}\n${p.text.trim()}`,
         ),
       ].join("\n"),
     );

@@ -1,6 +1,6 @@
 // The window: top bar navigation, the routed view, toasts, the script drawer and onboarding.
 import { dueConcepts } from '@shared/selection'
-import { useEffect, useMemo, useRef, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { BrandMark, Icon } from './components/Icon'
 import { ScriptPeek } from './components/PdfPage'
 import { useApp, type Route } from './engine/app'
@@ -9,6 +9,7 @@ import { useStore } from './engine/store'
 import { useNow } from './lib/hooks'
 import { ChatScreen } from './views/ChatView'
 import { HomeView } from './views/HomeView'
+import { CourseDialog, MaterialsView } from './views/MaterialsView'
 import { MapView } from './views/MapView'
 import { MindView } from './views/MindView'
 import { Onboarding } from './views/Onboarding'
@@ -21,18 +22,26 @@ export function App(): ReactElement {
   const app = useApp()
   const route = useStore(app.ui, (u) => u.route)
   const onboarding = useStore(app.ui, (u) => u.onboarding)
+  const courseKey = useStore(app.ui, (u) => u.courseKey)
   const main = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (main.current) main.current.scrollTop = 0
   }, [route.name])
 
+  // new PDFs in the course folder are picked up when the window comes to the front
+  useEffect(() => {
+    const onFocus = (): void => void app.scanFolder()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [app])
+
   return (
     <div className="app">
       <div className="drag-strip" />
-      <TopBar />
+      <TopBar key={`top-${courseKey}`} />
       <main className="main" ref={main}>
-        <RouteView route={route} />
+        <RouteView key={courseKey} route={route} />
       </main>
       <ScriptPeek />
       <Toasts />
@@ -43,6 +52,8 @@ export function App(): ReactElement {
 
 function RouteView({ route }: { route: Route }): ReactElement {
   switch (route.name) {
+    case 'materials':
+      return <MaterialsView />
     case 'home':
       return <HomeView />
     case 'map':
@@ -59,6 +70,8 @@ function RouteView({ route }: { route: Route }): ReactElement {
       return <ScriptView page={route.page} />
     case 'settings':
       return <SettingsView />
+    default:
+      return <HomeView />
   }
 }
 
@@ -68,7 +81,7 @@ const NAV: { name: Route['name']; label: string; icon: string }[] = [
   { name: 'map', label: 'Course map', icon: 'map' },
   { name: 'mind', label: 'Mind model', icon: 'mind' },
   { name: 'stats', label: 'Stats', icon: 'stats' },
-  { name: 'script', label: 'Script', icon: 'book' }
+  { name: 'materials', label: 'Materials', icon: 'book' }
 ]
 
 function TopBar(): ReactElement {
@@ -80,29 +93,36 @@ function TopBar(): ReactElement {
   const now = useNow()
   const due = useMemo(() => dueConcepts(learner, now).filter((id) => app.graph.get(id)).length, [app, learner, now])
   const week = useMemo(() => rewards.events.filter((e) => now.getTime() - Date.parse(e.at) < 7 * 86_400_000).reduce((s, e) => s + e.points, 0), [rewards, now])
-  const course = app.course
+  const jobRunning = useStore(app.job, (j) => !!j)
+  const pending = useStore(app.pending, (p) => p.length)
 
   return (
     <header className="topbar">
-      <div className="brand" title={`${course.title} · ${course.term}`}>
+      <div className="brand">
         <BrandMark />
         <span className="brand-name">anamnesis</span>
-        <span className="brand-sub">
-          {course.short} · {course.term}
-        </span>
+        <CourseSwitcher />
       </div>
       {sc && route !== 'session' && <ResumeCard sc={sc} />}
       <nav className="topnav" aria-label="Main">
-        {NAV.map((n) => (
-          <button key={n.name} className={`nav-item ${route === n.name ? 'active' : ''}`} onClick={() => app.go({ name: n.name } as Route)} aria-current={route === n.name ? 'page' : undefined} aria-label={n.label}>
+        {NAV.map((n) => {
+          const on = route === n.name || (n.name === 'materials' && route === 'script')
+          return (
+          <button key={n.name} className={`nav-item ${on ? 'active' : ''}`} onClick={() => app.go({ name: n.name } as Route)} aria-current={on ? 'page' : undefined} aria-label={n.label}>
             {n.label}
+            {n.name === 'materials' && (jobRunning || pending > 0) && (
+              <span className={`count ${pending ? 'hot' : ''}`} title={jobRunning ? 'Reading new material' : `${pending} new files in the course folder`}>
+                {pending || '…'}
+              </span>
+            )}
             {n.name === 'home' && due > 0 && (
               <span className="count hot" title={`${due} concepts due for review`}>
                 {due}
               </span>
             )}
           </button>
-        ))}
+          )
+        })}
         <button className={`nav-item icon ${route === 'settings' ? 'active' : ''}`} onClick={() => app.go({ name: 'settings' })} aria-label="Settings" title="Settings">
           <Icon name="settings" size={16} />
         </button>
@@ -111,6 +131,72 @@ function TopBar(): ReactElement {
         </span>
       </nav>
     </header>
+  )
+}
+
+function CourseSwitcher(): ReactElement {
+  const app = useApp()
+  const courses = useStore(app.courses)
+  const { course } = useStore(app.courseView)
+  const [open, setOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div className="course-switch" ref={ref}>
+      <button className="brand-sub course-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} title={`${course.title}${course.term ? ` · ${course.term}` : ''}: switch course`}>
+        {course.short}
+        {course.term ? ` · ${course.term}` : ''}
+        <Icon name="chev-down" size={12} />
+      </button>
+      {open && (
+        <div className="course-menu" role="menu">
+          {courses.map((c) => (
+            <button
+              key={c.id}
+              role="menuitemradio"
+              aria-checked={c.id === course.id}
+              className={`course-item ${c.id === course.id ? 'on' : ''}`}
+              onClick={() => {
+                setOpen(false)
+                void app.switchCourse(c.id)
+              }}
+            >
+              <span className="dot" />
+              <span className="t">{c.short}</span>
+              <span className="s">{c.title}</span>
+            </button>
+          ))}
+          <div className="course-sep" />
+          <button
+            role="menuitem"
+            className="course-item"
+            onClick={() => {
+              setOpen(false)
+              setCreating(true)
+            }}
+          >
+            <Icon name="plus" size={13} />
+            <span className="t">New course…</span>
+          </button>
+        </div>
+      )}
+      {creating && <CourseDialog onClose={() => setCreating(false)} />}
+    </div>
   )
 }
 

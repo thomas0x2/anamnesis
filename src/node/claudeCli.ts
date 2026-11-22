@@ -179,10 +179,11 @@ export async function runClaude(req: LlmRequest, cfg: CliConfig, onEvent: (e: Ll
         finish({ id: req.id, ok: false, errorKind: 'cancelled', error: 'Cancelled' })
       }
     })
+    const timeoutSec = Math.max(20, cfg.timeoutSec, req.timeoutSec ?? 0)
     const timer = setTimeout(() => {
       kill()
-      finish({ id: req.id, ok: false, errorKind: 'timeout', error: `No answer within ${cfg.timeoutSec} s` })
-    }, Math.max(20, cfg.timeoutSec) * 1000)
+      finish({ id: req.id, ok: false, errorKind: 'timeout', error: `No answer within ${timeoutSec} s` })
+    }, timeoutSec * 1000)
 
     const emitPartial = (force = false): void => {
       const now = Date.now()

@@ -9,7 +9,7 @@ import { sanitizePlan } from '@shared/graph'
 import { getConcept } from '@shared/mastery'
 import { normalizeCard, normalizeModelUpdate, normalizePlan, type NormalizeContext } from '@shared/normalize'
 import { parsePartialJson } from '@shared/partialJson'
-import { conceptModelLine, describeResponse } from '@shared/prompts'
+import { conceptModelLine, conceptPlaces, describeResponse, pageHeader } from '@shared/prompts'
 import { dueConcepts } from '@shared/selection'
 import type { Card, CardResponse, PlanNodeState, PlanState, PracticeTarget, Session, SessionType } from '@shared/types'
 import { nowIso, truncate, uid } from '@shared/util'
@@ -455,20 +455,20 @@ export class ChatController {
   // ------------------------------------------------------------ look-ups
   private readScript(args: Record<string, unknown>): AgentToolResult {
     const sc = this.app.script
-    if (!sc.ready) return { text: 'The lecture notes PDF is not loaded in the app (the learner can add it in Settings). Use the page references from the course concepts instead.' }
+    if (!sc.ready) return { text: 'No course materials are loaded in the app (the learner can add them on the Materials page). Use the page references from the course concepts instead.' }
     const pages = Array.isArray(args.pages) ? args.pages.map(Number).filter((n) => Number.isFinite(n)) : []
     if (pages.length) {
       const a = Math.max(1, Math.round(pages[0]))
       const b = Math.max(a, Math.min(a + 3, Math.round(pages[1] ?? pages[0])))
       const got = sc.range([a, b], 4)
       if (!got.length) return { text: `No text on pages ${a}-${b}.` }
-      return { text: got.map((p) => `[PDF page ${p.page}]\n${p.text.trim()}`).join('\n\n') }
+      return { text: got.map((p) => `${pageHeader(p)}\n${p.text.trim()}`).join('\n\n') }
     }
     const q = typeof args.query === 'string' ? args.query : ''
     if (!q.trim()) return { text: 'Give pages or a query.', isError: true }
     const hits = sc.search(q, 12)
     if (!hits.length) return { text: `No matches for "${q}".` }
-    return { text: hits.map((h) => `p. ${h.page} ${h.title}: ${h.snippet}`).join('\n') }
+    return { text: hits.map((h) => `page ${h.page} (${h.title}): ${h.snippet}`).join('\n') }
   }
 
   private course(args: Record<string, unknown>): AgentToolResult {
@@ -486,7 +486,7 @@ export class ChatController {
               `  why: ${c.why}`,
               `  requires: ${c.requires.map((r) => `${r} (${g.title(r)})`).join(', ') || 'nothing'}`,
               `  enables: ${g.descendants(id, 1).map((r) => `${r} (${g.title(r)})`).join(', ') || 'nothing'}`,
-              `  script: ${c.refs.join(', ') || 'no labels'}${c.pages.length ? `, PDF pages ${c.pages[0]}-${c.pages[1]}` : ''}`,
+              `  script: ${c.refs.join(', ') || 'no labels'}${conceptPlaces(c) ? `, ${conceptPlaces(c)}` : ''}`,
               c.demos.length ? `  demos: ${c.demos.join(', ')}` : ''
             ]
               .filter(Boolean)

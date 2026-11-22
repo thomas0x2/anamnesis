@@ -220,10 +220,12 @@ function SketchBlock({ html, height }: { html: string; height: number }): ReactE
 export function ScriptRef({ page, label, md }: { page: number | null; label: string | null; md: string | null }): ReactElement {
   const app = useApp()
   const status = useStore(app.script.status, (s) => s.state)
-  const printed = page !== null ? page + app.course.script.printedPageOffset : null
+  const at = page !== null && status === 'ready' ? app.script.locate(page) : null
+  const printed = at ? at.local + at.material.printedOffset : page !== null ? page + app.course.script.printedPageOffset : null
+  const multi = app.script.materials().filter((m) => m.offset !== null).length > 1
   return (
     <div className="script-ref">
-      <div className="page-badge" title={page !== null ? `PDF page ${page}` : undefined}>
+      <div className="page-badge" title={at ? `${at.material.title}, PDF page ${at.local}` : undefined}>
         {printed !== null ? (
           <span>
             p.
@@ -236,7 +238,9 @@ export function ScriptRef({ page, label, md }: { page: number | null; label: str
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="small" style={{ fontWeight: 600 }}>
-          {label ? `${label} · ` : ''}Script{printed !== null ? `, page ${printed}` : ''}
+          {label ? `${label} · ` : ''}
+          {at && multi ? at.material.title : 'Script'}
+          {printed !== null ? `, page ${printed}` : ''}
         </div>
         {md && (
           <div className="small muted">

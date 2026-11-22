@@ -267,6 +267,7 @@ export function fakeResponse(req: LlmRequest): unknown {
   }
   if (req.kind === 'chat') return { blocks: [{ type: 'text', md: `Good question. Think about what stays the same for every $j$. *(demo tutor; you asked: ${(m.question ?? '').slice(0, 80)})*` }], speech: 'Think about what stays the same for every j.' }
   if (req.kind === 'test') return { ok: true, model: 'demo' }
+  if (req.kind === 'map') return (req.meta as { fake?: unknown } | undefined)?.fake ?? { note: null, chapters: [], concepts: [], links: [], exercises: [] }
   switch (m.phase) {
     case 'probe':
       return (m.round ?? 1) > 1 ? planStep(m) : probeStep(m)

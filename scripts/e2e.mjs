@@ -9,7 +9,7 @@
 // and opens every main screen. It fails on any page error or console error.
 // Needs Playwright: `npm i -D playwright && npx playwright install chromium` if it is not installed globally.
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -67,6 +67,88 @@ process.on('SIGINT', () => {
 })
 
 const step = (msg) => console.log(`· ${msg}`)
+
+/** A small valid PDF with one line of text per page (fixtures for the materials flow; no course content). */
+function makePdf(lines) {
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+  const kids = []
+  for (const line of lines) {
+    const text = line.replace(/[()\\]/g, '')
+    const stream = `BT /F1 24 Tf 72 700 Td (${text}) Tj ET`
+    objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)
+    const content = objs.length
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${content} 0 R >>`)
+    kids.push(`${objs.length} 0 R`)
+  }
+  objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`
+  let out = '%PDF-1.4\n'
+  const offsets = []
+  objs.forEach((o, i) => {
+    offsets.push(out.length)
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`
+  })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return out
+}
+
+/** A second course built from PDFs in a folder: create it, read and map the files, add one more later, switch back. */
+async function coursesFlow(page) {
+  const folder = join(dataDir, 'fixture-course')
+  mkdirSync(join(folder, 'Exercises'), { recursive: true })
+  writeFileSync(join(folder, '01-Basics.pdf'), makePdf(Array.from({ length: 12 }, (_, i) => `Basics slide ${i + 1}: state space models`)))
+  writeFileSync(join(folder, 'Exercises', 'serie1.pdf'), makePdf(['Exercise 1: modelling', 'Exercise 2: linearisation']))
+  const pointsBefore = (await page.locator('.points').textContent())?.trim()
+
+  await page.locator('.course-btn').click()
+  await page.getByRole('menuitem', { name: /New course/ }).click()
+  await page.getByPlaceholder('Systems Programming and Computer Architecture').fill('Fixture Systems')
+  await page.getByPlaceholder('SPCA').fill('FS')
+  await page.getByPlaceholder('/path/to/the/course/folder (optional)').fill(folder)
+  await page.getByRole('button', { name: 'Create course' }).click()
+  await page.locator('.course-btn', { hasText: 'FS' }).waitFor()
+  step('new course created from the course menu')
+  await page.locator('.course-notice').waitFor()
+  await nav(page, 'Materials').click()
+  await page.getByRole('heading', { name: 'Materials', level: 1 }).waitFor()
+  await page.locator('.mat-row', { hasText: '01-Basics.pdf' }).locator('.mat-status', { hasText: 'mapped' }).waitFor({ timeout: 60_000 })
+  await page.locator('.mat-row', { hasText: 'serie1.pdf' }).locator('.mat-status', { hasText: 'mapped' }).waitFor({ timeout: 60_000 })
+  const kind = await page.locator('.mat-row', { hasText: 'serie1.pdf' }).locator('select').inputValue()
+  if (kind !== 'exercises') throw new Error(`serie1.pdf was taken for ${kind}, not a problem set`)
+  step('the folder was scanned, both PDFs read and mapped (the problem set recognised)')
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-materials.png`) })
+
+  // next week: a new file appears in the folder
+  writeFileSync(join(folder, '02-Feedback.pdf'), makePdf(Array.from({ length: 6 }, (_, i) => `Feedback slide ${i + 1}: closed loop`)))
+  await page.getByRole('button', { name: /Check now/ }).click()
+  await page.locator('.mat-row', { hasText: '02-Feedback.pdf' }).locator('.mat-status', { hasText: 'mapped' }).waitFor({ timeout: 60_000 })
+  step('a PDF added to the folder later extends the map')
+
+  await nav(page, 'Course map').click()
+  await page.getByRole('heading', { name: 'Course map', level: 1 }).waitFor()
+  const sub = (await page.locator('.page-head .sub').first().textContent()) ?? ''
+  const n = Number(/(\d+) concepts/.exec(sub)?.[1] ?? 0)
+  if (n < 3) throw new Error(`expected concepts from the materials on the map, got "${sub}"`)
+  step(`the course map has ${n} concepts from the materials`)
+  await nav(page, 'Materials').click()
+  await page.locator('.mat-row', { hasText: '01-Basics.pdf' }).getByRole('button', { name: /Open/ }).click()
+  await page.getByRole('heading', { name: 'Reader', level: 1 }).waitFor()
+  await page.locator('canvas.pdf-page').waitFor()
+  step('the reader opens a material')
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-reader.png`) })
+
+  await nav(page, 'Today').click()
+  await page.getByRole('button', { name: 'Start with a probe' }).click()
+  if (!((await runSession(page, 'new course learn')) > 0)) throw new Error('the learn session in the new course earned no points')
+
+  await page.locator('.course-btn').click()
+  await page.getByRole('menuitemradio', { name: /NumCS/ }).click()
+  await page.locator('.course-btn', { hasText: 'NumCS' }).waitFor()
+  const pointsAfter = (await page.locator('.points').textContent())?.trim()
+  if (pointsAfter !== pointsBefore) throw new Error(`switching back changed the points: ${pointsBefore} -> ${pointsAfter}`)
+  step('switching back to the first course keeps its progress')
+}
 let shotN = 0
 const seenKinds = new Set()
 let reasoned = false
@@ -278,7 +360,7 @@ async function flow(page) {
     ['Course map', 'Course map'],
     ['Mind model', 'Mind model'],
     ['Stats', 'Stats'],
-    ['Script', 'Script']
+    ['Materials', 'Materials']
   ]) {
     await nav(page, name).click()
     await page.getByRole('heading', { name: heading, level: 1 }).waitFor()
@@ -295,6 +377,7 @@ async function flow(page) {
   await page.locator('nav.topnav').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
   step('Settings screen renders')
+  if (!electronMode) await coursesFlow(page)
 }
 
 try {

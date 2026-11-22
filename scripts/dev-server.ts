@@ -15,6 +15,7 @@ import { FakeAgentHost } from '../src/shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../src/shared/agentTypes'
 import { cancelClaude, runClaude, testClaude, type CliConfig } from '../src/node/claudeCli'
 import { JsonStore, loadSettings, saveSettings } from '../src/node/store'
+import { readMaterial, scanPdfs } from '../src/node/files'
 import { fakeGenerate } from '../src/shared/fakeTutor'
 import type { LlmRequest, LlmResult, Settings } from '../src/shared/types'
 
@@ -79,6 +80,19 @@ const server = createServer((req, res) => {
           const data = await readFile(scriptPath)
           res.writeHead(200, { 'content-type': 'application/pdf', 'cache-control': 'no-store' })
           return res.end(data)
+        }
+        case 'GET /api/material': {
+          const data = await readMaterial(store, await loadSettings(store), url.searchParams.get('course') ?? '', url.searchParams.get('id') ?? '', scriptPath)
+          if (!data) {
+            res.writeHead(204, { 'cache-control': 'no-store' })
+            return res.end()
+          }
+          res.writeHead(200, { 'content-type': 'application/pdf', 'cache-control': 'no-store' })
+          return res.end(data)
+        }
+        case 'POST /api/scan': {
+          const { path } = await body<{ path: string }>(req)
+          return send(res, 200, { files: typeof path === 'string' && path ? await scanPdfs(path) : null })
         }
         case 'GET /api/test':
           if (fake) return send(res, 200, { ok: true, message: 'Dev server in fake mode: the scripted tutor answers.', path: null, version: null })

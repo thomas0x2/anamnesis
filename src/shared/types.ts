@@ -18,6 +18,21 @@ export interface CourseConcept {
   refs: string[]
   demos: string[]
   tier: ConceptTier
+  /** set on concepts the app added from a course material (not part of a built-in course file) */
+  addedAt?: string
+  /** id of the material that introduced this concept */
+  material?: string
+  /** further page ranges (app page numbers) where the concept is treated, e.g. in later slides */
+  sources?: ConceptSource[]
+  /** problem-set tasks that practise this concept */
+  exercises?: ConceptSource[]
+}
+
+export interface ConceptSource {
+  material: string
+  /** [first, last] app page numbers (see Material.offset) */
+  pages: number[]
+  label: string
 }
 
 export interface CourseChapter {
@@ -29,6 +44,11 @@ export interface CourseChapter {
 
 export interface Course {
   id: string
+  /** shipped with the app (courses/<id>/course.json); otherwise created by the learner */
+  builtin?: boolean
+  /** language of the course materials, e.g. "de" or "en" */
+  language?: string
+  institution?: string
   version: number
   title: string
   short: string
@@ -39,6 +59,82 @@ export interface Course {
   exam: { format: string; codeLanguage: string }
   chapters: CourseChapter[]
   concepts: CourseConcept[]
+}
+
+// ---------------------------------------------------------------- course materials
+export const MATERIAL_KINDS = ['script', 'slides', 'exercises', 'solutions', 'exam', 'notes'] as const
+export type MaterialKind = (typeof MATERIAL_KINDS)[number]
+
+export type MaterialStatus = 'queued' | 'indexing' | 'mapping' | 'mapped' | 'error' | 'skipped'
+
+/** One PDF of a course (script, a week's slides, a problem set). Its pages get app page numbers offset+1 … offset+numPages. */
+export interface Material {
+  id: string
+  kind: MaterialKind
+  title: string
+  fileName: string
+  path: string | null
+  size: number
+  mtimeMs: number | null
+  /** 0 until the PDF has been read */
+  numPages: number
+  /** app page number = offset + PDF page; fixed once assigned */
+  offset: number | null
+  /** printed page = PDF page + printedOffset */
+  printedOffset: number
+  addedAt: string
+  status: MaterialStatus
+  /** mapping progress in chunks of pages */
+  chunksDone: number
+  chunksTotal: number
+  error: string | null
+  mappedAt: string | null
+  /** what the mapping did, for the materials list */
+  added: string[]
+  linked: string[]
+}
+
+export interface MaterialsFile {
+  version: 1
+  items: Material[]
+  /** files in the course folder the learner chose not to add */
+  ignored: string[]
+}
+
+/** What the app adds to a course from its materials: new chapters and concepts, and links on existing concepts. */
+export interface CourseExtension {
+  version: 1
+  chapters: CourseChapter[]
+  concepts: CourseConcept[]
+  /** extra sources and exercises on concepts of the base course */
+  patches: Record<string, { sources?: ConceptSource[]; exercises?: ConceptSource[] }>
+}
+
+/** A course the learner created (stored in the data folder, not the repository). */
+export interface CourseMeta {
+  id: string
+  title: string
+  short: string
+  term: string
+  lecturer: string
+  courseNumber: string
+  institution: string
+  language: string
+  examFormat: string
+  codeLanguage: string
+  /** folder watched for new PDFs */
+  folder: string | null
+  autoAdd: boolean
+  createdAt: string
+}
+
+export interface FolderFile {
+  path: string
+  /** path relative to the folder */
+  rel: string
+  name: string
+  size: number
+  mtimeMs: number
 }
 
 // ---------------------------------------------------------------- tutor output (LLM)
@@ -419,6 +515,8 @@ export interface AppState {
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface Settings {
+  /** the course on screen */
+  activeCourse: string
   provider: 'claude-cli' | 'demo'
   cli: { path: string | null; model: string; effort: Effort; fallbackModel: string | null; timeoutSec: number }
   script: { path: string | null; sendPages: boolean; maxPages: number }
@@ -435,6 +533,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  activeCourse: 'numcs',
   provider: 'claude-cli',
   cli: { path: null, model: '', effort: 'medium', fallbackModel: null, timeoutSec: 240 },
   script: { path: null, sendPages: true, maxPages: 8 },
@@ -450,7 +549,7 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarded: false
 }
 
-export type LlmKind = 'step' | 'grade' | 'chat' | 'test'
+export type LlmKind = 'step' | 'grade' | 'chat' | 'test' | 'map'
 
 export interface LlmRequest {
   id: string
@@ -461,6 +560,8 @@ export interface LlmRequest {
   model?: string | null
   effort?: Effort | null
   meta?: Record<string, unknown>
+  /** overrides the configured timeout when longer (mapping a long material) */
+  timeoutSec?: number | null
 }
 
 export interface LlmEvent {
@@ -511,6 +612,14 @@ export interface Backend {
   setSettings(patch: DeepPartial<Settings>): Promise<Settings>
   readScript(): Promise<Uint8Array | null>
   chooseScript(): Promise<string | null>
+  /** The bytes of a course material (the path is looked up in the course's materials file). */
+  readMaterial(courseId: string, materialId: string): Promise<Uint8Array | null>
+  /** Desktop only: pick PDFs to add. */
+  pickMaterials(): Promise<FolderFile[]>
+  /** Desktop only: pick the folder a course watches. */
+  pickFolder(): Promise<string | null>
+  /** The PDFs in a folder (and its subfolders, a few levels deep). */
+  scanFolder(path: string): Promise<FolderFile[] | null>
   openExternal(url: string): Promise<void>
   info(): Promise<AppInfo>
   /** Start the tutor agent for a chat; events stream until it exits. */

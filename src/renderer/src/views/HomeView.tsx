@@ -54,6 +54,8 @@ export function HomeView(): ReactElement {
         </button>
       </div>
 
+      <CourseNotice />
+
       <div className="today-grid">
         {sc ? (
           <ActiveSessionBanner />
@@ -252,6 +254,76 @@ export function StatusLegend(): ReactElement {
           <span className={`status-dot ${s}`} /> {STATUS_LABEL[s]}
         </span>
       ))}
+    </div>
+  )
+}
+
+/** What the course's materials are doing: an empty course, files waiting in the folder, a PDF being mapped, concepts new this week. */
+function CourseNotice(): ReactElement | null {
+  const app = useApp()
+  const { course } = useStore(app.courseView)
+  const pending = useStore(app.pending)
+  const job = useStore(app.job)
+  const fresh = course.concepts.filter((c) => c.addedAt && Date.now() - Date.parse(c.addedAt) < 7 * 86_400_000)
+  if (!course.concepts.length)
+    return (
+      <div className="today-block wide course-notice">
+        <div className="grow">
+          <div className="eyebrow">{job ? 'building the map' : 'a new course'}</div>
+          <div className="title" style={{ marginTop: 8 }}>
+            {job ? `${job.label}…` : `${course.short} has no concepts yet`}
+          </div>
+          <div className="desc" style={{ marginTop: 4 }}>
+            {job
+              ? 'Concepts appear on the map as each part is read. You can start learning as soon as the first ones are there.'
+              : 'Add the script, this week’s slides or a problem set. Each PDF is read on this computer and turned into concepts with their prerequisites.'}
+          </div>
+        </div>
+        {!job && (
+          <button className="btn primary go" onClick={() => app.go({ name: 'materials' })}>
+            Add materials <Icon name="chev-right" size={14} />
+          </button>
+        )}
+      </div>
+    )
+  if (!pending.length && !job && !fresh.length) return null
+  return (
+    <div className="today-block wide course-notice">
+      <div className="grow">
+        <div className="eyebrow">{pending.length ? 'new in the course folder' : job ? 'reading new material' : 'new this week'}</div>
+        <div className="title" style={{ marginTop: 8 }}>
+          {pending.length ? plural(pending.length, 'new PDF') : job ? `${job.label}…` : `${plural(fresh.length, 'new concept')} on the map`}
+        </div>
+        <div className="desc" style={{ marginTop: 4 }}>
+          {pending.length
+            ? pending
+                .slice(0, 3)
+                .map((f) => f.name)
+                .join(', ') + (pending.length > 3 ? ', …' : '')
+            : job
+              ? 'The course map grows as it is read.'
+              : fresh
+                  .slice(0, 4)
+                  .map((c) => c.title)
+                  .join(' · ')}
+        </div>
+      </div>
+      {pending.length > 0 ? (
+        <>
+          <button className="btn ghost go" onClick={() => app.go({ name: 'materials' })}>
+            Review
+          </button>
+          <button className="btn primary go" onClick={() => void app.addFiles(pending)}>
+            Add {pending.length === 1 ? 'it' : 'all'}
+          </button>
+        </>
+      ) : (
+        !job && (
+          <button className="btn ghost go" onClick={() => app.go({ name: 'map', conceptId: fresh[0]?.id })}>
+            Show on the map <Icon name="chev-right" size={14} />
+          </button>
+        )
+      )}
     </div>
   )
 }

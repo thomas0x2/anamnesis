@@ -1,6 +1,8 @@
-// Application controller: owns the course graph, the persistent learner model, settings,
-// the script index, rewards, routing and the active session.
-import courseJson from '@courses/numcs/course.json'
+// Application controller: owns the active course (its graph, materials and learner model), settings,
+// rewards, routing and the active session. Each course keeps its own learner model; the learner's
+// profile (how they like to learn) is shared by all courses.
+import numcsJson from '@courses/numcs/course.json'
+import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, removeMaterial, slug } from '@shared/courseMap'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
 import { milestoneReward, rewardsForResponse } from '@shared/rewards'
@@ -11,7 +13,13 @@ import type {
   CardResponse,
   ConceptState,
   Course,
+  CourseExtension,
+  CourseMeta,
   DeepPartial,
+  FolderFile,
+  Material,
+  MaterialsFile,
+  ProfileNote,
   EvidenceKind,
   ModelUpdate,
   PracticeTarget,
@@ -25,7 +33,7 @@ import { practiceQueue, reviewQueue } from '@shared/selection'
 import { nowIso, truncate, uid } from '@shared/util'
 import type { AgentMode } from '@shared/agentTools'
 import { ChatController, chatSession, newChatRecord, type ChatIndexEntry, type ChatRecord } from './chat'
-import { ScriptIndex } from './script'
+import { MaterialLibrary } from './script'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
 
@@ -37,6 +45,7 @@ export type Route =
   | { name: 'mind'; conceptId?: string }
   | { name: 'stats' }
   | { name: 'script'; page?: number }
+  | { name: 'materials' }
   | { name: 'settings' }
 
 export interface Toast {
@@ -47,6 +56,8 @@ export interface Toast {
 }
 
 export interface UiState {
+  /** changes when the course on screen changes (views remount) */
+  courseKey: string
   route: Route
   toasts: Toast[]
   onboarding: boolean
@@ -86,44 +97,474 @@ const EVIDENCE_KIND: Partial<Record<Card['kind'], EvidenceKind>> = {
   reflect: 'reflect'
 }
 
+/** Courses that ship with the app. */
+export const BUILTIN_COURSES: Course[] = [{ ...(numcsJson as Course), builtin: true }]
+
+export interface CourseEntry {
+  id: string
+  title: string
+  short: string
+  term: string
+  builtin: boolean
+}
+
+export interface MaterialJob {
+  materialId: string
+  phase: 'indexing' | 'mapping'
+  progress: number
+  label: string
+}
+
+const stateName = (courseId: string): string => (courseId === 'numcs' ? 'state' : `courses/${courseId}/state`)
+const chatsName = (courseId: string): string => (courseId === 'numcs' ? 'chats-index' : `courses/${courseId}/chats-index`)
+
 export class AppController {
-  readonly course = courseJson as Course
-  readonly graph = new CourseGraph(this.course)
   readonly state: Store<AppState> = createStore(freshState())
   readonly settings: Store<Settings> = createStore(DEFAULT_SETTINGS)
-  readonly ui: Store<UiState> = createStore<UiState>({ route: { name: 'home' }, toasts: [], onboarding: false, scriptPeek: null })
+  readonly ui: Store<UiState> = createStore<UiState>({ courseKey: 'numcs', route: { name: 'home' }, toasts: [], onboarding: false, scriptPeek: null })
   readonly session: Store<SessionController | null> = createStore<SessionController | null>(null)
   readonly chat: Store<ChatController | null> = createStore<ChatController | null>(null)
   readonly chats: Store<ChatIndexEntry[]> = createStore<ChatIndexEntry[]>([])
-  readonly script: ScriptIndex
+  /** every course the learner can switch to */
+  readonly courses: Store<CourseEntry[]> = createStore<CourseEntry[]>([])
+  /** the active course as the app uses it (base course plus what its materials added) */
+  readonly courseView: Store<{ course: Course; graph: CourseGraph }>
+  readonly materials: Store<Material[]> = createStore<Material[]>([])
+  /** PDFs in the course folder that are not materials yet (and not ignored) */
+  readonly pending: Store<FolderFile[]> = createStore<FolderFile[]>([])
+  readonly job: Store<MaterialJob | null> = createStore<MaterialJob | null>(null)
+  script: MaterialLibrary
+  private base: Course
+  private ext: CourseExtension = emptyExtension()
+  private metas: CourseMeta[] = []
+  private ignored: string[] = []
   private saveTimer: ReturnType<typeof setTimeout> | null = null
+  private queueRunning = false
+  private queueCancel: string | null = null
+  /** the mapping call in flight, so it can be cancelled */
+  private mapRequest: string | null = null
+  private lastScan = 0
+  private builtinFolder: { folder: string | null; autoAdd: boolean } = { folder: null, autoAdd: true }
+  /** bumps when the watched folder or its settings change */
+  readonly folderVersion: Store<number> = createStore(0)
+  private savedProfile = ''
 
   constructor(readonly backend: Backend) {
-    this.script = new ScriptIndex(backend)
+    this.base = BUILTIN_COURSES[0]
+    this.courseView = createStore({ course: this.base, graph: new CourseGraph(this.base) })
+    this.script = new MaterialLibrary(backend, this.base.id, true)
+  }
+
+  get course(): Course {
+    return this.courseView.get().course
+  }
+
+  get graph(): CourseGraph {
+    return this.courseView.get().graph
+  }
+
+  get courseId(): string {
+    return this.base.id
+  }
+
+  get meta(): CourseMeta | null {
+    return this.metas.find((m) => m.id === this.base.id) ?? null
+  }
+
+  /** The folder the active course watches for new PDFs (built-in courses keep it in their own small file). */
+  get folder(): { folder: string | null; autoAdd: boolean } {
+    const m = this.meta
+    return m ? { folder: m.folder, autoAdd: m.autoAdd } : this.builtinFolder
+  }
+
+  async setFolder(patch: { folder?: string | null; autoAdd?: boolean }): Promise<void> {
+    if (this.meta) return this.updateCourse(patch)
+    this.builtinFolder = { ...this.builtinFolder, ...patch }
+    await this.backend.writeJson(`courses/${this.courseId}/folder`, this.builtinFolder)
+    this.folderVersion.set((v) => v + 1)
+    if (patch.folder !== undefined) void this.scanFolder(true)
   }
 
   async init(): Promise<void> {
     this.settings.set(await this.backend.getSettings())
-    const saved = await this.backend.readJson<AppState>('state')
-    if (saved && saved.version === 1) this.state.set({ ...freshState(), ...saved })
+    this.metas = ((await this.backend.readJson<CourseMeta[]>('courses-index')) ?? []).filter((m) => m && typeof m.id === 'string')
+    this.refreshCourseList()
     if (!this.settings.get().onboarded) this.ui.set((u) => ({ ...u, onboarding: true }))
-    void this.script.load()
-    this.chats.set((await this.backend.readJson<ChatIndexEntry[]>('chats-index')) ?? [])
-    const active = this.state.get().activeSessionId
-    if (active) {
-      const s = await this.backend.readJson<Session>(`sessions/${active}`)
-      const rec = s?.agentChatId ? await this.backend.readJson<ChatRecord>(`chats/${s.agentChatId}`) : null
-      if (!s || s.phase === 'done') {
-        // nothing to resume
-      } else if (rec && rec.version === 1) {
-        const cc = new ChatController(this, rec, s)
-        this.chat.set(cc)
-        this.session.set(cc.cards)
-      } else if (this.agentMode) {
-        // a guided session from before the agent tutor: start fresh (its evidence is kept)
-        this.updateState((st) => ({ ...st, activeSessionId: null }))
-      } else this.session.set(new SessionController(this, s))
+    let id = this.settings.get().activeCourse || 'numcs'
+    if (!this.courses.get().some((c) => c.id === id)) id = 'numcs'
+    await this.openCourse(id)
+  }
+
+  private refreshCourseList(): void {
+    this.courses.set([
+      ...BUILTIN_COURSES.map((c) => ({ id: c.id, title: c.title, short: c.short, term: c.term, builtin: true })),
+      ...this.metas.map((m) => ({ id: m.id, title: m.title, short: m.short || m.title, term: m.term, builtin: false }))
+    ])
+  }
+
+  /** Load a course: its map, materials, learner model and chats, then resume its open session. */
+  private async openCourse(id: string): Promise<void> {
+    const builtin = BUILTIN_COURSES.find((c) => c.id === id)
+    const meta = this.metas.find((m) => m.id === id)
+    this.base = builtin ?? (meta ? metaToCourse(meta) : BUILTIN_COURSES[0])
+    id = this.base.id
+    this.ext = (await this.backend.readJson<CourseExtension>(`courses/${id}/map`)) ?? emptyExtension()
+    this.builtinFolder = (builtin && (await this.backend.readJson<{ folder: string | null; autoAdd: boolean }>(`courses/${id}/folder`))) || { folder: null, autoAdd: true }
+    this.lastScan = 0
+    const saved = await this.backend.readJson<AppState>(stateName(id))
+    const profile = await this.loadProfile(saved)
+    const st = saved && saved.version === 1 ? { ...freshState(), ...saved } : freshState()
+    this.state.set({ ...st, learner: { ...st.learner, profile } })
+    this.savedProfile = JSON.stringify(profile)
+    // the course on screen changes only once its learner model is in place
+    this.rebuildCourse()
+    this.chats.set((await this.backend.readJson<ChatIndexEntry[]>(chatsName(id))) ?? [])
+    // materials
+    const file = await this.backend.readJson<MaterialsFile>(`courses/${id}/materials`)
+    let items = file?.items ?? []
+    this.ignored = file?.ignored ?? []
+    if (builtin) {
+      items = this.builtinScript(items)
+      // the script was read before courses had materials: reuse that index instead of reading the PDF again
+      const sc = items.find((m) => m.id === 'script')
+      if (sc && !sc.numPages && sc.path) {
+        const cached = await this.backend.readJson<{ numPages?: number }>('script-index')
+        if (cached?.numPages) items = items.map((m) => (m.id === 'script' ? { ...m, numPages: cached.numPages ?? 0, status: 'skipped' as const } : m))
+      }
     }
+    items = items.map((m) => (m.status === 'indexing' || m.status === 'mapping' ? { ...m, status: 'queued' as const } : m))
+    this.materials.set(items)
+    this.pending.set([])
+    this.job.set(null)
+    this.script = new MaterialLibrary(this.backend, id, !!builtin)
+    await this.script.load(items)
+    if (builtin) await this.saveMaterials()
+    this.ui.set((u) => ({ ...u, courseKey: id, scriptPeek: null }))
+    void this.processQueue()
+    void this.scanFolder(true)
+    await this.resumeActive()
+  }
+
+  /** The built-in course's script is the PDF chosen in Settings (or during the welcome tour). */
+  private builtinScript(items: Material[]): Material[] {
+    const path = this.settings.get().script.path
+    const have = items.find((m) => m.id === 'script')
+    const rest = items.filter((m) => m.id !== 'script')
+    if (!path && !have) return rest
+    const name = path ? path.split(/[\\/]/).pop() ?? this.base.script.fileName : have?.fileName ?? this.base.script.fileName
+    const base: Material = have ?? {
+      ...newMaterial({ path, name, size: 0 }, 'script', nowIso()),
+      kind: 'script',
+      title: this.base.script.title,
+      offset: 0,
+      printedOffset: this.base.script.printedPageOffset,
+      status: 'skipped'
+    }
+    const changed = !!have && have.path !== path
+    const script: Material = { ...base, path, fileName: name, offset: 0, ...(changed ? { numPages: 0, status: 'queued' as const } : {}) }
+    if (!have && path) script.status = 'queued'
+    return [script, ...rest]
+  }
+
+  private async loadProfile(saved: AppState | null): Promise<ProfileNote[]> {
+    const global = await this.backend.readJson<ProfileNote[]>('profile')
+    if (global) return global
+    // first start with shared profiles: the built-in course's notes become everyone's
+    const legacy = saved?.learner?.profile ?? (await this.backend.readJson<AppState>('state'))?.learner?.profile ?? []
+    await this.backend.writeJson('profile', legacy)
+    return legacy
+  }
+
+  private async resumeActive(): Promise<void> {
+    const active = this.state.get().activeSessionId
+    if (!active) return
+    const s = await this.backend.readJson<Session>(`sessions/${active}`)
+    const rec = s?.agentChatId ? await this.backend.readJson<ChatRecord>(`chats/${s.agentChatId}`) : null
+    if (!s || s.phase === 'done') {
+      // nothing to resume
+    } else if (rec && rec.version === 1) {
+      const cc = new ChatController(this, rec, s)
+      this.chat.set(cc)
+      this.session.set(cc.cards)
+    } else if (this.agentMode) {
+      // a guided session from before the agent tutor: start fresh (its evidence is kept)
+      this.updateState((st) => ({ ...st, activeSessionId: null }))
+    } else this.session.set(new SessionController(this, s))
+  }
+
+  private rebuildCourse(): void {
+    const course = buildCourse(this.base, this.ext)
+    this.courseView.set({ course, graph: new CourseGraph(course) })
+  }
+
+  // ------------------------------------------------------------ courses
+  async switchCourse(id: string): Promise<void> {
+    if (id === this.courseId) return
+    await this.leaveCurrent()
+    this.session.set(null)
+    await this.flush()
+    this.queueCancel = this.job.get()?.materialId ?? null
+    if (this.mapRequest) void this.backend.cancel(this.mapRequest)
+    await this.saveSettings({ activeCourse: id })
+    await this.openCourse(id)
+    this.go({ name: 'home' })
+  }
+
+  async createCourse(input: Partial<CourseMeta> & { title: string }): Promise<string> {
+    let id = slug(input.short || input.title).slice(0, 24) || 'course'
+    const taken = new Set(this.courses.get().map((c) => c.id))
+    if (taken.has(id)) {
+      let k = 2
+      while (taken.has(`${id}-${k}`)) k++
+      id = `${id}-${k}`
+    }
+    const meta: CourseMeta = {
+      id,
+      title: input.title.trim(),
+      short: (input.short ?? '').trim() || input.title.trim(),
+      term: (input.term ?? '').trim(),
+      lecturer: (input.lecturer ?? '').trim(),
+      courseNumber: (input.courseNumber ?? '').trim(),
+      institution: (input.institution ?? '').trim(),
+      language: input.language || 'en',
+      examFormat: (input.examFormat ?? '').trim(),
+      codeLanguage: (input.codeLanguage ?? '').trim(),
+      folder: input.folder || null,
+      autoAdd: input.autoAdd ?? true,
+      createdAt: nowIso()
+    }
+    this.metas = [...this.metas, meta]
+    await this.backend.writeJson('courses-index', this.metas)
+    this.refreshCourseList()
+    await this.switchCourse(id)
+    return id
+  }
+
+  async updateCourse(patch: Partial<CourseMeta>): Promise<void> {
+    const meta = this.meta
+    if (!meta) return
+    const next = { ...meta, ...patch, id: meta.id }
+    this.metas = this.metas.map((m) => (m.id === meta.id ? next : m))
+    await this.backend.writeJson('courses-index', this.metas)
+    this.refreshCourseList()
+    this.base = metaToCourse(next)
+    this.rebuildCourse()
+    this.folderVersion.set((v) => v + 1)
+    if (patch.folder !== undefined) void this.scanFolder(true)
+  }
+
+  /** Take a learner-made course off the list (its files stay in the data folder). */
+  async removeCourse(id: string): Promise<void> {
+    if (BUILTIN_COURSES.some((c) => c.id === id)) return
+    if (id === this.courseId) await this.switchCourse('numcs')
+    this.metas = this.metas.filter((m) => m.id !== id)
+    await this.backend.writeJson('courses-index', this.metas)
+    this.refreshCourseList()
+  }
+
+  // ------------------------------------------------------------ materials
+  private async saveMaterials(): Promise<void> {
+    await this.backend.writeJson(`courses/${this.courseId}/materials`, { version: 1, items: this.materials.get(), ignored: this.ignored } satisfies MaterialsFile)
+  }
+
+  private patchMaterial(id: string, patch: Partial<Material>): void {
+    this.materials.set((xs) => xs.map((m) => (m.id === id ? { ...m, ...patch } : m)))
+  }
+
+  /** Add PDFs to the course; they are read and mapped one after another. */
+  async addFiles(files: FolderFile[]): Promise<number> {
+    const have = new Set(this.materials.get().map((m) => m.path))
+    const fresh = files.filter((f) => f.name.toLowerCase().endsWith('.pdf') && !have.has(f.path))
+    if (!fresh.length) return 0
+    const now = nowIso()
+    const added = fresh
+      .sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true }))
+      .map((f) => newMaterial({ path: f.path, name: f.name, rel: f.rel, size: f.size, mtimeMs: f.mtimeMs }, uid('m_'), now))
+    this.materials.set((xs) => [...xs, ...added])
+    this.pending.set((p) => p.filter((f) => !fresh.some((x) => x.path === f.path)))
+    await this.saveMaterials()
+    void this.processQueue()
+    return added.length
+  }
+
+  async ignoreFiles(paths: string[]): Promise<void> {
+    this.ignored = [...new Set([...this.ignored, ...paths])]
+    this.pending.set((p) => p.filter((f) => !paths.includes(f.path)))
+    await this.saveMaterials()
+  }
+
+  async pickMaterials(): Promise<number> {
+    const files = await this.backend.pickMaterials()
+    return this.addFiles(files)
+  }
+
+  /** Look for new PDFs in the course folder (on open, on window focus, or when asked). */
+  async scanFolder(force = false): Promise<number> {
+    const { folder, autoAdd } = this.folder
+    if (!folder) return 0
+    if (!force && Date.now() - this.lastScan < 60_000) return 0
+    this.lastScan = Date.now()
+    const files = await this.backend.scanFolder(folder).catch(() => null)
+    if (!files) return 0
+    const have = new Set(this.materials.get().map((m) => m.path))
+    const fresh = files.filter((f) => !have.has(f.path) && !this.ignored.includes(f.path))
+    if (autoAdd && fresh.length) {
+      const n = await this.addFiles(fresh)
+      if (n) this.toast({ kind: 'info', text: `Added ${n} new file${n === 1 ? '' : 's'} from the course folder.` })
+      return n
+    }
+    this.pending.set(fresh)
+    return fresh.length
+  }
+
+  updateMaterial(id: string, patch: Partial<Pick<Material, 'title' | 'kind' | 'printedOffset'>>): void {
+    this.patchMaterial(id, patch)
+    void this.saveMaterials()
+    void this.script.load(this.materials.get())
+  }
+
+  private hasEvidence = (conceptId: string): boolean => (this.state.get().learner.concepts[conceptId]?.evidence.length ?? 0) > 0
+
+  async deleteMaterial(id: string): Promise<void> {
+    const m = this.materials.get().find((x) => x.id === id)
+    if (!m) return
+    if (this.job.get()?.materialId === id) {
+      this.queueCancel = id
+      if (this.mapRequest) void this.backend.cancel(this.mapRequest)
+    }
+    this.ext = removeMaterial(this.ext, id, this.hasEvidence)
+    await this.backend.writeJson(`courses/${this.courseId}/map`, this.ext)
+    this.rebuildCourse()
+    this.materials.set((xs) => xs.filter((x) => x.id !== id))
+    if (m.path) this.ignored = [...new Set([...this.ignored, m.path])]
+    this.script.forget(id)
+    await this.saveMaterials()
+  }
+
+  /** Map a material again from scratch (what it added before is taken out first). */
+  async remapMaterial(id: string): Promise<void> {
+    if (this.job.get()?.materialId === id) return
+    this.ext = removeMaterial(this.ext, id, this.hasEvidence)
+    await this.backend.writeJson(`courses/${this.courseId}/map`, this.ext)
+    this.rebuildCourse()
+    this.patchMaterial(id, { status: 'queued', chunksDone: 0, chunksTotal: 0, error: null, added: [], linked: [] })
+    await this.saveMaterials()
+    void this.processQueue()
+  }
+
+  cancelMaterial(id: string): void {
+    if (this.job.get()?.materialId === id) {
+      this.queueCancel = id
+      if (this.mapRequest) void this.backend.cancel(this.mapRequest)
+    } else this.patchMaterial(id, { status: 'skipped' })
+    void this.saveMaterials()
+  }
+
+  /** Read and map queued materials, one at a time. */
+  private async processQueue(): Promise<void> {
+    if (this.queueRunning) return
+    this.queueRunning = true
+    const courseId = this.courseId
+    try {
+      for (;;) {
+        if (courseId !== this.courseId) break
+        const m = this.materials.get().find((x) => x.status === 'queued')
+        if (!m) break
+        this.queueCancel = null
+        await this.runMaterial(m).catch((e) => {
+          if (courseId !== this.courseId) return
+          if (this.queueCancel === m.id) this.patchMaterial(m.id, { status: 'skipped' })
+          else this.patchMaterial(m.id, { status: 'error', error: String((e as Error)?.message ?? e) })
+        })
+        if (courseId !== this.courseId) break
+        this.job.set(null)
+        await this.saveMaterials()
+      }
+    } finally {
+      this.queueRunning = false
+      if (courseId === this.courseId) this.job.set(null)
+      else void this.processQueue()
+    }
+  }
+
+  private async runMaterial(m0: Material): Promise<void> {
+    const courseId = this.courseId
+    const alive = (): boolean => courseId === this.courseId && this.queueCancel !== m0.id
+    let m = m0
+    // 1. read the text (once)
+    let text = this.script.materialText(m.id)
+    if (!text || !m.numPages || m.offset === null) {
+      const offset = m.offset ?? nextOffset(this.materials.get().filter((x) => x.id !== m.id))
+      m = { ...m, offset, status: 'indexing', error: null }
+      this.patchMaterial(m.id, { offset, status: 'indexing', error: null })
+      this.job.set({ materialId: m.id, phase: 'indexing', progress: 0, label: `Reading ${m.title}` })
+      const r = await this.script.index(m, (f) => alive() && this.job.set({ materialId: m.id, phase: 'indexing', progress: f, label: `Reading ${m.title}` }))
+      if (courseId !== this.courseId) return
+      m = { ...m, numPages: r.numPages }
+      this.patchMaterial(m.id, { numPages: r.numPages })
+      text = { pages: r.pages, outline: r.outline }
+      await this.saveMaterials()
+      await this.script.load(this.materials.get())
+    }
+    if (!alive()) {
+      if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
+      return
+    }
+    // the built-in course's script is mapped already
+    if (BUILTIN_COURSES.some((c) => c.id === courseId) && m.id === 'script') {
+      this.patchMaterial(m.id, { status: 'skipped' })
+      return
+    }
+    // 2. extend the course map, chunk by chunk
+    const chunks = chunkPages(text.pages)
+    this.patchMaterial(m.id, { status: 'mapping', chunksTotal: chunks.length })
+    const added = [...m.added]
+    const linked = new Set(m.linked)
+    for (let k = m.chunksDone; k < chunks.length; k++) {
+      if (!alive()) {
+        if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
+        return
+      }
+      const label = chunks.length > 1 ? `Mapping ${m.title} (part ${k + 1} of ${chunks.length})` : `Mapping ${m.title}`
+      this.job.set({ materialId: m.id, phase: 'mapping', progress: k / chunks.length, label })
+      const [a, b] = chunks[k]
+      const pages = text.pages.slice(a - 1, b).map((t, i) => ({ page: a + i, text: t })).filter((p) => p.text.trim())
+      if (pages.length) {
+        const cur = { ...m, numPages: text.pages.length }
+        const course = this.course
+        const reqId = uid('map_')
+        this.mapRequest = reqId
+        const r = await this.backend.generate({
+          id: reqId,
+          kind: 'map',
+          system: MAP_SYSTEM,
+          prompt: buildMapPrompt({ course, material: cur, pages, chunk: k + 1, chunks: chunks.length, outline: k === 0 ? text.outline : [] }),
+          schema: mapSchema,
+          effort: 'medium',
+          timeoutSec: 900,
+          meta: { fake: fakeMapOutput(cur, pages, course) }
+        })
+        this.mapRequest = null
+        if (courseId !== this.courseId) return
+        if (!alive() || !this.materials.get().some((x) => x.id === m.id)) {
+          if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
+          return
+        }
+        if (!r.ok) throw new Error(r.error ?? 'The mapping call failed.')
+        const delta = normalizeMapOutput(r.data, this.course, cur, nowIso())
+        const out = applyMapDelta(this.ext, this.base, delta)
+        this.ext = out.ext
+        await this.backend.writeJson(`courses/${courseId}/map`, this.ext)
+        this.rebuildCourse()
+        added.push(...out.added)
+        for (const id of out.linked) linked.add(id)
+      }
+      this.patchMaterial(m.id, { chunksDone: k + 1, added: [...new Set(added)], linked: [...linked] })
+      await this.saveMaterials()
+    }
+    this.patchMaterial(m.id, { status: 'mapped', mappedAt: nowIso() })
+    const n = new Set(added).size
+    this.toast({ kind: 'info', text: `${m.title}: ${n ? `${n} new concept${n === 1 ? '' : 's'}` : 'no new concepts'}${linked.size ? `, ${linked.size} linked` : ''}.` }, 6000)
   }
 
   // ------------------------------------------------------------ persistence
@@ -140,20 +581,38 @@ export class AppController {
   async flush(): Promise<void> {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
-    await this.backend.writeJson('state', this.state.get())
+    const st = this.state.get()
+    await this.backend.writeJson(stateName(this.courseId), st)
+    const profile = JSON.stringify(st.learner.profile)
+    if (profile !== this.savedProfile) {
+      this.savedProfile = profile
+      await this.backend.writeJson('profile', st.learner.profile)
+    }
   }
 
   async saveSettings(patch: DeepPartial<Settings>): Promise<void> {
     this.settings.set(await this.backend.setSettings(patch))
   }
 
-  /** Let the learner pick the lecture-notes PDF (desktop app only), then index it. */
+  /** Let the learner pick the built-in course's lecture notes (desktop app only), then read them. */
   async chooseScript(): Promise<boolean> {
     const path = await this.backend.chooseScript()
     if (!path) return false
     this.settings.set(await this.backend.getSettings())
-    await this.script.load(true)
+    if (!BUILTIN_COURSES.some((c) => c.id === this.courseId)) return true
+    this.materials.set((xs) => this.builtinScript(xs.map((m) => (m.id === 'script' ? { ...m, numPages: 0, status: 'queued' as const } : m))))
+    this.script.forget('script')
+    await this.saveMaterials()
+    void this.processQueue()
     return true
+  }
+
+  /** Read the built-in script again (after the PDF changed). */
+  async reindexScript(): Promise<void> {
+    this.patchMaterial('script', { numPages: 0, status: 'queued' })
+    this.script.forget('script')
+    await this.saveMaterials()
+    void this.processQueue()
   }
 
   // ------------------------------------------------------------ navigation & toasts
@@ -452,10 +911,12 @@ export class AppController {
   }
 
   async touchChatIndex(c: ChatRecord): Promise<void> {
+    // a late save from a chat of another course (after a course switch) must not land in this course's list
+    if (this.chat.get()?.chat.id !== c.id && !this.chats.get().some((x) => x.id === c.id)) return
     const entry: ChatIndexEntry = { id: c.id, title: c.title, mode: c.mode, goalConceptId: c.goalConceptId, updatedAt: c.updatedAt }
     const list = [entry, ...this.chats.get().filter((x) => x.id !== c.id)].slice(0, 100)
     this.chats.set(list)
-    await this.backend.writeJson('chats-index', list)
+    await this.backend.writeJson(chatsName(this.courseId), list)
   }
 
   async finishSession(s: Session, summary: SessionSummary): Promise<void> {
@@ -477,7 +938,7 @@ export class AppController {
   async resetAll(): Promise<void> {
     await this.leaveCurrent()
     this.session.set(null)
-    this.state.set(freshState())
+    this.state.set({ ...freshState(), learner: { profile: this.state.get().learner.profile, concepts: {} } })
     await this.flush()
   }
 

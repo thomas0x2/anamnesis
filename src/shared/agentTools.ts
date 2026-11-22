@@ -3,7 +3,7 @@
 // learner model, the lecture notes. Card-like tools wait until the learner has answered.
 import type { AgentToolDef } from './agentTypes'
 import type { CourseGraph } from './graph'
-import { CORE_RULES, conceptModelLine } from './prompts'
+import { conceptModelLine, conceptPlaces, coreRules } from './prompts'
 import { blockSchema, interactionSchema, modelUpdateSchema, planSchema } from './schema'
 import type { Course, LearnerModel, PracticeTarget } from './types'
 
@@ -65,7 +65,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'read_script',
     description:
-      "Read text from the learner's PDF of the lecture notes (German; formulas may be garbled by extraction). Give pages [first, last] (at most 4 pages) or a search query (a label like \"2.4.11\" or a German term) to find pages. Use it for the script's notation, labels and emphasis; never paste long passages to the learner.",
+      "Read text from the learner's PDFs of the course materials (lecture notes, slides, problem sets; formulas may be garbled by extraction). Give pages [first, last] (at most 4 pages, page numbers as in the concept list) or a search query (a label like \"2.4.11\" or a term in the materials' language) to find pages. Use it for the materials' notation, labels and emphasis; never paste long passages to the learner.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,12 +109,13 @@ export const AGENT_TOOLS: AgentToolDef[] = [
 ]
 
 /** The teaching doctrine shared with the classic step loop, minus its JSON-output framing. */
-function doctrine(): string {
-  const start = CORE_RULES.indexOf('# How you teach')
-  const phases = CORE_RULES.indexOf('# Phases')
-  const levels = CORE_RULES.indexOf('# Difficulty levels')
-  const model = CORE_RULES.indexOf('# Learner model updates')
-  return `${CORE_RULES.slice(start, phases)}${CORE_RULES.slice(levels, model > levels ? model : undefined)}`
+function doctrine(course: Course): string {
+  const rules = coreRules(course)
+  const start = rules.indexOf('# How you teach')
+  const phases = rules.indexOf('# Phases')
+  const levels = rules.indexOf('# Difficulty levels')
+  const model = rules.indexOf('# Learner model updates')
+  return `${rules.slice(start, phases)}${rules.slice(levels, model > levels ? model : undefined)}`
 }
 
 export type AgentMode = 'learn' | 'practice' | 'review' | 'open'
@@ -145,15 +146,20 @@ Practice and review: the app picked the items (spacing and difficulty staircase)
 Use update_learner when you learn something worth remembering across sessions (a note per concept, misconceptions, rare profile observations).`
 
 export function buildAgentSystemPrompt(course: Course, graph: CourseGraph, learner: LearnerModel, ctx: AgentContext, now: Date): string {
-  const intro = `You are Anamnesis, a one-to-one tutor for the ETH Zurich course "${course.title}" (${course.courseNumber}, lecture notes "${course.script?.title ?? 'the script'}", in German). You run inside a desktop learning app as an agent with tools that create the learning interface. Write in English; when you introduce a term, give the script's German term once in parentheses.`
-  const out = [intro, '', FLOW, '', doctrine(), '']
+  const builtin = course.builtin || course.id === 'numcs'
+  const lang = course.language ?? course.script?.language ?? 'en'
+  const langName = ({ en: 'English', de: 'German', fr: 'French', it: 'Italian' } as Record<string, string>)[lang] ?? lang
+  const intro = builtin
+    ? `You are Anamnesis, a one-to-one tutor for the ETH Zurich course "${course.title}" (${course.courseNumber}, lecture notes "${course.script?.title ?? 'the script'}", in German). You run inside a desktop learning app as an agent with tools that create the learning interface. Write in English; when you introduce a term, give the script's German term once in parentheses.`
+    : `You are Anamnesis, a one-to-one tutor for the course "${course.title}"${course.courseNumber ? ` (${course.courseNumber})` : ''}${course.lecturer ? `, ${course.lecturer}` : ''}. The course materials (script, slides, problem sets) are the learner's own PDFs${lang !== 'en' ? `, in ${langName}` : ''}; read_script reads them by page number. You run inside a desktop learning app as an agent with tools that create the learning interface. Write in English${lang !== 'en' ? `; when you introduce a term, give the materials' ${langName} term once in parentheses` : ''}.`
+  const out = [intro, '', FLOW, '', doctrine(course), '']
   out.push('# Course concepts (id: title [chapter])')
   for (const c of course.concepts) out.push(`- ${c.id}: ${c.title} [${c.chapter}]`)
   out.push('', `Exam: ${course.exam.format}`, '', '# This session')
   if (ctx.mode === 'learn' && ctx.goalConceptId) {
     const g = graph.get(ctx.goalConceptId)
     out.push(`Mode: LEARN. Goal concept: ${g?.title ?? ctx.goalConceptId} (id ${ctx.goalConceptId}).`)
-    if (g) out.push(`Summary: ${g.summary}`, `Why it matters: ${g.why}`, `Script: ${g.refs.join(', ') || 'no references'}${g.pages.length ? `; PDF pages ${g.pages[0]}-${g.pages[1]}` : ''}.`)
+    if (g) out.push(`Summary: ${g.summary}`, `Why it matters: ${g.why}`, `Script: ${g.refs.join(', ') || 'no references'}${conceptPlaces(g) ? `; ${conceptPlaces(g)}` : ''}.`)
     const anc = graph.ancestors(ctx.goalConceptId, 3)
     if (anc.length) out.push(`Prerequisites (nearest first): ${anc.map((id) => `${id} (${graph.title(id)})`).join(', ')}`)
   } else if (ctx.mode === 'practice') out.push(`Mode: PRACTICE. Concepts in scope: ${ctx.scope.map((id) => `${id} (${graph.title(id)})`).join(', ') || 'whatever the learner model suggests'}.`)

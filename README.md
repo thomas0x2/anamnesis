@@ -8,6 +8,8 @@ The tutor is Claude, run through the **Claude Code CLI** on your own Claude logi
 
 ## What it does
 
+**A tutor you talk to.** The tutor is an agent in a chat. You say what you want ("why do Chebyshev nodes beat equispaced ones?", "drill me on quadrature", or just *Learn this* on the course map) and it answers by building the learning interface around you: questions you answer in the chat, explanations with equations, plots and interactive demos, a plan of the reasoning steps in a side panel, the right page of the script. It reads your mind model before it decides what to do and writes to it afterwards. You can type or dictate a question at any moment, even in the middle of a card. (Settings → Learning switches back to the fixed guided sessions below.)
+
 **Learn a concept in three phases**
 
 1. **Probe.** A few quick diagnostic questions (with an honest "I don't know" button) find out what you already know about the goal and its prerequisites.
@@ -65,7 +67,7 @@ No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings.
 * The PDF never leaves your computer as a file and is not part of this repository. Only the text of the few pages relevant to the current step is sent to Claude, inside your own Claude Code session.
 * The script's title page asks that it not be uploaded to generative AI without the author's consent. The author agreed to this use for this app demo. If that agreement does not cover you, turn off **Settings → Lecture notes → Ground steps in the script**; the tutor then works from section and theorem numbers, and you can still open every page in the app.
 * Your learner model, sessions and settings are JSON files in `~/Library/Application Support/Anamnesis` (written atomically, with one backup each).
-* The CLI runs with no tools, no MCP servers, no slash commands and no session persistence, in an empty working folder. It can only answer.
+* The CLI runs with no built-in tools, no slash commands and no settings, in an empty working folder. The tutor agent can only use the app's own tools (cards, plan, mind model, script pages), served on 127.0.0.1 with a per-chat token. It cannot read or change anything else on your computer.
 
 ## Development
 
@@ -94,7 +96,7 @@ Project layout:
 ```
 courses/numcs/course.json   the course graph: 87 concepts, prerequisites, script pages, demos
 src/shared/                 pure logic shared by all processes (learner model, FSRS, grading, prompts, schemas, numerics)
-src/node/                   Claude Code CLI runner and JSON storage (used by Electron main and the dev server)
+src/node/                   Claude Code CLI runner, the tutor agent and its MCP tool bridge, JSON storage
 src/main/, src/preload/     Electron main process and the bridge to the renderer
 src/renderer/src/           React UI: engine/ (app state, sessions, script index), views/, components/, voice/
 scripts/                    dev server, end-to-end run, prompt tryout

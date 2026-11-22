@@ -5,6 +5,8 @@ type Listener = (e: unknown) => void
 const listeners = new Map<string, Listener>()
 
 ipcRenderer.on('llm:event', (_e, ev: { id: string }) => listeners.get(ev.id)?.(ev))
+const agentListeners = new Map<string, Listener>()
+ipcRenderer.on('agent:event', (_e, ev: { chatId: string }) => agentListeners.get(ev.chatId)?.(ev))
 
 const api = {
   kind: 'electron',
@@ -16,6 +18,13 @@ const api = {
       listeners.delete(req.id)
     }
   },
+  agentStart(req: { chatId: string }, onEvent: Listener) {
+    agentListeners.set(req.chatId, onEvent)
+    return ipcRenderer.invoke('agent:start', req)
+  },
+  agentSend: (chatId: string, text: string) => ipcRenderer.invoke('agent:send', chatId, text),
+  agentToolResult: (chatId: string, callId: string, result: unknown) => ipcRenderer.invoke('agent:result', chatId, callId, result),
+  agentStop: (chatId: string) => ipcRenderer.invoke('agent:stop', chatId),
   cancel: (id: string) => ipcRenderer.invoke('llm:cancel', id),
   testLlm: () => ipcRenderer.invoke('llm:test'),
   readJson: (name: string) => ipcRenderer.invoke('store:read', name),

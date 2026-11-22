@@ -8,11 +8,14 @@ This page is for anyone changing the code. [LEARNING_SCIENCE.md](LEARNING_SCIENC
 ┌──────────────────────── Electron main process (Node) ────────────────────────┐
 │ src/main/index.ts       window, app:// protocol, CSP, permissions, IPC        │
 │ src/node/claudeCli.ts   runs `claude -p …` per request, streams events back   │
+│ src/node/agent.ts       one long-lived `claude -p` tutor agent per chat       │
+│ src/node/mcpBridge.ts   loopback MCP server exposing the app's tools to it    │
 │ src/node/store.ts       JSON files in the data folder                         │
 └──────────────────────────────────▲───────────────────────────────────────────┘
                                    │ src/preload/index.ts: window.anamnesis (the only bridge)
 ┌──────────────────────────────────┴──── renderer (React, sandboxed) ──────────┐
 │ engine/app.ts       app state; turns answers into evidence, memory, points    │
+│ engine/chat.ts      a tutor chat: agent events, runs the agent's tools        │
 │ engine/session.ts   one session: phase machine, cards, model calls            │
 │ engine/script.ts    the lecture notes: pdf.js text index                      │
 │ views/ components/ demos/ voice/                                              │
@@ -31,7 +34,27 @@ The renderer talks to one `Backend` interface (`src/renderer/src/backend/`) with
 
 The scripted tutor (`src/shared/fakeTutor.ts`) can also stand in for Claude in the desktop app (Settings → Tutor).
 
-## A learn session
+## The tutor agent (default)
+
+Since the agent rebuild the main way to learn is a chat with a tutor agent, in the spirit of an agent harness: the model drives, the app supplies tools that create the learning interface and keep the learner model. **Settings → Learning → How the tutor works** switches back to the guided sessions described in the next section.
+
+```
+learner ── chat box ──▶ ChatController ──agentSend──▶ claude -p (stream-json in/out, one per chat)
+                             ▲                               │ calls mcp__anamnesis__<tool>
+                             │ tool_call events              ▼
+                       renders a card, waits  ◀── McpBridge (127.0.0.1, bearer token per chat)
+                       for the answer, grades ──agentToolResult──▶ tools/call response
+```
+
+* **Process.** `AgentHost` (`src/node/agent.ts`) starts `claude -p --input-format stream-json --output-format stream-json --include-partial-messages --tools "" --mcp-config <bridge> --strict-mcp-config --allowedTools mcp__anamnesis …` with the agent system prompt. Built-in tools are off, so the agent can only use the app's tools. Learner messages go in over stdin; assistant text, streamed tool inputs and tool calls come back as `AgentEvent`s (`src/shared/agentTypes.ts`). A chat keeps its Claude Code session id, so a reopened chat continues with `--resume`.
+* **Bridge.** `McpBridge` is a minimal MCP server (Streamable HTTP, JSON-RPC: `initialize`, `tools/list`, `tools/call`). A `tools/call` is answered as an SSE stream that stays open with keep-alive comments until the app has a result, so a question can wait as long as the learner needs. The CLI is told not to move waiting tool calls to the background (`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` and related variables in `agent.ts`); without that it gives up waiting after two minutes.
+* **Tools** (`src/shared/agentTools.ts`): `explain` (a content card; waits until read), `ask` (one interactive question of kind probe, predict, check, practice, review or reflect; waits for the answer and returns the graded result with confidence, hints, attempts, reasoning and misconceptions), `show_plan` and `update_plan` (the dependency tree in the side panel), `read_script` (page text or a search in the lecture notes), `course` (concept details), `learner` (the learner model and what is due), `update_learner` (notes, misconceptions, profile) and `finish` (takeaways card, session summary). Card inputs use the same block and interaction schemas as the guided sessions.
+* **Cards.** `ChatController` (`src/renderer/src/engine/chat.ts`) puts each card into a `SessionController` in agent mode (constructed with `onCardDone`): it has no phase machine but grades, records evidence, updates memory and awards points exactly like a guided session. When the learner types while a card is waiting, the message becomes that card's tool result ("the learner wrote instead…"), and the card stays answerable; answering it later sends the agent a note.
+* **Prompt.** `buildAgentSystemPrompt` reuses the teaching doctrine of the guided prompt (without its JSON-output framing), adds how a session runs with tools, the course concept index, the session goal and the relevant part of the learner model.
+* **Demo.** `FakeAgentHost` (`src/shared/fakeAgent.ts`) emits the same events and makes the same tool calls with the scripted content, for the in-browser demo, the dev server's fake mode and the end-to-end test.
+* **Transport.** Electron: IPC `agent:start|send|result|stop`, events on `agent:event`. Dev server: `POST /api/agent/start` returns an NDJSON event stream for the agent's lifetime; `send`, `result` and `stop` are plain POSTs.
+
+## A learn session (guided mode)
 
 ```
 probe (1–2 rounds) → plan → learner reviews the plan → teach node 1 … node k → wrap → done
@@ -237,11 +260,11 @@ Model-written expressions are evaluated by a locked-down math.js instance (`src/
 * Navigation away from the app is blocked, and external links open in the system browser.
 * The only permission granted is the microphone, and only to the app's own pages.
 * The dev server listens on 127.0.0.1 only and refuses requests with a foreign Host or Origin header, and writes without a JSON content type.
-* The CLI runs without tools, so model output can never act on the computer.
+* The CLI runs without built-in tools, so model output can never act on the computer. The tutor agent can only call the app's own tools, through a server that listens on 127.0.0.1, needs a random bearer token per chat and refuses requests with an Origin header.
 
 ## Testing
 
 * `npm test` runs the unit tests (vitest) for the learner model, FSRS, grading, item selection, stats and rewards, the course graph's integrity, prompts and schemas, the normalization of sloppy and partial output, the partial JSON parser, numerics, chart axes, Markdown and LaTeX repair, the math sandbox and the CLI arguments. Shared fixtures are in `tests/unit/helpers.ts`.
-* `npm run e2e` uses Playwright to walk through onboarding, a full learn session (probe, plan, teach, wrap), a practice session and every screen with the scripted tutor, in the browser or, with `--electron`, in the built app. It fails on any console error.
+* `npm run e2e` uses Playwright to walk through onboarding, a learn chat with the scripted agent (including a question typed while a card waits), a practice chat, an open chat, a guided practice session and every screen with the scripted tutor, in the browser or, with `--electron`, in the built app. It fails on any console error.
 * `src/shared/fakeTutor.ts` produces every card kind, block type and interaction deterministically. It powers the demo mode and the end-to-end run.
 * `scripts/try-step.ts` sends one real step through the CLI and prints the cards and timings, for work on the prompts.

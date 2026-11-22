@@ -7,6 +7,7 @@ import { useApp, type Route } from './engine/app'
 import type { SessionController } from './engine/session'
 import { useStore } from './engine/store'
 import { useNow } from './lib/hooks'
+import { ChatScreen } from './views/ChatView'
 import { HomeView } from './views/HomeView'
 import { MapView } from './views/MapView'
 import { MindView } from './views/MindView'
@@ -48,6 +49,8 @@ function RouteView({ route }: { route: Route }): ReactElement {
       return <MapView conceptId={route.conceptId} />
     case 'session':
       return <SessionScreen />
+    case 'chat':
+      return <ChatScreen />
     case 'mind':
       return <MindView conceptId={route.conceptId} />
     case 'stats':
@@ -61,6 +64,7 @@ function RouteView({ route }: { route: Route }): ReactElement {
 
 const NAV: { name: Route['name']; label: string; icon: string }[] = [
   { name: 'home', label: 'Today', icon: 'home' },
+  { name: 'chat', label: 'Tutor', icon: 'chat' },
   { name: 'map', label: 'Course map', icon: 'map' },
   { name: 'mind', label: 'Mind model', icon: 'mind' },
   { name: 'stats', label: 'Stats', icon: 'stats' },

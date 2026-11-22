@@ -2,6 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } fr
 import { readFile } from 'node:fs/promises'
 import { join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { AgentHost } from '../node/agent'
+import { FakeAgentHost } from '../shared/fakeAgent'
+import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
 import { cancelClaude, runClaude, testClaude, type CliConfig } from '../node/claudeCli'
 import { JsonStore, loadSettings, saveSettings } from '../node/store'
 import type { DeepPartial, LlmRequest, Settings } from '../shared/types'
@@ -109,7 +112,28 @@ function createWindow(): void {
   else void win.loadURL('app://anamnesis/index.html')
 }
 
+const realAgents = new AgentHost()
+const fakeAgents = new FakeAgentHost(160)
+const agentOf = new Map<string, AgentHost | FakeAgentHost>()
+app.on('will-quit', () => realAgents.stopAll())
+
 function registerIpc(): void {
+  ipcMain.handle('agent:start', async (event, req: AgentStartRequest) => {
+    const settings = await loadSettings(store)
+    const host = settings.provider === 'demo' || process.env.ANAMNESIS_FAKE === '1' ? fakeAgents : realAgents
+    agentOf.get(req.chatId)?.stop(req.chatId)
+    agentOf.set(req.chatId, host)
+    const sender = event.sender
+    const onEvent = (e: AgentEvent): void => {
+      if (!sender.isDestroyed()) sender.send('agent:event', e)
+    }
+    return host instanceof FakeAgentHost ? host.start(req, onEvent) : host.start(req, cliConfig(settings), onEvent)
+  })
+  ipcMain.handle('agent:send', (_e, chatId: string, text: string) => agentOf.get(chatId)?.send(chatId, text) ?? false)
+  ipcMain.handle('agent:result', (_e, chatId: string, callId: string, result: AgentToolResult) => {
+    agentOf.get(chatId)?.toolResult(chatId, callId, result)
+  })
+  ipcMain.handle('agent:stop', (_e, chatId: string) => agentOf.get(chatId)?.stop(chatId))
   ipcMain.handle('llm:generate', async (event, req: LlmRequest) => {
     const settings = await loadSettings(store)
     return runClaude(req, cliConfig(settings), (e) => {

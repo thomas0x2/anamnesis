@@ -1,4 +1,5 @@
 // In-browser backend: localStorage persistence and the scripted demo tutor. No model, no files.
+import { FakeAgentHost } from '@shared/fakeAgent'
 import { fakeGenerate } from '@shared/fakeTutor'
 import { DEFAULT_SETTINGS, type Backend, type DeepPartial, type Settings } from '@shared/types'
 import { deepMerge } from '@shared/util'
@@ -22,8 +23,15 @@ export function createDemoBackend(): Backend {
     }
   }
   const settings = (): Settings => deepMerge({ ...DEFAULT_SETTINGS, provider: 'demo' as const }, read<DeepPartial<Settings>>('settings') ?? {})
+  const agents = new FakeAgentHost(260)
   return {
     kind: 'demo',
+    agentStart: (req, onEvent) => agents.start(req, onEvent),
+    agentSend: async (chatId, text) => agents.send(chatId, text),
+    agentToolResult: async (chatId, callId, result) => {
+      agents.toolResult(chatId, callId, result)
+    },
+    agentStop: async (chatId) => agents.stop(chatId),
     generate: (req, onEvent) => fakeGenerate(req, onEvent, 220),
     cancel: async () => {},
     testLlm: async () => ({ ok: true, message: 'Demo tutor (no model). Run the desktop app to use Claude.', path: null, version: null }),

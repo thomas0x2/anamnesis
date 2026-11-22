@@ -62,14 +62,20 @@ function serveApp(): void {
   })
 }
 
+// The packaged app takes its icon from build/icon.png via electron-builder; in development
+// Electron would show its own logo, so point the dock and the window at the same file.
+const devIcon = app.isPackaged ? undefined : join(__dirname, '../../build/icon.png')
+
 function createWindow(): void {
+  if (devIcon && process.platform === 'darwin') app.dock?.setIcon(devIcon)
   win = new BrowserWindow({
+    icon: devIcon,
     width: 1380,
     height: 900,
     minWidth: 980,
     minHeight: 640,
     show: false,
-    backgroundColor: '#0b0d12',
+    backgroundColor: '#0b0b0b',
     title: 'Anamnesis',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 16, y: 18 },

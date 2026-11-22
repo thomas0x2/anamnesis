@@ -92,19 +92,25 @@ async function runSession(page, label) {
   throw new Error(`${label}: the session did not finish`)
 }
 
-/** A tutor chat: answer the cards the agent's tools create until its summary card is in and the agent is idle. */
+/** An agent session: the same screen, with cards the agent's tools create; answer them until the results show and the agent is idle. */
 async function runChat(page, label, { askMidway = false } = {}) {
   let asked = false
   page.setDefaultTimeout(5_000)
   for (let i = 0; i < 500; i++) {
     await page.waitForTimeout(200)
     const idle = (await page.locator('.agent-status.idle').count()) > 0
-    const open = page.locator('.chat-card .card.current')
-    if (idle && (await page.locator('.chat-card .card[data-kind="summary"]').count()) && !(await open.count())) {
-      const pts = Number(((await page.locator('.chat-view .session-points').textContent()) ?? '').replace(/[^\d]/g, ''))
+    const open = page.locator('.session .card.current:not(.plan-review)')
+    if (idle && (await page.locator('.done-hero').count()) && !(await open.count())) {
+      const pts = Number(((await page.locator('.done-hero .pts').textContent()) ?? '').replace(/[^\d]/g, ''))
       page.setDefaultTimeout(30_000)
-      step(`${label}: chat done after ${i} moves, ${pts} insight points`)
+      step(`${label}: agent session done after ${i} moves, +${pts} insight points`)
       return pts
+    }
+    const walk = page.getByRole('button', { name: /Start walking the tree/ })
+    if (await walk.count()) {
+      if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-plan.png`) })
+      await walk.click().catch(() => {})
+      continue
     }
     if (askMidway && !asked && (await page.locator('.agent-status.waiting').count()) && (await open.count())) {
       // write to the tutor while it waits on a card: the message becomes the card's result and gets an answer
@@ -118,12 +124,12 @@ async function runChat(page, label, { askMidway = false } = {}) {
       continue
     }
     if (!(await open.count())) continue
-    // the agent can add or close cards while we act: a card that vanished mid-answer is not an error
-    await answerCard(page, open.first(), label).catch((e) => {
+    // the agent can add cards while we act: a card that vanished mid-answer is not an error
+    await answerCard(page, open.last(), label).catch((e) => {
       if (!/Timeout|detached|not attached/i.test(String(e))) throw e
     })
   }
-  throw new Error(`${label}: the chat did not finish`)
+  throw new Error(`${label}: the agent session did not finish`)
 }
 
 async function answerCard(page, card, label) {
@@ -205,26 +211,29 @@ async function flow(page) {
   await welcome.getByRole('button', { name: 'Start learning' }).click()
   await welcome.waitFor({ state: 'detached' })
 
-  step('learn chat (tutor agent with tools)')
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today.png`) })
+  step('learn session (tutor agent with tools)')
   await page.getByRole('button', { name: 'Start with a probe' }).click()
-  await page.locator('.chat-view').waitFor()
-  if (!((await runChat(page, 'learn', { askMidway: true })) > 0)) throw new Error('the learn chat earned no points')
-  if (!(await page.locator('.chat-view .session-side .plan-node').count())) throw new Error('the plan panel is missing')
-  step('learn chat: plan panel shows the dependency tree')
+  await page.locator('.session .phases').waitFor()
+  if (!((await runChat(page, 'learn', { askMidway: true })) > 0)) throw new Error('the learn session earned no points')
+  if (!(await page.locator('.session-side .plan-node').count())) throw new Error('the plan panel is missing')
+  step('learn session: plan panel shows the dependency tree')
 
-  step('practice chat')
+  step('practice session (agent)')
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
-  await page.locator('.chat-view').waitFor()
-  if (!((await runChat(page, 'practice')) > 0)) throw new Error('the practice chat earned no points')
+  await page.locator('.session .phases').waitFor()
+  if (!((await runChat(page, 'practice')) > 0)) throw new Error('the practice session earned no points')
+  if (!(await page.locator('.session-side .queue-item').count())) throw new Error('the item list is missing')
 
   step('open chat from the Tutor screen')
-  await page.getByRole('button', { name: /New chat/ }).click()
+  await nav(page, 'Tutor').click()
   const box = page.getByRole('textbox', { name: 'Message to the tutor' })
   await box.fill('Explain barycentric interpolation to me')
   await box.press('Enter')
-  await page.locator('.chat-card .card.current').first().waitFor({ timeout: 15_000 })
+  await page.locator('.session .card.current').first().waitFor({ timeout: 15_000 })
   step('open chat: the tutor answers with a card')
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-open-chat.png`) })
   await nav(page, 'Tutor').click()
 
   step('guided session (classic mode)')
@@ -243,6 +252,7 @@ async function flow(page) {
     await nav(page, name).click()
     await page.getByRole('heading', { name: heading, level: 1 }).waitFor()
     step(`${name} screen renders`)
+    if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-screen-${name.replace(/\W+/g, '_')}.png`) })
     if (name === 'Course map') {
       const pctButton = page.locator('.map-zoom .zoom-pct')
       const before = await pctButton.textContent()

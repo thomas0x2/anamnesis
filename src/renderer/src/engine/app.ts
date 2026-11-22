@@ -21,9 +21,10 @@ import type {
   Settings
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { practiceQueue, reviewQueue } from '@shared/selection'
 import { nowIso, truncate, uid } from '@shared/util'
 import type { AgentMode } from '@shared/agentTools'
-import { ChatController, newChatRecord, type ChatIndexEntry, type ChatRecord } from './chat'
+import { ChatController, chatSession, newChatRecord, type ChatIndexEntry, type ChatRecord } from './chat'
 import { ScriptIndex } from './script'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
@@ -111,7 +112,17 @@ export class AppController {
     const active = this.state.get().activeSessionId
     if (active) {
       const s = await this.backend.readJson<Session>(`sessions/${active}`)
-      if (s && s.phase !== 'done') this.session.set(new SessionController(this, s))
+      const rec = s?.agentChatId ? await this.backend.readJson<ChatRecord>(`chats/${s.agentChatId}`) : null
+      if (!s || s.phase === 'done') {
+        // nothing to resume
+      } else if (rec && rec.version === 1) {
+        const cc = new ChatController(this, rec, s)
+        this.chat.set(cc)
+        this.session.set(cc.cards)
+      } else if (this.agentMode) {
+        // a guided session from before the agent tutor: start fresh (its evidence is kept)
+        this.updateState((st) => ({ ...st, activeSessionId: null }))
+      } else this.session.set(new SessionController(this, s))
     }
   }
 
@@ -333,8 +344,7 @@ export class AppController {
   }
 
   private async begin(s: Session): Promise<void> {
-    const prev = this.session.get()
-    if (prev) await prev.pause()
+    await this.leaveCurrent()
     const sc = new SessionController(this, s)
     this.session.set(sc)
     this.updateState((st) => ({ ...st, activeSessionId: s.id }))
@@ -371,13 +381,31 @@ export class AppController {
     return 'Open chat'
   }
 
-  /** Start a new tutor chat. `opening` is the learner's first message (open chats); otherwise the app briefs the agent. */
+  /**
+   * Start a new agent session. The cards it creates appear on the session screen (phases, plan
+   * review, side panel); `opening` is the learner's first message (open chats), otherwise the app
+   * briefs the agent.
+   */
   async startChat(mode: AgentMode, goal: string | null, scope: string[], opening?: string): Promise<void> {
-    await this.closeChatAgent()
     const rec = newChatRecord(mode, goal, scope, opening ? opening.slice(0, 60) : this.chatTitle(mode, goal, scope))
-    const cc = new ChatController(this, rec, null)
+    const session = chatSession(rec)
+    if (mode === 'practice' || mode === 'review') {
+      const now = new Date()
+      const learner = this.state.get().learner
+      const queue = mode === 'practice' ? practiceQueue(this.graph, learner, scope, this.settings.get().learning.practiceItems, now) : reviewQueue(this.graph, learner, now, 10)
+      if (!queue.length) {
+        this.toast({ kind: 'info', text: mode === 'review' ? 'Nothing is due for review right now.' : 'Nothing to practice yet: learn a concept first.' })
+        return
+      }
+      session.queue = queue
+      session.itemsGoal = queue.length
+    }
+    await this.leaveCurrent()
+    const cc = new ChatController(this, rec, session)
     this.chat.set(cc)
-    this.go({ name: 'chat' })
+    this.session.set(cc.cards)
+    this.updateState((st) => ({ ...st, activeSessionId: session.id }))
+    this.go({ name: 'session' })
     await cc.save()
     if (opening) await cc.send(opening)
     else
@@ -385,24 +413,36 @@ export class AppController {
         mode === 'learn'
           ? `Start the learning session for "${this.chatTitle(mode, goal, scope)}": probe first.`
           : mode === 'practice'
-            ? 'Start the practice session: pick the first item from the learner model.'
+            ? `Start the practice session with item 1 of ${session.queue.length}.`
             : mode === 'review'
-              ? 'Start the spaced review with what is due.'
+              ? `Start the spaced review with item 1 of ${session.queue.length}.`
               : 'Greet the learner in one sentence and ask what they want to work on.'
       )
   }
 
+  /** Pause the session on screen and stop its agent, if any. */
+  private async leaveCurrent(): Promise<void> {
+    const cc = this.chat.get()
+    const sc = this.session.get()
+    if (cc) await cc.stop()
+    else if (sc) await sc.pause()
+    this.chat.set(null)
+  }
+
   async openChat(id: string): Promise<void> {
-    if (this.chat.get()?.chat.id === id) return this.go({ name: 'chat' })
+    if (this.chat.get()?.chat.id === id) return this.go({ name: 'session' })
     const rec = await this.backend.readJson<ChatRecord>(`chats/${id}`)
     if (!rec || rec.version !== 1) {
       this.toast({ kind: 'error', text: 'That chat could not be opened.' })
       return
     }
-    await this.closeChatAgent()
+    await this.leaveCurrent()
     const s = await this.backend.readJson<Session>(`sessions/${rec.sessionId}`)
-    this.chat.set(new ChatController(this, rec, s))
-    this.go({ name: 'chat' })
+    const cc = new ChatController(this, rec, s)
+    this.chat.set(cc)
+    this.session.set(cc.cards)
+    if (cc.cards.s.phase !== 'done') this.updateState((st) => ({ ...st, activeSessionId: cc.cards.s.id }))
+    this.go({ name: 'session' })
   }
 
   /** Stop the running agent (the chat stays and resumes on the next message). */
@@ -428,14 +468,14 @@ export class AppController {
   }
 
   closeSession(): void {
-    const sc = this.session.get()
-    if (sc) void sc.pause()
+    void this.leaveCurrent()
     this.session.set(null)
     this.updateState((st) => ({ ...st, activeSessionId: null }))
     this.go({ name: 'home' })
   }
 
   async resetAll(): Promise<void> {
+    await this.leaveCurrent()
     this.session.set(null)
     this.state.set(freshState())
     await this.flush()

@@ -8,7 +8,7 @@ The tutor is Claude, run through the **Claude Code CLI** on your own Claude logi
 
 ## What it does
 
-**A tutor you talk to.** The tutor is an agent in a chat. You say what you want ("why do Chebyshev nodes beat equispaced ones?", "drill me on quadrature", or just *Learn this* on the course map) and it answers by building the learning interface around you: questions you answer in the chat, explanations with equations, plots and interactive demos, a plan of the reasoning steps in a side panel, the right page of the script. It reads your mind model before it decides what to do and writes to it afterwards. You can type or dictate a question at any moment, even in the middle of a card. (Settings → Learning switches back to the fixed guided sessions below.)
+**A tutor agent behind every session.** Learning a topic, practice and spaced reviews all run with a tutor agent that builds each card on the fly with its tools: the probe questions, the plan of reasoning steps you review, the explanations with equations, plots and interactive demos, the checks, the right page of the script. It reads your mind model before it decides what to do and writes to it afterwards. The session screen stays the familiar one (phases, plan review, side panel, results), with the tutor's short notes between the cards and a message box at the bottom: type or dictate a question at any moment, even in the middle of a card. The Tutor page starts an open conversation. (Settings → Learning switches back to the fixed guided sessions below.)
 
 **Learn a concept in three phases**
 

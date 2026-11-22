@@ -280,6 +280,8 @@ export interface ChatTurn {
 export interface Session {
   id: string
   type: SessionType
+  /** set when a tutor agent drives this session (the chat record that holds its conversation) */
+  agentChatId?: string
   goalConceptId: string | null
   scope: string[]
   startedAt: string

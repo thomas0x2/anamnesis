@@ -36,7 +36,7 @@ The scripted tutor (`src/shared/fakeTutor.ts`) can also stand in for Claude in t
 
 ## The tutor agent (default)
 
-Since the agent rebuild the main way to learn is a chat with a tutor agent, in the spirit of an agent harness: the model drives, the app supplies tools that create the learning interface and keep the learner model. **Settings → Learning → How the tutor works** switches back to the guided sessions described in the next section.
+Since the agent rebuild every session (learn, practice, review, open chat) is driven by a tutor agent, in the spirit of an agent harness: the model drives, the app supplies tools that create the learning interface and keep the learner model. The agent's cards appear on the same session screen as the guided sessions: the phase header follows the tools it uses (probe cards, `show_plan`, cards for a plan node, the reflect card), `show_plan` opens the plan review and waits until the learner confirms it, practice and review show the item list, and the results screen follows `finish`. The tutor's text appears as short notes between the cards, with a message box below. Practice and review items are still picked by the app (spacing, level staircase) and listed in the prompt; the agent names the item with `ask`'s `item` field, so levels and memory update as in guided practice. Unfinished guided sessions are not resumed in agent mode (their evidence stays). **Settings → Learning → How the tutor works** switches back to the guided sessions described in the next section.
 
 ```
 learner ── chat box ──▶ ChatController ──agentSend──▶ claude -p (stream-json in/out, one per chat)
@@ -265,6 +265,6 @@ Model-written expressions are evaluated by a locked-down math.js instance (`src/
 ## Testing
 
 * `npm test` runs the unit tests (vitest) for the learner model, FSRS, grading, item selection, stats and rewards, the course graph's integrity, prompts and schemas, the normalization of sloppy and partial output, the partial JSON parser, numerics, chart axes, Markdown and LaTeX repair, the math sandbox and the CLI arguments. Shared fixtures are in `tests/unit/helpers.ts`.
-* `npm run e2e` uses Playwright to walk through onboarding, a learn chat with the scripted agent (including a question typed while a card waits), a practice chat, an open chat, a guided practice session and every screen with the scripted tutor, in the browser or, with `--electron`, in the built app. It fails on any console error.
+* `npm run e2e` uses Playwright to walk through onboarding, a learn session with the scripted agent (probes, plan review, teaching, a question typed while a card waits), a practice session with the agent, an open chat, a guided practice session and every screen with the scripted tutor, in the browser or, with `--electron`, in the built app. It fails on any console error.
 * `src/shared/fakeTutor.ts` produces every card kind, block type and interaction deterministically. It powers the demo mode and the end-to-end run.
 * `scripts/try-step.ts` sends one real step through the CLI and prints the cards and timings, for work on the prompts.

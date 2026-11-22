@@ -80,6 +80,19 @@ describe('agent system prompt', () => {
     expect(p).toContain('ask: one question')
     expect(p).not.toContain('Exactly one JSON object')
     expect(p).not.toContain('You never chat freely')
+    expect(p).not.toContain('Mode: OPEN')
+  })
+})
+
+describe('agent system prompt for practice', () => {
+  it('lists the items the app selected, numbered for the ask tool', () => {
+    const ids = course.concepts.slice(0, 2).map((c) => c.id)
+    const queue = ids.map((conceptId) => ({ conceptId, level: 2 as const, cue: 'familiar' as const, mode: 'apply' as const, compose: [] }))
+    const p = buildAgentSystemPrompt(course, graph, { profile: [], concepts: {} }, { mode: 'practice', goalConceptId: null, scope: ids, queue: queue as any }, new Date())
+    expect(p).toContain('Mode: PRACTICE.')
+    expect(p).toContain(`1. ${ids[0]} (`)
+    expect(p).toContain(`2. ${ids[1]} (`)
+    expect(p).not.toContain('Mode: OPEN')
   })
 })
 

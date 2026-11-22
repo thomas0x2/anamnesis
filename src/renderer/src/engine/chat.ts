@@ -1,7 +1,8 @@
-// A tutor chat: one Claude Code agent with the app's tools. The agent writes chat messages and calls
-// tools; the app runs each tool here: cards go into a SessionController in agent mode (which grades
-// answers and records evidence exactly as in guided sessions), plans go into the side panel, look-ups
-// read the course graph, the learner model and the lecture notes.
+// A tutor session driven by an agent: one Claude Code agent with the app's tools. The agent writes
+// short messages and calls tools; the app runs each tool here. Cards go into the session's
+// SessionController in agent mode (the same screen, grading and evidence as guided sessions), a plan
+// goes to the plan review and the side panel, look-ups read the course graph, the learner model and
+// the lecture notes. The phase in the header follows the tools the agent uses.
 import { AGENT_TOOLS, buildAgentSystemPrompt, type AgentMode } from '@shared/agentTools'
 import type { AgentEvent, AgentToolResult } from '@shared/agentTypes'
 import { sanitizePlan } from '@shared/graph'
@@ -10,13 +11,14 @@ import { normalizeCard, normalizeModelUpdate, normalizePlan, type NormalizeConte
 import { parsePartialJson } from '@shared/partialJson'
 import { conceptModelLine, describeResponse } from '@shared/prompts'
 import { dueConcepts } from '@shared/selection'
-import type { Card, CardResponse, PlanNodeState, PlanState, Session } from '@shared/types'
+import type { Card, CardResponse, PlanNodeState, PlanState, PracticeTarget, Session, SessionType } from '@shared/types'
 import { nowIso, truncate, uid } from '@shared/util'
 import type { AppController } from './app'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
 
-export type ChatItem =
+/** Every item remembers how many card steps existed when it was made (pos), to place it in the stream. */
+export type ChatItem = { pos?: number } & (
   | { id: string; kind: 'user'; text: string; at: string }
   | { id: string; kind: 'assistant'; text: string; at: string }
   | {
@@ -34,6 +36,7 @@ export type ChatItem =
       at: string
     }
   | { id: string; kind: 'note'; tone: 'info' | 'error'; text: string; at: string }
+)
 
 export type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -96,15 +99,21 @@ export function newChatRecord(mode: AgentMode, goalConceptId: string | null, sco
   }
 }
 
+export function sessionType(mode: AgentMode): SessionType {
+  return mode === 'open' ? 'chat' : mode
+}
+
 export function chatSession(c: ChatRecord): Session {
+  const type = sessionType(c.mode)
   return {
     id: c.sessionId,
-    type: 'chat',
+    type,
+    agentChatId: c.id,
     goalConceptId: c.goalConceptId,
     scope: c.scope,
     startedAt: c.createdAt,
     endedAt: null,
-    phase: 'chat',
+    phase: type === 'learn' ? 'probe' : type,
     steps: [],
     plan: null,
     currentNodeId: null,
@@ -134,6 +143,7 @@ export class ChatController {
   readonly cards: SessionController
   private ctx: NormalizeContext
   private waiters = new Map<number, (r: CardResponse) => void>()
+  private planWaiter: ((s: Record<string, PlanNodeState>) => void) | null = null
   private saveTimer: ReturnType<typeof setTimeout> | null = null
   private running = false
 
@@ -146,7 +156,11 @@ export class ChatController {
     const items = chat.items.map((it) => (it.kind === 'tool' && (it.status === 'running' || it.status === 'streaming') ? { ...it, status: 'interrupted' as const, callId: null } : it))
     this.view = createStore<ChatView>({ chat: { ...chat, items }, agent: 'off', model: null, error: null })
     this.ctx = { conceptIds: new Set(app.course.concepts.map((c) => c.id)), defaultConceptId: chat.goalConceptId ?? chat.scope[0] ?? null }
-    this.cards = new SessionController(app, session ?? chatSession(chat), { onCardDone: (step, _card, resp) => this.cardDone(step, resp) })
+    this.cards = new SessionController(app, session ?? chatSession(chat), {
+      onCardDone: (step, _card, resp) => this.cardDone(step, resp),
+      onPlanConfirmed: (nodeState) => this.planConfirmed(nodeState),
+      retry: () => this.retry()
+    })
   }
 
   get chat(): ChatRecord {
@@ -168,7 +182,8 @@ export class ChatController {
   }
 
   private add(item: ChatItem): void {
-    this.patch((c) => ({ ...c, items: [...c.items, item] }))
+    const pos = item.pos ?? this.cards.s.steps.length
+    this.patch((c) => ({ ...c, items: [...c.items, { ...item, pos }] }))
   }
 
   private updateItem(id: string, fn: (it: ChatItem) => ChatItem): void {
@@ -177,6 +192,9 @@ export class ChatController {
 
   private setAgent(agent: ChatView['agent'], extra: Partial<ChatView> = {}): void {
     this.view.set((v) => ({ ...v, agent, ...extra }))
+    const label = { starting: 'Starting the tutor…', thinking: 'The tutor is thinking…', writing: 'The tutor is writing…' }[agent as string] ?? null
+    this.cards.setAgentStatus(label)
+    if ('error' in extra) this.cards.setAgentError(extra.error ? { message: extra.error, kind: 'agent', canRetry: true } : null)
   }
 
   // ------------------------------------------------------------ agent lifecycle
@@ -184,7 +202,7 @@ export class ChatController {
     if (this.running) return true
     this.setAgent('starting', { error: null })
     const c = this.chat
-    const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope }, new Date())
+    const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue }, new Date())
     const settings = this.app.settings.get()
     const r = await this.app.backend.agentStart(
       { chatId: c.id, system, tools: AGENT_TOOLS, resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId, model: settings.cli.model, effort: settings.cli.effort },
@@ -204,7 +222,13 @@ export class ChatController {
     const t = text.trim()
     if (!t) return
     this.add({ id: uid('m_'), kind: 'user', text: t, at: nowIso() })
-    const waiting = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.status === 'running' && CARD_TOOLS.has(it.name) && !!it.callId)
+    const waiting = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.status === 'running' && (CARD_TOOLS.has(it.name) || it.name === 'show_plan') && !!it.callId)
+    if (waiting?.name === 'show_plan' && this.running) {
+      this.planWaiter = null
+      this.updateItem(waiting.id, (it) => ({ ...(it as ToolItem), status: 'interrupted' }))
+      await this.reply(waiting, { text: `The learner has not confirmed the plan yet (it stays on screen). The learner wrote instead: "${t}"` })
+      return
+    }
     if (waiting && this.running) {
       this.updateItem(waiting.id, (it) => ({ ...(it as ToolItem), status: 'interrupted' }))
       await this.reply(waiting, { text: `The learner did not answer this card yet. The learner wrote instead: "${t}"` })
@@ -258,6 +282,7 @@ export class ChatController {
       }
       case 'tool_input': {
         const existing = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.toolUseId === e.toolUseId)
+        if (!existing && CARD_TOOLS.has(e.name)) this.cards.setAgentStatus(e.name === 'ask' ? 'Writing a question…' : 'Writing the next card…')
         if (existing) this.updateItem(existing.id, (it) => ({ ...(it as ToolItem), json: e.json }))
         else
           this.add({ id: uid('tl_'), kind: 'tool', name: e.name, toolUseId: e.toolUseId, callId: null, json: e.json, args: null, status: 'streaming', step: null, result: null, at: nowIso() })
@@ -301,7 +326,7 @@ export class ChatController {
     if (item) this.updateItem(item.id, (it) => ({ ...(it as ToolItem), callId, args, status: 'running' }))
     else this.add({ id: uid('tl_'), kind: 'tool', name, toolUseId: null, callId, json: JSON.stringify(args), args, status: 'running', step: null, result: null, at: nowIso() })
     item = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === callId)!
-    if (CARD_TOOLS.has(name)) this.setAgent('waiting')
+    if (CARD_TOOLS.has(name) || name === 'show_plan') this.setAgent('waiting')
     let result: AgentToolResult
     try {
       result = await this.execute(item, name, args)
@@ -320,7 +345,9 @@ export class ChatController {
         const card = normalizeCard({ ...args, kind, interaction: name === 'explain' ? null : args.interaction }, this.ctx)
         if (!card) return { text: 'The card was empty or invalid: it needs blocks (explain) or an interaction (ask).', isError: true }
         if (name === 'ask' && card.interaction?.type === 'continue') return { text: 'ask needs a real interaction (mcq, numeric, free, order or fill). Use explain for content.', isError: true }
-        const step = this.cards.pushStep([card], card.nodeId)
+        this.followPhase(card)
+        const target = this.target(args.item)
+        const step = this.cards.pushStep([card], card.nodeId, target)
         this.updateItem(item.id, (it) => ({ ...(it as ToolItem), step }))
         const resp = await new Promise<CardResponse>((resolve) => this.waiters.set(step, resolve))
         return { text: describeForAgent(card, resp) }
@@ -329,24 +356,21 @@ export class ChatController {
         const p = normalizePlan(args, this.ctx)
         if (!p || !p.nodes.length) return { text: 'The plan needs nodes.', isError: true }
         const plan = sanitizePlan(p)
-        const nodeState: Record<string, PlanNodeState> = {}
-        for (const n of plan.nodes) nodeState[n.id] = n.kind === 'known' ? 'known' : 'pending'
-        this.patch((c) => ({ ...c, plan: { plan, nodeState, attempts: {}, confirmed: true } }))
-        return { text: `Plan shown with nodes: ${plan.nodes.map((n) => `${n.id} "${n.title}" (${n.kind})`).join(', ')}.` }
+        const confirmed = new Promise<Record<string, PlanNodeState>>((resolve) => (this.planWaiter = resolve))
+        this.cards.showPlan(plan)
+        const st = await confirmed
+        const known = plan.nodes.filter((n) => st[n.id] === 'known')
+        const teach = plan.nodes.filter((n) => st[n.id] !== 'known')
+        return {
+          text: `The learner reviewed the plan. Already known (skip, use as anchors): ${known.map((n) => `${n.id} "${n.title}"`).join(', ') || 'none'}. To teach, in order: ${teach.map((n) => `${n.id} "${n.title}"`).join(', ') || 'none'}.`
+        }
       }
       case 'update_plan': {
-        const ps = this.chat.plan
+        const ps = this.cards.s.plan
         const id = String(args.nodeId ?? '')
         if (!ps || !ps.plan.nodes.some((n) => n.id === id)) return { text: `No plan node "${id}". Call show_plan first.`, isError: true }
         const st = String(args.status)
-        const state: PlanNodeState = st === 'current' ? 'active' : st === 'done' ? 'done' : st === 'shaky' ? 'shaky' : 'pending'
-        this.patch((c) => {
-          const nodeState = { ...c.plan!.nodeState }
-          if (state === 'active') for (const k of Object.keys(nodeState)) if (nodeState[k] === 'active') nodeState[k] = 'pending'
-          nodeState[id] = state
-          const attempts = st === 'needs_more' ? { ...c.plan!.attempts, [id]: (c.plan!.attempts[id] ?? 0) + 1 } : c.plan!.attempts
-          return { ...c, plan: { ...c.plan!, nodeState, attempts } }
-        })
+        this.cards.setNodeState(id, st === 'current' ? 'active' : st === 'done' ? 'done' : st === 'shaky' ? 'shaky' : 'pending')
         return { text: 'ok' }
       }
       case 'read_script':
@@ -374,12 +398,43 @@ export class ChatController {
           this.updateItem(item.id, (it) => ({ ...(it as ToolItem), step }))
         }
         this.patch((c) => ({ ...c, finished: true }))
+        this.cards.setPhase('wrap')
         await this.cards.finish()
         return { text: 'Summary shown and the session recorded. The learner can keep chatting.' }
       }
       default:
         return { text: `Unknown tool ${name}`, isError: true }
     }
+  }
+
+  /** The header's phase follows what the agent does: probing, teaching a node, wrapping up. */
+  private followPhase(card: Card): void {
+    const s = this.cards.s
+    if (s.type !== 'learn') return
+    if (card.kind === 'probe' && !s.plan) this.cards.setPhase('probe')
+    else if (card.kind === 'reflect' || card.kind === 'summary') this.cards.setPhase('wrap')
+    else if (card.nodeId && s.plan?.plan.nodes.some((n) => n.id === card.nodeId) && s.plan.nodeState[card.nodeId] !== 'active' && s.plan.nodeState[card.nodeId] !== 'done')
+      this.cards.setNodeState(card.nodeId, 'active')
+    else if (s.plan && s.phase !== 'teach' && s.phase !== 'wrap' && card.kind !== 'probe') this.cards.setPhase('teach')
+  }
+
+  /** Practice and review items come from the app's queue (spacing, levels); the agent names the item. */
+  private target(item: unknown): PracticeTarget | null {
+    const q = this.cards.s.queue
+    const n = Number(item)
+    if (!q.length || !Number.isInteger(n) || n < 1 || n > q.length) return null
+    return q[n - 1]
+  }
+
+  private planConfirmed(nodeState: Record<string, PlanNodeState>): void {
+    const w = this.planWaiter
+    this.planWaiter = null
+    if (w) return w(nodeState)
+    // the plan tool call is gone (the learner wrote meanwhile, or the app restarted)
+    const nodes = this.cards.s.plan?.plan.nodes ?? []
+    void this.message(
+      `[The learner confirmed the plan. Already known: ${nodes.filter((n) => nodeState[n.id] === 'known').map((n) => n.id).join(', ') || 'none'}. To teach: ${nodes.filter((n) => nodeState[n.id] !== 'known').map((n) => n.id).join(', ') || 'none'}.]`
+    )
   }
 
   private cardDone(step: number, resp: CardResponse): void {

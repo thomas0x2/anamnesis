@@ -22,6 +22,8 @@ import type {
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { nowIso, truncate, uid } from '@shared/util'
+import type { AgentMode } from '@shared/agentTools'
+import { ChatController, newChatRecord, type ChatIndexEntry, type ChatRecord } from './chat'
 import { ScriptIndex } from './script'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
@@ -30,6 +32,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'map'; conceptId?: string }
   | { name: 'session' }
+  | { name: 'chat' }
   | { name: 'mind'; conceptId?: string }
   | { name: 'stats' }
   | { name: 'script'; page?: number }
@@ -89,6 +92,8 @@ export class AppController {
   readonly settings: Store<Settings> = createStore(DEFAULT_SETTINGS)
   readonly ui: Store<UiState> = createStore<UiState>({ route: { name: 'home' }, toasts: [], onboarding: false, scriptPeek: null })
   readonly session: Store<SessionController | null> = createStore<SessionController | null>(null)
+  readonly chat: Store<ChatController | null> = createStore<ChatController | null>(null)
+  readonly chats: Store<ChatIndexEntry[]> = createStore<ChatIndexEntry[]>([])
   readonly script: ScriptIndex
   private saveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -102,6 +107,7 @@ export class AppController {
     if (saved && saved.version === 1) this.state.set({ ...freshState(), ...saved })
     if (!this.settings.get().onboarded) this.ui.set((u) => ({ ...u, onboarding: true }))
     void this.script.load()
+    this.chats.set((await this.backend.readJson<ChatIndexEntry[]>('chats-index')) ?? [])
     const active = this.state.get().activeSessionId
     if (active) {
       const s = await this.backend.readJson<Session>(`sessions/${active}`)
@@ -165,8 +171,11 @@ export class AppController {
       ...s,
       rewards: { total: s.rewards.total + events.reduce((a, e) => a + e.points, 0), events: [...s.rewards.events, ...events].slice(-600) }
     }))
+    const sum = events.reduce((a, e) => a + e.points, 0)
     const sc = this.session.get()
-    if (sc) sc.addPoints(events.reduce((a, e) => a + e.points, 0))
+    const cc = this.chat.get()
+    if (cc && events.some((e) => e.sessionId === cc.cards.s.id)) cc.cards.addPoints(sum)
+    else if (sc) sc.addPoints(sum)
     for (const e of events) this.toast({ kind: ['proficient', 'mastered', 'plan_done'].includes(e.kind) ? 'milestone' : 'reward', text: e.reason, points: e.points })
   }
 
@@ -334,17 +343,79 @@ export class AppController {
     void sc.start()
   }
 
+  private get agentMode(): boolean {
+    return this.settings.get().learning.tutorMode !== 'guided'
+  }
+
   startLearn(conceptId: string): Promise<void> {
+    if (this.agentMode) return this.startChat('learn', conceptId, [conceptId])
     return this.begin(this.newSession('learn', conceptId, [conceptId], [], 0))
   }
 
   startPractice(scope: string[]): Promise<void> {
+    if (this.agentMode) return this.startChat('practice', null, scope)
     const n = this.settings.get().learning.practiceItems
     return this.begin(this.newSession('practice', null, scope, [], n))
   }
 
   startReview(): Promise<void> {
+    if (this.agentMode) return this.startChat('review', null, [])
     return this.begin(this.newSession('review', null, [], [], 10))
+  }
+
+  // ------------------------------------------------------------ tutor chats (agent)
+  private chatTitle(mode: AgentMode, goal: string | null, scope: string[]): string {
+    if (mode === 'learn' && goal) return this.graph.title(goal)
+    if (mode === 'practice') return scope.length === 1 ? `Practice: ${this.graph.title(scope[0])}` : 'Mixed practice'
+    if (mode === 'review') return 'Spaced review'
+    return 'Open chat'
+  }
+
+  /** Start a new tutor chat. `opening` is the learner's first message (open chats); otherwise the app briefs the agent. */
+  async startChat(mode: AgentMode, goal: string | null, scope: string[], opening?: string): Promise<void> {
+    await this.closeChatAgent()
+    const rec = newChatRecord(mode, goal, scope, opening ? opening.slice(0, 60) : this.chatTitle(mode, goal, scope))
+    const cc = new ChatController(this, rec, null)
+    this.chat.set(cc)
+    this.go({ name: 'chat' })
+    await cc.save()
+    if (opening) await cc.send(opening)
+    else
+      await cc.begin(
+        mode === 'learn'
+          ? `Start the learning session for "${this.chatTitle(mode, goal, scope)}": probe first.`
+          : mode === 'practice'
+            ? 'Start the practice session: pick the first item from the learner model.'
+            : mode === 'review'
+              ? 'Start the spaced review with what is due.'
+              : 'Greet the learner in one sentence and ask what they want to work on.'
+      )
+  }
+
+  async openChat(id: string): Promise<void> {
+    if (this.chat.get()?.chat.id === id) return this.go({ name: 'chat' })
+    const rec = await this.backend.readJson<ChatRecord>(`chats/${id}`)
+    if (!rec || rec.version !== 1) {
+      this.toast({ kind: 'error', text: 'That chat could not be opened.' })
+      return
+    }
+    await this.closeChatAgent()
+    const s = await this.backend.readJson<Session>(`sessions/${rec.sessionId}`)
+    this.chat.set(new ChatController(this, rec, s))
+    this.go({ name: 'chat' })
+  }
+
+  /** Stop the running agent (the chat stays and resumes on the next message). */
+  async closeChatAgent(): Promise<void> {
+    const cc = this.chat.get()
+    if (cc) await cc.stop()
+  }
+
+  async touchChatIndex(c: ChatRecord): Promise<void> {
+    const entry: ChatIndexEntry = { id: c.id, title: c.title, mode: c.mode, goalConceptId: c.goalConceptId, updatedAt: c.updatedAt }
+    const list = [entry, ...this.chats.get().filter((x) => x.id !== c.id)].slice(0, 100)
+    this.chats.set(list)
+    await this.backend.writeJson('chats-index', list)
   }
 
   async finishSession(s: Session, summary: SessionSummary): Promise<void> {

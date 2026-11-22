@@ -5,7 +5,11 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { DEFAULT_SETTINGS, type DeepPartial, type Settings } from '../shared/types'
 import { deepMerge } from '../shared/util'
 
+let seq = 0
+
 export class JsonStore {
+  /** writes to one file are serialized, so two quick saves can not race on the rename */
+  private chains = new Map<string, Promise<void>>()
   constructor(readonly dir: string) {}
 
   private file(name: string): string {
@@ -28,11 +32,21 @@ export class JsonStore {
     return null
   }
 
-  async write(name: string, data: unknown): Promise<void> {
+  write(name: string, data: unknown): Promise<void> {
     const f = this.file(name)
+    const json = JSON.stringify(data)
+    const next = (this.chains.get(f) ?? Promise.resolve()).catch(() => {}).then(() => this.writeNow(f, json))
+    this.chains.set(f, next)
+    void next.finally(() => {
+      if (this.chains.get(f) === next) this.chains.delete(f)
+    }).catch(() => {})
+    return next
+  }
+
+  private async writeNow(f: string, json: string): Promise<void> {
     await mkdir(dirname(f), { recursive: true })
-    const tmp = `${f}.${process.pid}.${Date.now()}.tmp`
-    await writeFile(tmp, JSON.stringify(data), 'utf8')
+    const tmp = `${f}.${process.pid}.${Date.now()}.${++seq}.tmp`
+    await writeFile(tmp, json, 'utf8')
     if (existsSync(f)) await copyFile(f, `${f}.bak`).catch(() => {})
     await rename(tmp, f)
   }

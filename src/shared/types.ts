@@ -1,3 +1,4 @@
+import type { AgentEvent, AgentStartRequest, AgentToolResult } from './agentTypes'
 // Domain types shared by the Electron main process, the renderer and the tests.
 
 // ---------------------------------------------------------------- course map
@@ -212,8 +213,8 @@ export interface ChatReply {
 }
 
 // ---------------------------------------------------------------- sessions
-export type SessionType = 'learn' | 'practice' | 'review'
-export type Phase = 'probe' | 'plan' | 'teach' | 'wrap' | 'practice' | 'review' | 'done'
+export type SessionType = 'learn' | 'practice' | 'review' | 'chat'
+export type Phase = 'probe' | 'plan' | 'teach' | 'wrap' | 'practice' | 'review' | 'chat' | 'done'
 export type Verdict = 'correct' | 'partial' | 'incorrect' | 'dontknow' | 'seen'
 
 export interface CardResponse {
@@ -427,7 +428,7 @@ export interface Settings {
     ttsRate: number
     autoSpeak: boolean
   }
-  learning: { desiredRetention: number; practiceItems: number }
+  learning: { desiredRetention: number; practiceItems: number; tutorMode: 'agent' | 'guided' }
   onboarded: boolean
 }
 
@@ -443,7 +444,7 @@ export const DEFAULT_SETTINGS: Settings = {
     ttsRate: 1.05,
     autoSpeak: false
   },
-  learning: { desiredRetention: 0.9, practiceItems: 8 },
+  learning: { desiredRetention: 0.9, practiceItems: 8, tutorMode: 'agent' },
   onboarded: false
 }
 
@@ -510,6 +511,11 @@ export interface Backend {
   chooseScript(): Promise<string | null>
   openExternal(url: string): Promise<void>
   info(): Promise<AppInfo>
+  /** Start the tutor agent for a chat; events stream until it exits. */
+  agentStart(req: AgentStartRequest, onEvent: (e: AgentEvent) => void): Promise<{ ok: boolean; error?: string; errorKind?: LlmErrorKind }>
+  agentSend(chatId: string, text: string): Promise<boolean>
+  agentToolResult(chatId: string, callId: string, result: AgentToolResult): Promise<void>
+  agentStop(chatId: string): Promise<void>
   /** Electron only: run `fn` (save everything) before the window closes. */
   onBeforeQuit?(fn: () => Promise<void>): void
 }

@@ -87,6 +87,47 @@ async function runSession(page, label) {
     }
     const card = page.locator('.card.current').last()
     if (!(await card.count())) continue
+    await answerCard(page, card, label)
+  }
+  throw new Error(`${label}: the session did not finish`)
+}
+
+/** A tutor chat: answer the cards the agent's tools create until its summary card is in and the agent is idle. */
+async function runChat(page, label, { askMidway = false } = {}) {
+  let asked = false
+  page.setDefaultTimeout(5_000)
+  for (let i = 0; i < 500; i++) {
+    await page.waitForTimeout(200)
+    const idle = (await page.locator('.agent-status.idle').count()) > 0
+    const open = page.locator('.chat-card .card.current')
+    if (idle && (await page.locator('.chat-card .card[data-kind="summary"]').count()) && !(await open.count())) {
+      const pts = Number(((await page.locator('.chat-view .session-points').textContent()) ?? '').replace(/[^\d]/g, ''))
+      page.setDefaultTimeout(30_000)
+      step(`${label}: chat done after ${i} moves, ${pts} insight points`)
+      return pts
+    }
+    if (askMidway && !asked && (await page.locator('.agent-status.waiting').count()) && (await open.count())) {
+      // write to the tutor while it waits on a card: the message becomes the card's result and gets an answer
+      const box = page.getByRole('textbox', { name: 'Message to the tutor' })
+      await box.fill('Why are the weights computed only once?')
+      await box.press('Enter')
+      await page.locator('.assistant-msg', { hasText: 'you asked: Why are the weights' }).waitFor({ timeout: 15_000 })
+      asked = true
+      step(`${label}: a question typed mid-card got an answer`)
+      if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-asked.png`) })
+      continue
+    }
+    if (!(await open.count())) continue
+    // the agent can add or close cards while we act: a card that vanished mid-answer is not an error
+    await answerCard(page, open.first(), label).catch((e) => {
+      if (!/Timeout|detached|not attached/i.test(String(e))) throw e
+    })
+  }
+  throw new Error(`${label}: the chat did not finish`)
+}
+
+async function answerCard(page, card, label) {
+  {
     const kind = ((await card.locator('.kind').first().textContent().catch(() => '')) || '').trim()
     if (shotsDir && kind && !seenKinds.has(kind)) {
       seenKinds.add(kind)
@@ -95,7 +136,7 @@ async function runSession(page, label) {
     const next = card.locator('.actions .btn.primary', { hasText: /Continue|Next|Finish|See results/ })
     if (await next.count()) {
       await next.first().click()
-      continue
+      return
     }
     const opts = card.locator('.option:not([disabled])')
     if ((await opts.count()) && !(await card.locator('.option.selected').count())) await opts.first().click()
@@ -124,25 +165,24 @@ async function runSession(page, label) {
         if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-reasoning-graded.png`) })
         step(`${label}: reasoning graded with the answer`)
       }
-      continue
+      return
     }
     const again = card.locator('.actions .btn.primary', { hasText: 'Check again' })
     if (await again.count()) {
       const reveal = card.locator('button', { hasText: 'Show solution' })
       if (await reveal.count()) {
         await reveal.first().click()
-        continue
+        return
       }
     }
     const check = card.locator('.actions .btn.primary:not([disabled])')
     if (await check.count()) {
       await check.first().click()
-      continue
+      return
     }
     const dk = card.locator('button', { hasText: "I don't know yet" })
     if (await dk.count()) await dk.first().click()
   }
-  throw new Error(`${label}: the session did not finish`)
 }
 
 const nav = (page, name) => page.locator('nav.sidebar').getByRole('button', { name, exact: true })
@@ -165,11 +205,31 @@ async function flow(page) {
   await welcome.getByRole('button', { name: 'Start learning' }).click()
   await welcome.waitFor({ state: 'detached' })
 
-  step('learn session')
+  step('learn chat (tutor agent with tools)')
   await page.getByRole('button', { name: 'Start with a probe' }).click()
-  if (!((await runSession(page, 'learn')) > 0)) throw new Error('the learn session earned no points')
+  await page.locator('.chat-view').waitFor()
+  if (!((await runChat(page, 'learn', { askMidway: true })) > 0)) throw new Error('the learn chat earned no points')
+  if (!(await page.locator('.chat-view .session-side .plan-node').count())) throw new Error('the plan panel is missing')
+  step('learn chat: plan panel shows the dependency tree')
 
-  step('practice session')
+  step('practice chat')
+  await nav(page, 'Today').click()
+  await page.getByRole('button', { name: 'Practice a mix' }).click()
+  await page.locator('.chat-view').waitFor()
+  if (!((await runChat(page, 'practice')) > 0)) throw new Error('the practice chat earned no points')
+
+  step('open chat from the Tutor screen')
+  await page.getByRole('button', { name: /New chat/ }).click()
+  const box = page.getByRole('textbox', { name: 'Message to the tutor' })
+  await box.fill('Explain barycentric interpolation to me')
+  await box.press('Enter')
+  await page.locator('.chat-card .card.current').first().waitFor({ timeout: 15_000 })
+  step('open chat: the tutor answers with a card')
+  await nav(page, 'Tutor').click()
+
+  step('guided session (classic mode)')
+  await page.locator('nav.sidebar').getByRole('button', { name: /Settings/ }).click()
+  await page.getByRole('button', { name: 'Guided sessions' }).click()
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
   if (!((await runSession(page, 'practice')) > 0)) throw new Error('the practice session earned no points')

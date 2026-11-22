@@ -2,7 +2,7 @@
 // It exercises every card kind, block type and interaction, but its content is generic.
 import type { LlmEvent, LlmRequest, LlmResult } from './types'
 
-type Meta = {
+export type Meta = {
   phase?: string
   nodeId?: string | null
   nodeTitle?: string
@@ -18,7 +18,7 @@ type Meta = {
 
 const hints = ['What is given, and what exactly is asked?', 'Which definition from the plan applies here?', 'Write the first line of the computation and look at the shape of the result.']
 
-function probeStep(m: Meta) {
+export function probeStep(m: Meta) {
   const c = m.conceptId ?? 'lagrange'
   return {
     assessment: null,
@@ -68,7 +68,7 @@ function probeStep(m: Meta) {
   }
 }
 
-function planStep(m: Meta) {
+export function planStep(m: Meta) {
   const c = m.conceptId ?? 'barycentric'
   return {
     assessment: 'You can evaluate Lagrange polynomials and count cost; the weights are new.',
@@ -98,7 +98,7 @@ function planStep(m: Meta) {
   }
 }
 
-function teachStep(m: Meta) {
+export function teachStep(m: Meta) {
   const node = m.nodeId ?? 'n2'
   const c = m.conceptId ?? 'barycentric'
   const remediation = (m.attempt ?? 1) > 1
@@ -168,7 +168,7 @@ function teachStep(m: Meta) {
   }
 }
 
-function wrapStep(m: Meta) {
+export function wrapStep(m: Meta) {
   const c = m.conceptId ?? 'barycentric'
   return {
     assessment: 'Every node is in place.',
@@ -206,7 +206,7 @@ function wrapStep(m: Meta) {
   }
 }
 
-function practiceStep(m: Meta, phase: 'practice' | 'review') {
+export function practiceStep(m: Meta, phase: 'practice' | 'review') {
   const c = m.conceptId ?? 'lagrange'
   const level = m.level ?? 1
   const k = (m.itemIndex ?? 0) % 4

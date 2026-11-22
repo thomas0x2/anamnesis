@@ -157,6 +157,10 @@ export class SessionController {
   constructor(
     private app: AppController,
     session: Session,
+    /** cards come from a tutor agent instead of the step loop: report each finished card back */
+    private external: {
+      onCardDone: (step: number, card: number, resp: CardResponse) => void;
+    } | null = null,
   ) {
     this.ctx = {
       conceptIds: new Set(app.course.concepts.map((c) => c.id)),
@@ -380,7 +384,7 @@ export class SessionController {
   // ------------------------------------------------------------ flow
   async start(): Promise<void> {
     const s = this.s;
-    if (s.phase === "done") return;
+    if (s.phase === "done" || this.external) return;
     if (s.type !== "learn" && !s.queue.length) {
       const now = new Date();
       const learner = this.app.state.get().learner;
@@ -1166,12 +1170,37 @@ export class SessionController {
       feedback: f.feedback ? [f.feedback] : d.feedback,
     });
     this.app.recordCard(this.s, c, resp, rec.target, f.misconceptions ?? []);
+    if (this.external) {
+      this.external.onCardDone(step, card, resp);
+      return;
+    }
     if (
       this.stepComplete(step) &&
       step === this.s.steps.length - 1 &&
       !this.stepRunning
     )
       void this.afterStepComplete();
+  }
+
+  /** Agent mode: append cards the agent made as a new step; returns the step index. */
+  pushStep(cards: Card[], nodeId: string | null = null): number {
+    const index = this.s.steps.length;
+    const atEnd = this.view.get().cursor.step >= index - 1;
+    const rec: StepRecord = {
+      id: uid("st_"),
+      phase: this.s.phase,
+      nodeId,
+      target: null,
+      step: { ...emptyStep(), cards },
+      responses: {},
+      createdAt: nowIso(),
+      completedAt: null,
+      durationMs: null,
+      model: null,
+    };
+    this.patch((s) => ({ ...s, steps: [...s.steps, rec] }));
+    if (atEnd) this.view.set((v) => ({ ...v, cursor: { step: index, card: 0 } }));
+    return index;
   }
 
   /** The learner compares an open prediction with the reveal. */
@@ -1276,7 +1305,9 @@ export class SessionController {
       ),
     ].filter((id) => this.app.graph.get(id));
     const title =
-      s.type === "learn"
+      s.type === "chat"
+        ? `Tutor chat: ${s.goalConceptId ? this.app.graph.title(s.goalConceptId) : "open"}`
+        : s.type === "learn"
         ? `Learn: ${s.goalConceptId ? this.app.graph.title(s.goalConceptId) : ""}`
         : s.type === "practice"
           ? `Practice (${s.queue.length ? this.app.graph.title(s.queue[0].conceptId) : "mixed"}…)`

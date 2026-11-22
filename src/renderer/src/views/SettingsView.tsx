@@ -294,6 +294,19 @@ export function SettingsView(): ReactElement {
           <div className="panel-title">
             <h3>Learning</h3>
           </div>
+          <Row
+            name="How the tutor works"
+            desc="Agent chat: the tutor is an agent you talk to; it builds questions, explanations, plans and demos with its tools and decides the next step. Guided sessions: the fixed probe, plan, teach and wrap-up loop."
+          >
+            <span className="seg">
+              <button className={s.learning.tutorMode !== 'guided' ? 'on' : ''} onClick={() => save({ learning: { tutorMode: 'agent' } })}>
+                Agent chat
+              </button>
+              <button className={s.learning.tutorMode === 'guided' ? 'on' : ''} onClick={() => save({ learning: { tutorMode: 'guided' } })}>
+                Guided sessions
+              </button>
+            </span>
+          </Row>
           <Row name="Target memory" desc={`Reviews are scheduled for when your chance of recalling a concept drops to ${pct(s.learning.desiredRetention)}. Higher means more frequent reviews.`}>
             <span className="row" style={{ gap: 6 }}>
               <input type="range" min={0.8} max={0.95} step={0.01} value={s.learning.desiredRetention} onChange={(e) => save({ learning: { desiredRetention: Number(e.target.value) } })} />

@@ -152,7 +152,38 @@ async function answerCard(page, card, label) {
     // once per run: explain the reasoning behind a numeric answer (graded together with the answer)
     const explain = card.locator('button.reasoning-toggle')
     if (label === 'practice' && !reasoned && (await num.count()) && (await explain.count())) {
+      // one click starts listening (a fake microphone here); the close button discards the recording
+      await page.evaluate(() => {
+        window.__micOk = true
+        const real = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices)
+        if (!navigator.mediaDevices) return
+        navigator.mediaDevices.getUserMedia = async (c) => {
+          if (!window.__micOk) throw new Error('no microphone in this test')
+          try {
+            const ctx = new AudioContext()
+            const osc = ctx.createOscillator()
+            const dst = ctx.createMediaStreamDestination()
+            osc.connect(dst)
+            osc.start()
+            return dst.stream
+          } catch {
+            return real(c)
+          }
+        }
+      })
       await explain.click()
+      const rec = card.locator('.reasoning-mic.rec')
+      if (await rec.waitFor({ timeout: 3_000 }).then(() => true, () => false)) {
+        if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-listening.png`) })
+        if (await card.locator('.conf-btn:not([disabled])').count()) throw new Error('the answer can be submitted while still dictating')
+        step('practice: one click on "Explain your reasoning" starts listening')
+        await card.getByRole('button', { name: 'Answer without reasoning' }).click()
+        await card.locator('.reasoning-box').waitFor({ state: 'detached' })
+      }
+      // no microphone: the panel opens for typing
+      await page.evaluate(() => (window.__micOk = false))
+      await explain.click()
+      await card.locator('.reasoning-box textarea').waitFor()
       reasoned = true
       step('practice: explaining the reasoning behind a numeric answer')
     }

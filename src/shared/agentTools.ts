@@ -5,7 +5,7 @@ import type { AgentToolDef } from './agentTypes'
 import type { CourseGraph } from './graph'
 import { CORE_RULES, conceptModelLine } from './prompts'
 import { blockSchema, interactionSchema, modelUpdateSchema, planSchema } from './schema'
-import type { Course, LearnerModel } from './types'
+import type { Course, LearnerModel, PracticeTarget } from './types'
 
 type S = Record<string, unknown>
 const str: S = { type: 'string' }
@@ -41,7 +41,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         blocks: { type: 'array', items: blockSchema, description: 'optional context shown above the question (0-2 blocks)' },
         interaction: interactionSchema,
         speech: nstr,
-        nodeId: nstr
+        nodeId: { ...nstr, description: 'plan node this question belongs to (teaching), if any' },
+        item: { type: ['integer', 'null'], description: 'practice/review: the number of the session item this question is for (see the item list)' }
       },
       required: ['kind', 'blocks', 'interaction']
     }
@@ -49,7 +50,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'show_plan',
     description:
-      'Show (or replace) the learning plan: a dependency tree of 3-8 reasoning steps from what the learner already knows up to the goal. It appears in the chat and in the side panel, where node status is tracked. Returns at once.',
+      'Show the learning plan: a dependency tree of 3-8 reasoning steps from what the learner already knows up to the goal. The learner reviews it, can mark steps as already known or ask to have them taught, and confirms. Waits for that and returns which nodes to teach. The tree then stays in the side panel, where update_plan tracks progress.',
     inputSchema: planSchema
   },
   {
@@ -122,22 +123,25 @@ export interface AgentContext {
   mode: AgentMode
   goalConceptId: string | null
   scope: string[]
+  /** practice and review items the app selected */
+  queue?: PracticeTarget[]
 }
 
 const FLOW = String.raw`# How a session runs
-You talk with the learner in a chat. Your plain text replies appear as chat messages (Markdown with LaTeX, same rules as cards): keep them to one to three sentences (feedback, a transition, an answer to their question). All teaching content goes through the tools, which render interactive cards in the chat:
+The learner works through a stream of cards, one at a time; you create every card with a tool, on the fly, from what their answers show. Your plain text appears as short tutor notes between the cards (Markdown with LaTeX, same rules as cards): one to three sentences (a transition, a reaction, an answer to their question). The learner can also write to you at any time. The tools:
 - explain: content (text, equations, plots, demos, mermaid, sketch, code, script references). Waits until read.
 - ask: one question the learner answers in the card (kind probe, predict, check, practice, review, reflect). Waits for the answer and returns the graded result.
-- show_plan / update_plan: the dependency tree of reasoning steps toward the goal, shown in a side panel.
+- show_plan: the dependency tree of reasoning steps toward the goal; the learner reviews it (marks steps as known or to be taught) and you get the result. update_plan: progress in the side panel.
 - read_script, course, learner: look things up. update_learner: record what you concluded. finish: the closing summary.
 Call tools one at a time and react to each result before the next step. Do not write a question in plain text when it should be an ask card; plain text is for short talk. When the learner writes in the chat instead of answering a card, the card's result says so: answer them first (briefly, a tool card if it needs a visual), then continue.
 
 A learning session for a goal concept usually goes:
 1. Probe: 1-3 ask cards of kind probe, cheap to answer, each on a different prerequisite or aspect. Neutral feedback; do not teach yet.
-2. Plan: show_plan with 3-8 nodes (kind known/shaky/new/goal; requires must form a DAG; exactly one goal). Then one sentence on the approach.
-3. Teach each node in order: update_plan current, then predict (ask) → explain (1-2 cards, building on the prediction) → check (ask, new surface). If a check fails, name the likely misconception, re-explain with a different representation, then a new check. update_plan done (or shaky).
+   Ask the probes one by one and let each answer shape the next; a second round is fine when the first leaves the picture unclear.
+2. Plan: show_plan with 3-8 nodes (kind known/shaky/new/goal; requires must form a DAG; exactly one goal). Teach only the nodes the learner left to be taught.
+3. Teach each node in order: update_plan current, then predict (ask) → explain (1-2 cards, building on the prediction) → check (ask, new surface). Set nodeId on these cards. If a check fails, name the likely misconception, re-explain with a different representation, then a new check. update_plan done (or shaky).
 4. Wrap: an ask of kind reflect (free, allowVoice, rubric, modelAnswer) to explain the chain in their own words, then finish.
-Practice: pick items at the learner's level from the learner model (L1-L5), one ask per item with level and cue set, raise the level after successes, step back after failures. Review: start with concepts due for review. Open chat: follow the learner's lead but keep them doing the thinking.
+Practice and review: the app picked the items (spacing and difficulty staircase) and lists them below. One ask per item, in order, kind practice or review, with item set to the item number and the item's level and cue. After a failed review item, explain briefly, then a fresh question on the same item. Finish after the last item. Open chat: follow the learner's lead but keep them doing the thinking.
 Use update_learner when you learn something worth remembering across sessions (a note per concept, misconceptions, rare profile observations).`
 
 export function buildAgentSystemPrompt(course: Course, graph: CourseGraph, learner: LearnerModel, ctx: AgentContext, now: Date): string {
@@ -153,8 +157,14 @@ export function buildAgentSystemPrompt(course: Course, graph: CourseGraph, learn
     const anc = graph.ancestors(ctx.goalConceptId, 3)
     if (anc.length) out.push(`Prerequisites (nearest first): ${anc.map((id) => `${id} (${graph.title(id)})`).join(', ')}`)
   } else if (ctx.mode === 'practice') out.push(`Mode: PRACTICE. Concepts in scope: ${ctx.scope.map((id) => `${id} (${graph.title(id)})`).join(', ') || 'whatever the learner model suggests'}.`)
-  else if (ctx.mode === 'review') out.push('Mode: REVIEW. Start with the concepts due for spaced review (use the learner tool).')
+  else if (ctx.mode === 'review') out.push('Mode: REVIEW (spaced review of what is due).')
   else out.push('Mode: OPEN. The learner says what they want; help them learn it actively.')
+  if ((ctx.mode === 'practice' || ctx.mode === 'review') && ctx.queue?.length) {
+    out.push('', 'Items (number: concept, level, cue, mode, compose with):')
+    ctx.queue.forEach((q, i) =>
+      out.push(`${i + 1}. ${q.conceptId} (${graph.title(q.conceptId)}), L${q.level}, cue ${q.cue}, ${q.mode}${q.compose.length ? `, with ${q.compose.join(', ')}` : ''}`)
+    )
+  }
   const ids = new Set<string>([...(ctx.goalConceptId ? [ctx.goalConceptId, ...graph.ancestors(ctx.goalConceptId, 2)] : []), ...ctx.scope])
   if (ids.size) {
     out.push('', '# Learner model (relevant concepts; the learner tool has more)')

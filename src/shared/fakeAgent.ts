@@ -21,6 +21,8 @@ interface Run {
   started: boolean
   mode: string
   goal: string | null
+  /** practice/review: how many items the app listed */
+  items: number
 }
 
 const ASK = new Set(['probe', 'predict', 'check', 'practice', 'review', 'reflect'])
@@ -34,7 +36,8 @@ export class FakeAgentHost {
     this.stop(req.chatId)
     const mode = /Mode: (\w+)/.exec(req.system)?.[1]?.toLowerCase() ?? 'open'
     const goal = /\(id ([\w-]+)\)/.exec(req.system)?.[1] ?? null
-    this.runs.set(req.chatId, { emit, pending: new Map(), queue: [], busy: false, stopped: false, started: !!req.resume, mode, goal })
+    const items = (/Items \(number[^\n]*\n((?:\d+\. [^\n]*\n?)*)/.exec(req.system)?.[1] ?? '').split('\n').filter(Boolean).length
+    this.runs.set(req.chatId, { emit, pending: new Map(), queue: [], busy: false, stopped: false, started: !!req.resume, mode, goal, items })
     emit({ chatId: req.chatId, type: 'status', status: 'ready', model: 'demo' })
     return { ok: true }
   }
@@ -98,10 +101,10 @@ export class FakeAgentHost {
   }
 
   /** Show one card; if the learner wrote instead of answering, reply and continue. */
-  private async card(chatId: string, run: Run, c: FakeCard): Promise<void> {
+  private async card(chatId: string, run: Run, c: FakeCard, item: number | null = null): Promise<void> {
     const ask = ASK.has(c.kind) && c.interaction && c.interaction.type !== 'continue'
     const r = ask
-      ? await this.tool(chatId, run, 'ask', { kind: c.kind, title: c.title ?? null, blocks: c.blocks, interaction: c.interaction, speech: c.speech ?? null, nodeId: c.nodeId ?? null })
+      ? await this.tool(chatId, run, 'ask', { kind: c.kind, title: c.title ?? null, blocks: c.blocks, interaction: c.interaction, speech: c.speech ?? null, nodeId: c.nodeId ?? null, item })
       : await this.tool(chatId, run, 'explain', { title: c.title ?? null, blocks: c.blocks, speech: c.speech ?? null, nodeId: c.nodeId ?? null })
     const wrote = /learner wrote(?: instead)?: "([\s\S]*)"/i.exec(r.text)?.[1]
     if (wrote) await this.say(chatId, run, `Good question. Think about what stays the same for every $j$. *(demo tutor; you asked: ${wrote.slice(0, 80)})* `)
@@ -129,21 +132,25 @@ export class FakeAgentHost {
   private async script(chatId: string, run: Run): Promise<void> {
     const m: Meta = { conceptId: run.goal ?? undefined }
     if (run.mode === 'practice' || run.mode === 'review') {
-      await this.say(chatId, run, 'A few items at your level. Answer in the cards; type here any time to ask me something. ')
-      for (let i = 0; i < 3; i++) {
+      await this.say(chatId, run, 'A few items at your level. Answer in the cards; type below any time to ask me something. ')
+      const n = Math.min(3, run.items || 3)
+      for (let i = 0; i < n; i++) {
         const step = practiceStep({ ...m, itemIndex: i, level: 1 + i }, run.mode as 'practice' | 'review') as { cards: FakeCard[] }
-        for (const c of step.cards) await this.card(chatId, run, c)
+        for (const c of step.cards) await this.card(chatId, run, c, run.items ? i + 1 : null)
       }
-      await this.tool(chatId, run, 'finish', { takeaways: ['Practised three items at rising levels.'], pages: null })
+      await this.tool(chatId, run, 'finish', { takeaways: [`Practised ${n} items at rising levels.`], pages: null })
       await this.say(chatId, run, 'That was the set. Well done.')
       return
     }
     await this.say(chatId, run, "Let's first see what you already know. Answer what you can; \"I don't know\" is a fine answer. ")
     for (const c of (probeStep(m) as { cards: FakeCard[] }).cards) await this.card(chatId, run, c)
     const plan = planStep(m) as { plan: { goal: string; approach: string; nodes: { id: string; kind: string; title: string }[] } }
-    await this.tool(chatId, run, 'show_plan', plan.plan)
-    await this.say(chatId, run, `Here is the plan: ${plan.plan.approach} `)
-    for (const node of plan.plan.nodes.filter((n) => n.kind !== 'known')) {
+    await this.say(chatId, run, `Here is a plan: ${plan.plan.approach} Mark what you already know. `)
+    const reviewed = await this.tool(chatId, run, 'show_plan', plan.plan)
+    // teach what the learner left to be taught (as listed in the tool result)
+    const teach = /To teach, in order: (.*)\.$/.exec(reviewed.text)?.[1] ?? ''
+    const nodes = plan.plan.nodes.filter((n) => n.kind !== 'known' && (!teach || teach.includes(n.id)))
+    for (const node of nodes) {
       await this.tool(chatId, run, 'update_plan', { nodeId: node.id, status: 'current' })
       for (const c of (teachStep({ ...m, nodeId: node.id, nodeTitle: node.title }) as { cards: FakeCard[] }).cards) await this.card(chatId, run, c)
       await this.tool(chatId, run, 'update_plan', { nodeId: node.id, status: 'done' })

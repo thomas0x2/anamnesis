@@ -2,16 +2,20 @@
 import { masteryMean } from '@shared/mastery'
 import { cardRetrievability } from '@shared/fsrs'
 import type { CardResponse, PlanNodeState, Session, StepRecord } from '@shared/types'
-import { Fragment, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Blocks } from '../components/Blocks'
 import { CardView, type PredictionRef } from '../components/CardView'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
 import { PlanGraph } from '../components/PlanGraph'
 import { useApp } from '../engine/app'
+import type { ChatController, ChatItem, ChatView, ToolItem } from '../engine/chat'
 import { draftKey, type SessionController, type SessionView as View } from '../engine/session'
-import { useStore } from '../engine/store'
+import { createStore, useStore, type Store } from '../engine/store'
 import { clock, LEVEL_LABEL, pct, plural, STATUS_LABEL } from '../lib/format'
+import { AgentStatus, CardPreview, Composer, ToolView } from './ChatView'
+
+const NO_CHAT = createStore<ChatView | null>(null)
 
 const TIPS = [
   '<b>Why predict first?</b> Trying to answer before you are taught, even wrongly, makes the explanation stick better (the pretesting effect).',
@@ -45,13 +49,29 @@ export function SessionScreen(): ReactElement {
 function SessionInner({ sc }: { sc: SessionController }): ReactElement {
   const app = useApp()
   const v = useStore(sc.view, (x) => x)
+  const chatCtl = useStore(app.chat, (c) => c)
+  const cc = chatCtl && chatCtl.cards === sc ? chatCtl : null
   const [chat, setChat] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const s = v.session
   const cur = s.steps[v.cursor.step]
   const pastEnd = !cur || (v.cursor.card >= cur.step.cards.length && !cur.pending)
   const finished = s.phase === 'done' && pastEnd && !v.status
-  const showSide = s.type === 'learn' ? !!s.plan : true
+  const showSide = s.type === 'learn' || s.type === 'chat' ? !!s.plan : true
+  const streamRef = useRef<HTMLDivElement>(null)
+  const stick = useRef(true)
+  const steps = s.steps.length
+  const items = useStore((cc?.view ?? NO_CHAT) as Store<ChatView | null>, (x) => x?.chat.items.length ?? 0)
+
+  // agent sessions grow at the bottom: follow while the learner is near it
+  useEffect(() => {
+    const el = streamRef.current
+    if (cc && el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [cc, steps, items, v.cursor.step, v.cursor.card, v.planReview])
+  const onScroll = (): void => {
+    const el = streamRef.current
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+  }
 
   // Enter = continue / next when not typing
   useEffect(() => {
@@ -70,17 +90,18 @@ function SessionInner({ sc }: { sc: SessionController }): ReactElement {
   }, [])
 
   return (
-    <div className="session">
-      <SessionHeader sc={sc} v={v} onChat={() => setChat((c) => !c)} />
+    <div className={`session ${cc ? 'agent-session' : ''}`}>
+      <SessionHeader sc={sc} v={v} cc={cc} onChat={() => setChat((c) => !c)} />
       <div className={`session-body ${showSide ? '' : 'no-side'}`}>
-        <div className="stream">
+        <div className="stream" ref={streamRef} onScroll={onScroll}>
           <div className="stream-inner">
-            {finished ? (
+            {finished && !cc ? (
               <DoneScreen sc={sc} />
             ) : (
               <Stream
                 sc={sc}
                 v={v}
+                cc={cc}
                 expanded={expanded}
                 toggle={(k) =>
                   setExpanded((x) => {
@@ -92,7 +113,9 @@ function SessionInner({ sc }: { sc: SessionController }): ReactElement {
                 }
               />
             )}
+            {finished && cc && s.type !== 'chat' && <DoneScreen sc={sc} />}
           </div>
+          {cc && <AgentComposer cc={cc} onSend={() => (stick.current = true)} />}
         </div>
         {showSide && (
           <aside className="session-side">
@@ -100,17 +123,78 @@ function SessionInner({ sc }: { sc: SessionController }): ReactElement {
           </aside>
         )}
       </div>
-      {chat && <ChatDrawer sc={sc} v={v} onClose={() => setChat(false)} />}
+      {chat && !cc && <ChatDrawer sc={sc} v={v} onClose={() => setChat(false)} />}
     </div>
   )
 }
 
+// ------------------------------------------------------------ agent sessions
+function AgentStatusOf({ cc }: { cc: ChatController }): ReactElement | null {
+  const v = useStore(cc.view, (x) => x)
+  return <AgentStatus v={v} />
+}
+
+function AgentComposer({ cc, onSend }: { cc: ChatController; onSend: () => void }): ReactElement {
+  const [text, setText] = useState('')
+  const waiting = useStore(cc.view, (v) => v.chat.items.some((it) => it.kind === 'tool' && it.status === 'running' && (it.name === 'ask' || it.name === 'explain' || it.name === 'show_plan')))
+  const send = (): void => {
+    const t = text.trim()
+    if (!t) return
+    setText('')
+    onSend()
+    void cc.send(t)
+  }
+  return (
+    <div className="chat-composer">
+      <div className="chat-composer-inner">
+        <Composer value={text} onChange={setText} onSend={send} placeholder={waiting ? 'Answer in the card, or ask the tutor anything here…' : 'Message the tutor…'} />
+      </div>
+    </div>
+  )
+}
+
+function StreamItem({ it }: { it: ChatItem }): ReactElement | null {
+  switch (it.kind) {
+    case 'user':
+      return (
+        <div className="bubble user">
+          <Markdown text={it.text} />
+        </div>
+      )
+    case 'assistant':
+      return it.text.trim() ? (
+        <div className="assistant-msg">
+          <Markdown text={it.text} />
+        </div>
+      ) : null
+    case 'note':
+      return (
+        <div className={`note ${it.tone}`}>
+          <Icon name={it.tone === 'error' ? 'alert' : 'info'} size={16} />
+          <span>{it.text}</span>
+        </div>
+      )
+    case 'tool':
+      if (it.name === 'ask' || it.name === 'explain' || it.name === 'finish' || it.name === 'show_plan' || it.name === 'update_plan') return null
+      return <ToolView it={it} />
+  }
+}
+
 // ------------------------------------------------------------ header
-function SessionHeader({ sc, v, onChat }: { sc: SessionController; v: View; onChat: () => void }): ReactElement {
+function SessionHeader({ sc, v, cc, onChat }: { sc: SessionController; v: View; cc: ChatController | null; onChat: () => void }): ReactElement {
   const app = useApp()
   const s = v.session
-  const title = s.type === 'learn' ? app.graph.title(s.goalConceptId ?? '') : s.type === 'practice' ? 'Mixed practice' : 'Spaced review'
-  const eyebrow = s.type === 'learn' ? `Learn · Chapter ${app.graph.get(s.goalConceptId ?? '')?.chapter ?? ''}` : s.type === 'practice' ? 'Practice' : 'Review'
+  const title =
+    s.type === 'learn'
+      ? app.graph.title(s.goalConceptId ?? '')
+      : s.type === 'chat'
+        ? (cc?.chat.title ?? 'Tutor')
+        : s.type === 'practice'
+          ? s.scope.length === 1
+            ? `Practice: ${app.graph.title(s.scope[0])}`
+            : 'Mixed practice'
+          : 'Spaced review'
+  const eyebrow = s.type === 'learn' ? `Learn · Chapter ${app.graph.get(s.goalConceptId ?? '')?.chapter ?? ''}` : s.type === 'chat' ? 'Tutor' : s.type === 'practice' ? 'Practice' : 'Review'
   const items = s.steps.filter((r) => r.target).length
   return (
     <div className="session-head">
@@ -140,6 +224,8 @@ function SessionHeader({ sc, v, onChat }: { sc: SessionController; v: View; onCh
             )
           })}
         </div>
+      ) : s.type === 'chat' ? (
+        <span className="spacer" />
       ) : (
         <div className="phases">
           <span className="phase current">
@@ -151,10 +237,14 @@ function SessionHeader({ sc, v, onChat }: { sc: SessionController; v: View; onCh
       <span className="session-points" title="Insight points earned in this session">
         <Icon name="star" size={16} /> {s.pointsEarned}
       </span>
-      <button className="btn sm" onClick={onChat} title="Ask a side question">
-        <Icon name="chat" size={15} /> Ask
-      </button>
-      {s.phase !== 'done' && (
+      {cc ? (
+        <AgentStatusOf cc={cc} />
+      ) : (
+        <button className="btn sm" onClick={onChat} title="Ask a side question">
+          <Icon name="chat" size={15} /> Ask
+        </button>
+      )}
+      {s.phase !== 'done' && s.type !== 'chat' && (
         <button className="btn sm ghost" onClick={() => void sc.finish()} title="End the session now and see the results">
           End
         </button>
@@ -164,20 +254,24 @@ function SessionHeader({ sc, v, onChat }: { sc: SessionController; v: View; onCh
 }
 
 // ------------------------------------------------------------ card stream
-function stepLabel(app: ReturnType<typeof useApp>, s: Session, rec: StepRecord, si: number): string {
+function stepLabel(app: ReturnType<typeof useApp>, s: Session, rec: StepRecord, si: number, agent: boolean): string {
   switch (rec.phase) {
     case 'probe':
-      return `Probe${s.steps.filter((r, i) => r.phase === 'probe' && i <= si).length > 1 ? ' · round 2' : ''}`
+      return agent ? 'Probe' : `Probe${s.steps.filter((r, i) => r.phase === 'probe' && i <= si).length > 1 ? ' · round 2' : ''}`
     case 'plan':
       return 'Your plan'
     case 'teach': {
       const n = s.plan?.plan.nodes.find((x) => x.id === rec.nodeId)
       const attempt = s.steps.filter((r, i) => r.phase === 'teach' && r.nodeId === rec.nodeId && i <= si).length
-      return `${n?.kind === 'goal' ? 'Goal' : 'Step'}: ${n?.title ?? rec.nodeId ?? ''}${attempt > 1 ? ' · another angle' : ''}`
+      if (!n) return agent ? 'Teaching' : ''
+      return `${n.kind === 'goal' ? 'Goal' : 'Step'}: ${n.title}${attempt > 1 && !agent ? ' · another angle' : ''}`
     }
     case 'wrap':
       return 'Wrap up'
+    case 'chat':
+      return ''
     default: {
+      if (agent && !rec.target) return ''
       const idx = s.steps.filter((r, i) => r.target && i <= si).length
       const t = rec.target
       return `Item ${idx}${t ? ` · ${app.graph.title(t.conceptId)} · L${t.level} ${LEVEL_LABEL[t.level]}${t.mode === 'relearn' ? ' · relearn' : ''}` : ''}`
@@ -185,25 +279,42 @@ function stepLabel(app: ReturnType<typeof useApp>, s: Session, rec: StepRecord, 
   }
 }
 
-function Stream({ sc, v, expanded, toggle }: { sc: SessionController; v: View; expanded: Set<string>; toggle: (k: string) => void }): ReactElement {
+function Stream({ sc, v, cc, expanded, toggle }: { sc: SessionController; v: View; cc: ChatController | null; expanded: Set<string>; toggle: (k: string) => void }): ReactElement {
   const app = useApp()
+  const cv = useStore((cc?.view ?? NO_CHAT) as Store<ChatView | null>, (x) => x)
   const s = v.session
+  const chatItems: ChatItem[] = cv?.chat.items ?? []
+  let nextItem = 0
+  let lastLabel = ''
   const { cursor } = v
   const out: ReactElement[] = []
   const cur = s.steps[cursor.step]
   const pastEnd = !cur || (cursor.card >= cur.step.cards.length && !cur.pending)
   const finishing = s.phase === 'done'
 
+  // agent sessions: the tutor's notes, the learner's messages and look-ups sit between the cards
+  const flushItems = (upto: number): void => {
+    while (nextItem < chatItems.length && (chatItems[nextItem].pos ?? 0) <= upto) {
+      const it = chatItems[nextItem++]
+      const el = <StreamItem key={it.id} it={it} />
+      out.push(el)
+    }
+  }
+
   s.steps.forEach((rec, si) => {
+    if (cc) flushItems(si)
     if (si > cursor.step) return
     if (v.planReview && rec.phase === 'teach' && !s.plan?.confirmed) return
     const visible = si < cursor.step ? rec.step.cards.length : Math.min(cursor.card + 1, rec.step.cards.length)
     if (!visible) return
-    out.push(
-      <div className="step-divider" key={`d${rec.id}`}>
-        <Markdown text={stepLabel(app, s, rec, si)} inline />
-      </div>
-    )
+    const label = stepLabel(app, s, rec, si, !!cc)
+    if (label && (!cc || label !== lastLabel))
+      out.push(
+        <div className="step-divider" key={`d${rec.id}`}>
+          <Markdown text={label} inline />
+        </div>
+      )
+    lastLabel = label
     for (let ci = 0; ci < visible; ci++) {
       const card = rec.step.cards[ci]
       const key = draftKey(si, ci)
@@ -244,6 +355,15 @@ function Stream({ sc, v, expanded, toggle }: { sc: SessionController; v: View; e
     }
   })
 
+  if (cc) {
+    flushItems(Number.MAX_SAFE_INTEGER)
+    const streaming = chatItems.find((it): it is ToolItem => it.kind === 'tool' && it.status === 'streaming' && (it.name === 'ask' || it.name === 'explain'))
+    if (v.planReview && s.plan) out.push(<PlanReview key="plan-review" sc={sc} v={v} agent />)
+    else if (v.error) out.push(<ErrorCard key="err" sc={sc} v={v} />)
+    else if (streaming && pastEnd) out.push(<CardPreview key={`pv${streaming.id}`} it={streaming} />)
+    else if (v.status && pastEnd) out.push(<Thinking key="thinking" sc={sc} v={v} />)
+    return <>{out}</>
+  }
   if (v.planReview && s.plan) out.push(<PlanReview key="plan-review" sc={sc} v={v} />)
   else if (v.error) out.push(<ErrorCard key="err" sc={sc} v={v} />)
   else if ((cur && cur.pending && cursor.card >= cur.step.cards.length) || (pastEnd && s.phase !== 'done') || (pastEnd && v.status)) out.push(<Thinking key="thinking" sc={sc} v={v} />)
@@ -271,7 +391,7 @@ function Thinking({ sc, v }: { sc: SessionController; v: View }): ReactElement {
           {st && st.tokens ? ` · ${st.tokens} thinking tokens` : ''}
         </div>
         <div className="tip" dangerouslySetInnerHTML={{ __html: TIPS[(tip + Math.floor(elapsed / 12000)) % TIPS.length] }} />
-        {!st && (
+        {!st && !sc.agentDriven && (
           <button className="btn sm ghost" style={{ marginTop: 8 }} onClick={() => void sc.retry()}>
             <Icon name="refresh" size={14} /> Nothing happening? Continue
           </button>
@@ -315,7 +435,7 @@ function ErrorCard({ sc, v }: { sc: SessionController; v: View }): ReactElement 
 }
 
 // ------------------------------------------------------------ plan review
-function PlanReview({ sc, v }: { sc: SessionController; v: View }): ReactElement {
+function PlanReview({ sc, v, agent }: { sc: SessionController; v: View; agent?: boolean }): ReactElement {
   const app = useApp()
   const p = v.session.plan!
   const [ov, setOv] = useState<Record<string, 'known' | 'teach'>>({})
@@ -373,7 +493,9 @@ function PlanReview({ sc, v }: { sc: SessionController; v: View }): ReactElement
         })}
       </div>
       <div className="actions">
-        <span className="small muted">{ready ? 'The first lesson is ready.' : 'Writing the first lesson while you look…'}</span>
+        <span className="small muted">
+          {agent ? 'Mark what you already know; the tutor starts with the first step you leave.' : ready ? 'The first lesson is ready.' : 'Writing the first lesson while you look…'}
+        </span>
         <span className="spacer" />
         <button className="btn primary" onClick={() => void sc.confirmPlan(ov)}>
           Start walking the tree <Icon name="arrow" size={16} />
@@ -395,7 +517,7 @@ function SidePanel({ sc, v }: { sc: SessionController; v: View }): ReactElement 
   const cs = conceptId ? state[conceptId] : undefined
   return (
     <>
-      {s.type === 'learn' && s.plan && (
+      {s.plan && (s.type === 'learn' || s.type === 'chat') && (
         <>
           <div className="side-title">Dependency tree</div>
           <PlanGraph plan={s.plan.plan} nodeState={s.plan.nodeState} currentId={s.phase === 'teach' ? s.currentNodeId : null} />
@@ -417,7 +539,7 @@ function SidePanel({ sc, v }: { sc: SessionController; v: View }): ReactElement 
           </div>
         </>
       )}
-      {s.type !== 'learn' && (
+      {(s.type === 'practice' || s.type === 'review') && (
         <>
           <div className="side-title">Items</div>
           <div className="queue">

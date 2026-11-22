@@ -143,6 +143,13 @@ function initialCursor(s: Session): { step: number; card: number } {
     : { step: 0, card: 0 };
 }
 
+/** How a tutor agent drives a session instead of the step loop (see engine/chat.ts). */
+export interface AgentHooks {
+  onCardDone: (step: number, card: number, resp: CardResponse) => void;
+  onPlanConfirmed: (nodeState: Record<string, PlanNodeState>) => void;
+  retry: () => Promise<void>;
+}
+
 export class SessionController {
   readonly view: Store<SessionView>;
   private system: string | null = null;
@@ -158,9 +165,7 @@ export class SessionController {
     private app: AppController,
     session: Session,
     /** cards come from a tutor agent instead of the step loop: report each finished card back */
-    private external: {
-      onCardDone: (step: number, card: number, resp: CardResponse) => void;
-    } | null = null,
+    private external: AgentHooks | null = null,
   ) {
     this.ctx = {
       conceptIds: new Set(app.course.concepts.map((c) => c.id)),
@@ -669,7 +674,59 @@ export class SessionController {
     });
   }
 
+  get agentDriven(): boolean {
+    return !!this.external;
+  }
+
+  /** Agent mode: what the tutor is doing right now (null when it waits for the learner). */
+  setAgentStatus(label: string | null): void {
+    this.setStatus(label);
+  }
+
+  setAgentError(error: SessionView["error"]): void {
+    this.view.set((v) => ({ ...v, error }));
+  }
+
+  /** Agent mode: the phase follows the tools the agent uses. */
+  setPhase(phase: Session["phase"], currentNodeId?: string | null): void {
+    if (this.s.phase === "done") return;
+    this.patch((s) => ({
+      ...s,
+      phase,
+      ...(currentNodeId !== undefined ? { currentNodeId } : {}),
+    }));
+  }
+
+  /** Agent mode: show a plan for review (the agent waits until the learner confirms it). */
+  showPlan(plan: Plan): void {
+    this.setPlan(plan);
+    this.view.set((v) => ({ ...v, planReview: true }));
+  }
+
+  setNodeState(id: string, state: PlanNodeState): void {
+    const p = this.s.plan;
+    if (!p) return;
+    const nodeState = { ...p.nodeState };
+    if (state === "active")
+      for (const k of Object.keys(nodeState))
+        if (nodeState[k] === "active") nodeState[k] = "pending";
+    nodeState[id] = state;
+    this.patch((s) => ({
+      ...s,
+      plan: { ...p, nodeState },
+      ...(state === "active" ? { currentNodeId: id, phase: "teach" as const } : {}),
+    }));
+  }
+
+  setQueue(queue: PracticeTarget[], itemsGoal: number): void {
+    this.patch((s) => ({ ...s, queue, itemsGoal }));
+  }
+
   async retry(): Promise<void> {
+    if (this.external) {
+      this.view.set((v) => ({ ...v, error: null }));
+      return this.external.retry();
+    }
     const t = this.lastFailed;
     this.view.set((v) => ({ ...v, error: null }));
     if (t) {
@@ -845,6 +902,10 @@ export class SessionController {
       plan: { ...p, nodeState, confirmed: true },
     }));
     this.view.set((v) => ({ ...v, planReview: false }));
+    if (this.external) {
+      this.external.onPlanConfirmed(nodeState);
+      return;
+    }
     const after = this.nextNode();
     const last = this.s.steps.length - 1;
     const prefetched = this.s.steps[last];
@@ -1183,14 +1244,24 @@ export class SessionController {
   }
 
   /** Agent mode: append cards the agent made as a new step; returns the step index. */
-  pushStep(cards: Card[], nodeId: string | null = null): number {
+  pushStep(
+    cards: Card[],
+    nodeId: string | null = null,
+    target: PracticeTarget | null = null,
+  ): number {
     const index = this.s.steps.length;
-    const atEnd = this.view.get().cursor.step >= index - 1;
+    // move on to the new card only once the learner is past the previous one
+    const { cursor } = this.view.get();
+    const prev = this.s.steps[index - 1];
+    const atEnd =
+      index === 0 ||
+      cursor.step >= index ||
+      (cursor.step === index - 1 && cursor.card >= (prev?.step.cards.length ?? 0));
     const rec: StepRecord = {
       id: uid("st_"),
-      phase: this.s.phase,
+      phase: this.s.phase === "chat" ? "chat" : this.s.phase,
       nodeId,
-      target: null,
+      target,
       step: { ...emptyStep(), cards },
       responses: {},
       createdAt: nowIso(),

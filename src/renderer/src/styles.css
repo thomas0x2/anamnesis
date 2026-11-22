@@ -2,31 +2,36 @@
 :root {
   color-scheme: dark;
   /* ETH AI Club palette: black ground, grey UI, one purple; colour comes from marks and art */
-  --bg: #0f0e13;
-  --bg-2: #121117;
-  --surface: #17161d;
-  --surface-2: #1c1b23;
-  --surface-3: #25232d;
-  --line: rgba(255, 255, 255, 0.06);
-  --line-2: rgba(255, 255, 255, 0.1);
-  --text: #ebe8f0;
-  --text-2: #c8c4d0;
-  --muted: #8f8b99;
-  --faint: #6c6876;
-  --accent: #a35ee0;
-  --accent-strong: #8e4fcc;
-  --accent-hover: #a868e0;
-  --accent-text: #c9a3f0;
-  --accent-soft: rgba(163, 94, 224, 0.13);
-  --accent-line: rgba(163, 94, 224, 0.32);
+  --bg: #0b0b0b;
+  --bg-2: #0e0e0e;
+  --surface: #141414;
+  --surface-2: #1a1a1a;
+  --surface-3: #232323;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --text: #ededed;
+  --text-2: #c4c4c4;
+  --muted: #8c8c8c;
+  --faint: #6a6a6a;
+  /* "accent" is now ink: white and greys carry selection and emphasis */
+  --accent: #e6e6e6;
+  --accent-strong: #ececec;
+  --accent-hover: #ffffff;
+  --accent-text: #f2f2f2;
+  --accent-soft: rgba(255, 255, 255, 0.07);
+  --accent-line: rgba(255, 255, 255, 0.24);
+  --on-accent: #0b0b0b;
+  /* the one colour, used sparingly: where you are now (current step, active plan node, the brand) */
+  --brand: #a35ee0;
+  --brand-soft: rgba(163, 94, 224, 0.14);
   --good: #7ddba4;
   --good-soft: rgba(125, 219, 164, 0.09);
   --warn: #eebd6b;
   --warn-soft: rgba(238, 189, 107, 0.1);
   --bad: #f0a0a0;
   --bad-soft: rgba(240, 160, 160, 0.09);
-  --info: #8fd3e0;
-  --info-soft: rgba(143, 211, 224, 0.08);
+  --info: #bdbdbd;
+  --info-soft: rgba(255, 255, 255, 0.05);
   /* chart tokens (club highlights, ordered so neighbours stay apart under colour-vision deficiency) */
   --s1: #2b8cff;
   --s2: #ffe23d;
@@ -77,7 +82,7 @@ body {
 }
 
 ::selection {
-  background: rgba(163, 65, 232, 0.35);
+  background: rgba(255, 255, 255, 0.158);
 }
 
 a {
@@ -977,7 +982,7 @@ kbd {
 .demo {
   border-radius: var(--radius);
   border: 1px solid var(--line-2);
-  background: linear-gradient(180deg, rgba(163, 65, 232, 0.05), transparent 120px), var(--surface);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.023), transparent 120px), var(--surface);
   padding: 12px 14px 14px;
 }
 .demo-head {
@@ -1222,7 +1227,7 @@ kbd {
 .card.current {
   border-color: var(--line-2);
   box-shadow:
-    0 0 0 1px rgba(163, 65, 232, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.081),
     var(--shadow);
 }
 .card.current::before {
@@ -1710,7 +1715,7 @@ kbd {
   stroke-width: 1.5;
 }
 .plan-edge.done {
-  stroke: rgba(163, 65, 232, 0.55);
+  stroke: rgba(255, 255, 255, 0.248);
 }
 .plan-node {
   width: 100%;
@@ -1771,7 +1776,7 @@ kbd {
   }
 }
 .plan-node.done {
-  border-color: rgba(163, 65, 232, 0.6);
+  border-color: rgba(255, 255, 255, 0.27);
   color: var(--text);
 }
 .plan-node.done .ic {
@@ -1789,15 +1794,15 @@ kbd {
 }
 .plan-node.goal {
   border-width: 2px;
-  border-color: #dcb8f7;
+  border-color: #f2f2f2;
   color: var(--text);
 }
 .plan-node.goal.done {
   background: var(--accent-soft);
 }
 .plan-node.goal .ic {
-  border-color: #dcb8f7;
-  color: #dcb8f7;
+  border-color: #f2f2f2;
+  color: #f2f2f2;
 }
 .plan-review {
   border-color: var(--accent-line);
@@ -1949,7 +1954,7 @@ kbd {
   text-align: center;
   padding: 26px 20px 22px;
   border-color: var(--accent-line);
-  background: radial-gradient(ellipse at top, rgba(163, 65, 232, 0.16), transparent 70%), var(--surface);
+  background: radial-gradient(ellipse at top, rgba(255, 255, 255, 0.072), transparent 70%), var(--surface);
 }
 .done-hero .pts {
   font-size: 48px;
@@ -1999,7 +2004,7 @@ kbd {
 }
 .action-card.primary {
   border-color: var(--accent-line);
-  background: linear-gradient(160deg, rgba(163, 65, 232, 0.16), transparent 60%), var(--surface);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.072), transparent 60%), var(--surface);
 }
 .action-card .eyebrow {
   font-size: 11px;
@@ -2170,7 +2175,7 @@ kbd {
 }
 .map-node.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(163, 65, 232, 0.16);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.072);
 }
 .map-node.ghost {
   opacity: 0.55;
@@ -2181,7 +2186,7 @@ kbd {
   font-style: italic;
 }
 .map-node.frontier {
-  border-color: rgba(163, 65, 232, 0.55);
+  border-color: rgba(255, 255, 255, 0.248);
 }
 .map-node .t {
   flex: 1;
@@ -2623,7 +2628,7 @@ kbd {
   max-width: 380px;
   padding: 9px 14px 9px 10px;
   border-radius: var(--radius-sm);
-  background: #171a23f5;
+  background: #141414f5;
   border: 1px solid var(--line-2);
   box-shadow: var(--shadow);
   font-size: 13.5px;
@@ -2650,7 +2655,7 @@ kbd {
 }
 .toast.milestone {
   border-color: var(--accent-line);
-  background: linear-gradient(90deg, rgba(163, 65, 232, 0.25), transparent), #171a23f5;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.113), transparent), #141414f5;
 }
 .toast.milestone .pts {
   background: var(--accent-strong);
@@ -3396,4 +3401,83 @@ h1 {
 .card.thinking {
   border-color: var(--line);
   box-shadow: none;
+}
+
+/* ---------------------------------------------------------------- black and white
+   Ink carries emphasis; the purple marks only where you are (current phase, active plan node). */
+::selection {
+  background: rgba(255, 255, 255, 0.2);
+}
+:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.6);
+}
+.btn.primary,
+.btn.primary:hover:not(:disabled) {
+  color: var(--on-accent);
+  box-shadow: none;
+}
+.btn.primary:hover:not(:disabled) {
+  background: #ffffff;
+}
+.option.selected .letter,
+.plan-node.done .ic,
+.phase.done .num {
+  color: var(--on-accent);
+}
+.phase.done .num {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.phase.current {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.phase.current .num {
+  background: var(--brand);
+  color: #fff;
+}
+.plan-node.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  box-shadow: 0 0 0 4px rgba(163, 94, 224, 0.1);
+}
+.plan-node.done {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.card.current {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.025),
+    0 24px 60px rgba(0, 0, 0, 0.35);
+}
+.kind,
+.kind.predict,
+.kind.probe,
+.kind.check,
+.kind.practice,
+.kind.review,
+.kind.reflect {
+  color: var(--muted);
+}
+.thinking-orb {
+  background: radial-gradient(circle at 35% 35%, #ffffff, #8c8c8c 55%, #2a2a2a);
+}
+.agent-status.thinking .dot,
+.agent-status.writing .dot,
+.agent-status.starting .dot,
+.agent-typing .dots i {
+  background: var(--text-2);
+}
+.agent-status.waiting .dot,
+.agent-status.idle .dot {
+  background: var(--brand);
+}
+.composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.04),
+    0 14px 40px rgba(0, 0, 0, 0.35);
+}
+.session-head {
+  background: rgba(11, 11, 11, 0.8);
 }

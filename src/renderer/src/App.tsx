@@ -1,4 +1,4 @@
-// The window: sidebar navigation, the routed view, toasts, the script drawer and onboarding.
+// The window: top bar navigation, the routed view, toasts, the script drawer and onboarding.
 import { dueConcepts } from '@shared/selection'
 import { useEffect, useMemo, useRef, type ReactElement } from 'react'
 import { BrandMark, Icon } from './components/Icon'
@@ -30,7 +30,7 @@ export function App(): ReactElement {
   return (
     <div className="app">
       <div className="drag-strip" />
-      <Sidebar />
+      <TopBar />
       <main className="main" ref={main}>
         <RouteView route={route} />
       </main>
@@ -71,7 +71,7 @@ const NAV: { name: Route['name']; label: string; icon: string }[] = [
   { name: 'script', label: 'Script', icon: 'book' }
 ]
 
-function Sidebar(): ReactElement {
+function TopBar(): ReactElement {
   const app = useApp()
   const route = useStore(app.ui, (u) => u.route.name)
   const learner = useStore(app.state, (s) => s.learner)
@@ -83,41 +83,34 @@ function Sidebar(): ReactElement {
   const course = app.course
 
   return (
-    <nav className="sidebar" aria-label="Main">
-      <div className="brand">
+    <header className="topbar">
+      <div className="brand" title={`${course.title} · ${course.term}`}>
         <BrandMark />
-        <div>
-          <div className="brand-name">Anamnesis</div>
-          <div className="brand-sub">
-            {course.short} · {course.term}
-          </div>
-        </div>
+        <span className="brand-name">anamnesis</span>
+        <span className="brand-sub">
+          {course.short} · {course.term}
+        </span>
       </div>
-      {NAV.map((n) => (
-        <button key={n.name} className={`nav-item ${route === n.name ? 'active' : ''}`} onClick={() => app.go({ name: n.name } as Route)} aria-current={route === n.name ? 'page' : undefined}>
-          <Icon name={n.icon} size={17} />
-          {n.label}
-          {n.name === 'home' && due > 0 && (
-            <span className="count hot" title={`${due} concepts due for review`}>
-              {due} due
-            </span>
-          )}
-        </button>
-      ))}
       {sc && route !== 'session' && <ResumeCard sc={sc} />}
-      <div className="sidebar-spacer" />
-      <button className={`nav-item ${route === 'settings' ? 'active' : ''}`} onClick={() => app.go({ name: 'settings' })}>
-        <Icon name="settings" size={17} />
-        Settings
-      </button>
-      <div className="points-box" title="Points come from retrieving and understanding, not from time spent">
-        <Icon name="star" size={20} style={{ color: 'var(--warn)' }} />
-        <div>
-          <div className="big">{rewards.total.toLocaleString('en-US')}</div>
-          <div className="small">{week > 0 ? `+${week} this week` : 'points'}</div>
-        </div>
-      </div>
-    </nav>
+      <nav className="topnav" aria-label="Main">
+        {NAV.map((n) => (
+          <button key={n.name} className={`nav-item ${route === n.name ? 'active' : ''}`} onClick={() => app.go({ name: n.name } as Route)} aria-current={route === n.name ? 'page' : undefined} aria-label={n.label}>
+            {n.label}
+            {n.name === 'home' && due > 0 && (
+              <span className="count hot" title={`${due} concepts due for review`}>
+                {due}
+              </span>
+            )}
+          </button>
+        ))}
+        <button className={`nav-item icon ${route === 'settings' ? 'active' : ''}`} onClick={() => app.go({ name: 'settings' })} aria-label="Settings" title="Settings">
+          <Icon name="settings" size={16} />
+        </button>
+        <span className="points" title={`Points come from retrieving and understanding, not from time spent${week > 0 ? ` · +${week} this week` : ''}`}>
+          {rewards.total.toLocaleString('en-US')} pts
+        </span>
+      </nav>
+    </header>
   )
 }
 
@@ -128,10 +121,8 @@ function ResumeCard({ sc }: { sc: SessionController }): ReactElement {
   const phase = s.type === 'learn' ? ({ probe: 'Probe', plan: 'Plan', teach: 'Teach', wrap: 'Wrap up' } as Record<string, string>)[s.phase] ?? '' : `${s.steps.filter((r) => r.target).length} of ${s.itemsGoal}`
   return (
     <button className="resume-card" onClick={() => app.go({ name: 'session' })}>
-      <div className="label">
-        Continue · {phase}
-      </div>
-      <div className="title">{title}</div>
+      <span className="label">continue · {phase.toLowerCase()}</span>
+      <span className="title">{title}</span>
     </button>
   )
 }

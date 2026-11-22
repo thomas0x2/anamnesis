@@ -222,7 +222,7 @@ async function answerCard(page, card, label) {
   }
 }
 
-const nav = (page, name) => page.locator('nav.sidebar').getByRole('button', { name, exact: true })
+const nav = (page, name) => page.locator('nav.topnav').getByRole('button', { name, exact: true })
 
 async function flow(page) {
   page.on('console', (m) => {
@@ -268,7 +268,7 @@ async function flow(page) {
   await nav(page, 'Tutor').click()
 
   step('guided session (classic mode)')
-  await page.locator('nav.sidebar').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('nav.topnav').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('button', { name: 'Guided sessions' }).click()
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
@@ -292,7 +292,7 @@ async function flow(page) {
       step(`course map zooms out (${before} -> ${await pctButton.textContent()})`)
     }
   }
-  await page.locator('nav.sidebar').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('nav.topnav').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
   step('Settings screen renders')
 }

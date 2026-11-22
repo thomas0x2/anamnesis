@@ -206,20 +206,7 @@ export function Icon({ name, size = 18, style, className }: { name: string; size
   )
 }
 
-/** The app mark: a recalled trace rising out of a circle (anamnesis = recollection). */
-export function BrandMark({ size = 28 }: { size?: number }): ReactElement {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id="bm" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#d2a6f5" />
-          <stop offset="1" stopColor="#7a22c4" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#bm)" />
-      <path d="M8 21.5c2.2-7.5 4.6-11 8-11s5.8 3.5 8 11" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" />
-      <circle cx="16" cy="10.5" r="2.2" fill="#fff" />
-      <path d="M11.5 17.5h9" stroke="#fff" strokeWidth="2" strokeLinecap="round" opacity="0.75" />
-    </svg>
-  )
+/** The app mark: a single vermilion point, the one place colour lives. */
+export function BrandMark({ size = 7 }: { size?: number }): ReactElement {
+  return <span className="brand-mark" style={{ width: size, height: size }} aria-hidden="true" />
 }

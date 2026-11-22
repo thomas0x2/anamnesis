@@ -11,18 +11,22 @@ import {
 } from "../voice/voice";
 import { Icon } from "./Icon";
 
-export function VoiceButton({
-  onText,
-  text,
-}: {
-  onText: (text: string) => void;
-  text?: string;
-}): ReactElement {
+export type DictationPhase = "idle" | "recording" | "working";
+
+/** Local dictation: toggle() starts recording, the next toggle() stops and transcribes into onText. */
+export function useDictation(onText: (text: string) => void): {
+  phase: DictationPhase;
+  toggle: () => Promise<void>;
+  cancel: () => void;
+  loading: string | null;
+} {
   const app = useApp();
   const voice = useStore(app.settings, (s) => s.voice);
   const stt = useStore(transcriber.status, (s) => s);
-  const [phase, setPhase] = useState<"idle" | "recording" | "working">("idle");
+  const [phase, setPhase] = useState<DictationPhase>("idle");
   const rec = useRef<Recorder | null>(null);
+  const cb = useRef(onText);
+  cb.current = onText;
   useEffect(() => () => rec.current?.cancel(), []);
 
   const toggle = async (): Promise<void> => {
@@ -36,7 +40,7 @@ export function VoiceButton({
       } catch (e) {
         app.toast({
           kind: "error",
-          text: `Microphone unavailable: ${String((e as Error).message ?? e)}`,
+          text: `Microphone unavailable: ${String((e as Error).message ?? e)}. You can type instead.`,
         });
         setPhase("idle");
       }
@@ -54,7 +58,7 @@ export function VoiceButton({
         voice.sttModel,
         voice.sttLanguage,
       );
-      if (text) onText(text);
+      if (text) cb.current(text);
       else
         app.toast({
           kind: "info",
@@ -69,15 +73,33 @@ export function VoiceButton({
       setPhase("idle");
     }
   };
+  const loading =
+    phase === "working"
+      ? stt.state === "loading"
+        ? `Loading the speech model${stt.total ? ` ${Math.round((100 * stt.loaded) / stt.total)}%` : ""} (first time only)`
+        : "Transcribing on this computer…"
+      : null;
+  const cancel = (): void => {
+    if (phase !== "recording") return;
+    rec.current?.cancel();
+    rec.current = null;
+    setPhase("idle");
+  };
+  return { phase, toggle, cancel, loading };
+}
 
+export function VoiceButton({
+  onText,
+  text,
+}: {
+  onText: (text: string) => void;
+  text?: string;
+}): ReactElement {
+  const { phase, toggle, loading } = useDictation(onText);
   const label =
     phase === "recording"
       ? "Listening… click to stop"
-      : phase === "working"
-        ? stt.state === "loading"
-          ? `Loading the speech model${stt.total ? ` ${Math.round((100 * stt.loaded) / stt.total)}%` : ""} (first time only)`
-          : "Transcribing on this Mac…"
-        : "Answer by voice (transcribed locally)";
+      : (loading ?? "Answer by voice (transcribed locally)");
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
       <button

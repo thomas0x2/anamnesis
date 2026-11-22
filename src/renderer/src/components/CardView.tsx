@@ -28,7 +28,7 @@ import {
   OrderInput,
 } from "./Interactions";
 import { Markdown } from "./Markdown";
-import { SpeakButton, VoiceButton } from "./Voice";
+import { SpeakButton, useDictation, VoiceButton } from "./Voice";
 
 const KIND_ICON: Record<Card["kind"], string> = {
   probe: "probe",
@@ -96,6 +96,8 @@ export function CardView(props: CardViewProps): ReactElement {
   const [showSolution, setShowSolution] = useState(false);
   const [reasoning, setReasoning] = useState("");
   const [reasoningOpen, setReasoningOpen] = useState(false);
+  // while the learner is still talking (or it is being transcribed), the answer waits for it
+  const [dictating, setDictating] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const speechKey = `${props.stepId}:${ci}`;
 
@@ -261,6 +263,7 @@ export function CardView(props: CardViewProps): ReactElement {
               text={reasoning}
               setText={setReasoning}
               disabled={draft.grading}
+              onBusy={setDictating}
             />
           )}
           {it.type !== "free" && done && response?.reasoning && (
@@ -386,14 +389,18 @@ export function CardView(props: CardViewProps): ReactElement {
           {!done && current && needsConfidence && (
             <div className="confidence">
               <div className="label">
-                How sure are you? Picking one submits your answer.
+                {!payload
+                  ? "Pick an answer, then say how sure you are. That submits it."
+                  : dictating
+                    ? "Finish explaining first, then say how sure you are."
+                    : "How sure are you? Picking one submits your answer."}
               </div>
               <div className="row">
                 {[1, 2, 3, 4].map((c) => (
                   <button
                     key={c}
                     className="conf-btn"
-                    disabled={!payload || draft.grading}
+                    disabled={!payload || draft.grading || dictating}
                     onClick={() => void submit(c)}
                   >
                     <span className="t">{CONFIDENCE_LABEL[c]}</span>
@@ -503,39 +510,73 @@ export function CardView(props: CardViewProps): ReactElement {
   );
 }
 
-/** Optional explanation of how the learner got the answer, spoken (local Whisper) or typed. It is graded with the answer. */
+/**
+ * Optional explanation of how the learner got the answer, spoken (local Whisper) or typed; it is
+ * graded with the answer. One click starts listening; the next click stops and transcribes.
+ */
 function ReasoningBox({
   open,
   setOpen,
   text,
   setText,
   disabled,
+  onBusy,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
   text: string;
   setText: (f: (t: string) => string) => void;
   disabled: boolean;
+  onBusy: (busy: boolean) => void;
 }): ReactElement {
+  const { phase, toggle, cancel, loading } = useDictation((t) =>
+    setText((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t)),
+  );
+  useEffect(() => onBusy(phase !== "idle"), [phase, onBusy]);
   if (!open) {
     return (
       <button
         className="btn sm ghost reasoning-toggle"
-        onClick={() => setOpen(true)}
-        title="Say or type how you got your answer. It counts toward the rating."
+        disabled={disabled}
+        onClick={() => {
+          setOpen(true);
+          void toggle();
+        }}
       >
         <Icon name="mic" size={15} /> Explain your reasoning
       </button>
     );
   }
+  const recording = phase === "recording";
   return (
-    <div className="reasoning-box">
-      <div className="row" style={{ gap: 8 }}>
-        <span className="label">Your reasoning</span>
+    <div className={`reasoning-box ${recording ? "recording" : ""}`}>
+      <div className="reasoning-head">
+        <button
+          type="button"
+          className={`btn sm reasoning-mic ${recording ? "rec" : ""}`}
+          disabled={disabled || phase === "working"}
+          onClick={() => void toggle()}
+        >
+          {recording ? (
+            <span className="rec-dot" aria-hidden />
+          ) : (
+            <Icon name={phase === "working" ? "clock" : "mic"} size={15} />
+          )}
+          {recording
+            ? "Listening… click when done"
+            : phase === "working"
+              ? (loading ?? "Transcribing…")
+              : text.trim()
+                ? "Add more by voice"
+                : "Talk it through"}
+        </button>
         <span className="spacer" />
         <button
           className="btn icon sm ghost"
-          onClick={() => setOpen(false)}
+          onClick={() => {
+            cancel();
+            setOpen(false);
+          }}
           title="Answer without reasoning"
           aria-label="Answer without reasoning"
         >
@@ -544,26 +585,14 @@ function ReasoningBox({
       </div>
       <textarea
         className="textarea"
-        rows={3}
+        rows={2}
         value={text}
         disabled={disabled}
-        placeholder="Talk it through: what you noticed, which idea you used, each step. Speaking is fine, and rambling too."
+        placeholder="Or type it: what you noticed, which idea you used, each step."
         onChange={(e) => setText(() => e.target.value)}
       />
-      <div className="row" style={{ gap: 10 }}>
-        {!disabled && (
-          <VoiceButton
-            text={text.trim() ? "Add more by voice" : "Talk it through"}
-            onText={(t) =>
-              setText((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t))
-            }
-          />
-        )}
-        <span className="tiny muted">
-          Counts toward the rating: a right answer needs sound reasoning to
-          count fully, and a slip with sound reasoning earns partial credit.
-          Audio stays on this computer.
-        </span>
+      <div className="tiny muted">
+        Graded with your answer: sound reasoning can earn partial credit for a slip. Audio stays on this computer.
       </div>
     </div>
   );

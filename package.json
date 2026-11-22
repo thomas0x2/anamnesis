@@ -50,7 +50,8 @@
     "appId": "ch.thomas0x2.anamnesis",
     "productName": "Anamnesis",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "out/**/*",
@@ -58,6 +59,7 @@
     ],
     "mac": {
       "category": "public.app-category.education",
+      "icon": "build/icon.png",
       "target": [
         "dir"
       ],

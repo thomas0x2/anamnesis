@@ -137,7 +137,7 @@ function loadMermaid(): Promise<typeof import('mermaid').default> {
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'base',
-        fontFamily: 'Archivo, system-ui, -apple-system, sans-serif',
+        fontFamily: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
         themeVariables: {
           darkMode: true,
           background: '#0b0b0b',

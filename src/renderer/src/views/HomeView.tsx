@@ -1,5 +1,5 @@
-// Today: the one best next step (review what is fading, learn what is ready, or practice a mix),
-// chapter readiness and recent sessions.
+// Today: what to continue or learn next, then review and practice side by side,
+// what is ready to learn, chapter readiness and recent sessions.
 import { statusRank, STATUS_ORDER } from '@shared/mastery'
 import { dueConcepts, nextDue } from '@shared/selection'
 import { chapterReadiness } from '@shared/stats'
@@ -31,83 +31,97 @@ export function HomeView(): ReactElement {
   const first = frontier[0] ? graph.get(frontier[0]) : undefined
   const reviewFirst = due.length > 0
 
+  const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  const summary = due.length
+    ? `${due.length === 1 ? 'One idea is' : `${plural(due.length, 'idea')} are`} ready to be remembered.`
+    : first
+      ? 'Something new is ready to learn.'
+      : 'Everything is underway.'
+
   return (
     <div className="page">
-      <div className="page-head">
+      <div className="page-head today-head">
         <div>
-          <h1>{greeting}</h1>
           <div className="sub">
-            {app.course.title} · {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {app.course.title} · {dateLabel}
           </div>
+          <h1 style={{ marginTop: 10 }}>
+            {greeting}. <em>{summary}</em>
+          </h1>
         </div>
         <button className="btn ghost" onClick={() => app.go({ name: 'map' })}>
-          <Icon name="map" size={16} /> Pick any topic
+          Pick any topic
         </button>
       </div>
 
-      {sc && <ActiveSessionBanner />}
+      <div className="today-grid">
+        {sc ? (
+          <ActiveSessionBanner />
+        ) : (
+          <div className="today-block wide">
+            <div className="grow">
+              <div className="eyebrow">learn next</div>
+              <div className="title" style={{ marginTop: 8 }}>
+                {first ? <Markdown text={first.title} inline /> : 'Everything is underway'}
+              </div>
+              <div className="desc" style={{ marginTop: 4 }}>
+                {first ? <Markdown text={first.why} inline /> : 'Every concept has been started. Practice and review keep it alive.'}
+              </div>
+            </div>
+            <button className={`btn go ${!reviewFirst && first ? 'primary' : ''}`} disabled={!first} onClick={() => first && void app.startLearn(first.id)}>
+              Start with a probe <Icon name="chev-right" size={14} />
+            </button>
+          </div>
+        )}
 
-      <div className="hero-actions">
-        <div className={`action-card ${reviewFirst ? 'primary' : ''}`}>
-          <div className="eyebrow">Review</div>
-          <div className="value">{due.length ? `${due.length} due` : 'All caught up'}</div>
+        <div className="today-block">
+          <div className="eyebrow">review</div>
+          {due.length ? (
+            <div className="row" style={{ alignItems: 'baseline', gap: 10 }}>
+              <span className="big">{due.length}</span>
+              <span className="muted small">due · about {Math.max(3, Math.round(Math.min(due.length, 10) * 1.5))} min</span>
+            </div>
+          ) : (
+            <div className="title">All caught up</div>
+          )}
           <div className="desc">
             {due.length
-              ? `Recall what is starting to fade, just before you would forget it. About ${Math.max(3, Math.round(Math.min(due.length, 10) * 1.5))} minutes.`
+              ? 'Recall what is starting to fade, just before you would forget it.'
               : upcoming
                 ? `Your next review is ${relTime(upcoming, now)}. Spacing works best when you wait for it.`
                 : 'Reviews appear here after your first session.'}
           </div>
-          <div>
-            <button className={`btn ${reviewFirst ? 'primary' : ''}`} disabled={!due.length} onClick={() => void app.startReview()}>
-              <Icon name="refresh" size={16} /> Start review
-            </button>
-          </div>
+          <button className={`btn go ${reviewFirst ? 'primary' : ''}`} disabled={!due.length} onClick={() => void app.startReview()}>
+            Start review
+          </button>
         </div>
 
-        <div className={`action-card ${!reviewFirst && first ? 'primary' : ''}`}>
-          <div className="eyebrow">Learn next</div>
-          <div className="value" style={{ fontSize: 19, lineHeight: 1.3 }}>
-            {first ? <Markdown text={first.title} inline /> : 'Everything is underway'}
-          </div>
-          <div className="desc">{first ? <Markdown text={first.why} inline /> : 'Every concept has been started. Practice and review keep it alive.'}</div>
-          <div>
-            <button className={`btn ${!reviewFirst && first ? 'primary' : ''}`} disabled={!first} onClick={() => first && void app.startLearn(first.id)}>
-              <Icon name="probe" size={16} /> Start with a probe
-            </button>
-          </div>
-        </div>
-
-        <div className="action-card">
-          <div className="eyebrow">Practice</div>
-          <div className="value">{learned.length ? plural(learned.length, 'concept') : 'Nothing yet'}</div>
+        <div className="today-block">
+          <div className="eyebrow">practice</div>
+          <div className="title">{learned.length ? plural(learned.length, 'concept') : 'Nothing yet'}</div>
           <div className="desc">Mixed problems that get harder as you succeed: composed demands, unfamiliar cues, exam-style surfaces.</div>
-          <div>
-            <button className="btn" disabled={!learned.length} onClick={() => void app.startPractice(learned)}>
-              <Icon name="dumbbell" size={16} /> Practice a mix
-            </button>
-          </div>
+          <button className="btn go" disabled={!learned.length} onClick={() => void app.startPractice(learned)}>
+            Practice a mix
+          </button>
         </div>
-      </div>
 
-      <div className="grid-2" style={{ marginTop: 16 }}>
-        <div className="panel">
-          <div className="panel-title">
-            <h3>Ready to learn</h3>
-            <span className="hint">prerequisites in place</span>
+        <div className="today-block">
+          <div className="row between">
+            <div className="eyebrow">ready to learn</div>
+            <span className="eyebrow">prerequisites in place</span>
           </div>
           {frontier.length ? (
-            <div className="next-list">
+            <div className="next-list" style={{ gap: 0 }}>
               {frontier.map((id) => {
                 const c = graph.get(id)!
                 return (
                   <div className="next-item" key={id}>
-                    <span className="chip outline">{c.chapter ? `Ch ${c.chapter}` : 'Refresher'}</span>
                     <div className="body">
                       <div className="t">
                         <Markdown text={c.title} inline />
                       </div>
                       <div className="s">
+                        {c.chapter ? `Ch ${c.chapter} · ` : 'Refresher · '}
                         <Markdown text={c.summary} inline />
                       </div>
                     </div>
@@ -126,12 +140,12 @@ export function HomeView(): ReactElement {
           )}
         </div>
 
-        <div className="panel">
-          <div className="panel-title">
-            <h3>Chapter readiness</h3>
-            <span className="hint">how far along × how well remembered</span>
+        <div className="today-block">
+          <div className="row between">
+            <div className="eyebrow">course</div>
+            <span className="eyebrow">how far along × how well remembered</span>
           </div>
-          <div className="chapter-strip">
+          <div className="chapter-strip" style={{ marginTop: 6 }}>
             {readiness
               .filter((r) => r.concepts > 0)
               .map((r) => (
@@ -154,36 +168,34 @@ export function HomeView(): ReactElement {
           </div>
           <StatusLegend />
         </div>
-      </div>
 
-      <div className="panel" style={{ marginTop: 16 }}>
-        <div className="panel-title">
-          <h3>Recent sessions</h3>
-          <button className="btn sm ghost" onClick={() => app.go({ name: 'stats' })}>
-            All stats <Icon name="chev-right" size={14} />
-          </button>
-        </div>
-        {sessions.length ? (
-          <div className="session-list">
-            {sessions.map((s) => (
-              <div className="session-row" key={s.id}>
-                <span className="row" style={{ minWidth: 0 }}>
-                  <span className={`chip ${s.type === 'learn' ? 'accent' : s.type === 'review' ? 'info' : 'outline'}`}>{s.type}</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <Markdown text={s.title} inline />
-                  </span>
-                </span>
-                <span className="muted small">{s.items ? `${s.correct} of ${plural(s.items, 'item')} right` : 'no graded items'}</span>
-                <span className="small" style={{ color: 'var(--warn)' }}>
-                  +{s.points}
-                </span>
-                <span className="muted small">{relTime(s.endedAt ?? s.startedAt, now)}</span>
-              </div>
-            ))}
+        <div className="today-block" style={{ gridColumn: '1 / -1' }}>
+          <div className="row between">
+            <div className="eyebrow">recent sessions</div>
+            <button className="btn sm ghost" onClick={() => app.go({ name: 'stats' })}>
+              All stats <Icon name="chev-right" size={14} />
+            </button>
           </div>
-        ) : (
-          <div className="empty">Your sessions will be listed here.</div>
-        )}
+          {sessions.length ? (
+            <div className="session-list">
+              {sessions.map((s) => (
+                <div className="session-row" key={s.id}>
+                  <span className="row" style={{ minWidth: 0 }}>
+                    <span className="chip">{s.type}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Markdown text={s.title} inline />
+                    </span>
+                  </span>
+                  <span className="muted small">{s.items ? `${s.correct} of ${plural(s.items, 'item')} right` : 'no graded items'}</span>
+                  <span className="small muted">+{s.points}</span>
+                  <span className="muted small">{relTime(s.endedAt ?? s.startedAt, now)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty">Your sessions will be listed here.</div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -196,19 +208,23 @@ function ActiveSessionBanner(): ReactElement | null {
   const s = sc.view.get().session
   const title = s.type === 'learn' ? app.graph.title(s.goalConceptId ?? '') : s.type === 'review' ? 'Review' : 'Practice'
   return (
-    <div className="panel row" style={{ marginBottom: 16, borderColor: 'var(--accent-line)' }}>
-      <Icon name="play" size={18} style={{ color: 'var(--accent-text)' }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600 }}>
-          Session in progress: <Markdown text={title} inline />
+    <div className="today-block wide">
+      <div className="grow">
+        <div className="eyebrow" style={{ color: 'var(--brand)' }}>
+          continue
         </div>
-        <div className="small muted">It is saved as you go. Pick it up where you left off.</div>
+        <div className="title" style={{ marginTop: 8 }}>
+          <Markdown text={title} inline />
+        </div>
+        <div className="desc" style={{ marginTop: 4 }}>
+          Saved as you go. Pick it up where you left off.
+        </div>
       </div>
-      <button className="btn ghost sm" onClick={() => app.closeSession()}>
+      <button className="btn ghost go" onClick={() => app.closeSession()}>
         Close it
       </button>
-      <button className="btn primary" onClick={() => app.go({ name: 'session' })}>
-        Continue
+      <button className="btn primary go" onClick={() => app.go({ name: 'session' })}>
+        Continue <Icon name="chev-right" size={14} />
       </button>
     </div>
   )

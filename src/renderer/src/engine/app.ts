@@ -2,7 +2,8 @@
 // rewards, routing and the active session. Each course keeps its own learner model; the learner's
 // profile (how they like to learn) is shared by all courses.
 import numcsJson from '@courses/numcs/course.json'
-import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, removeMaterial, slug } from '@shared/courseMap'
+import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
+import { generateWithRetry } from '@shared/retry'
 import { applyWork, buildWorkPrompt, emptyPrep, fakeWorkOutput, normalizePrep, normalizeWork, solutionFor, WORK_SYSTEM, workFilePath, workSchema } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
@@ -256,7 +257,8 @@ export class AppController {
         if (cached?.numPages) items = items.map((m) => (m.id === 'script' ? { ...m, numPages: cached.numPages ?? 0, status: 'skipped' as const } : m))
       }
     }
-    items = items.map((m) => (m.status === 'indexing' || m.status === 'mapping' ? { ...m, status: 'queued' as const } : m))
+    // builds that stopped with the app, or after a lost connection, pick up where they left off
+    items = items.map((m) => (m.status === 'indexing' || m.status === 'mapping' || (m.status === 'error' && m.retryable) ? { ...m, status: 'queued' as const, error: null, retryable: false } : m))
     this.materials.set(items)
     this.pending.set([])
     this.job.set(null)
@@ -471,8 +473,25 @@ export class AppController {
     this.ext = removeMaterial(this.ext, id, this.hasEvidence)
     await this.backend.writeJson(`courses/${this.courseId}/map`, this.ext)
     this.rebuildCourse()
-    this.patchMaterial(id, { status: 'queued', chunksDone: 0, chunksTotal: 0, error: null, added: [], linked: [] })
+    this.patchMaterial(id, { status: 'queued', chunksDone: 0, chunksTotal: 0, error: null, retryable: false, added: [], linked: [] })
     await this.saveMaterials()
+    void this.processQueue()
+  }
+
+  /** Try a failed or stopped build again, from the last part that made it into the map. */
+  async retryMaterial(id: string): Promise<void> {
+    if (this.job.get()?.materialId === id) return
+    this.patchMaterial(id, { status: 'queued', error: null, retryable: false })
+    await this.saveMaterials()
+    void this.processQueue()
+  }
+
+  /** Back online: builds that failed because the connection dropped go on by themselves. */
+  resumeAfterReconnect(): void {
+    const ids = this.materials.get().filter((m) => m.status === 'error' && m.retryable).map((m) => m.id)
+    if (!ids.length) return
+    for (const id of ids) this.patchMaterial(id, { status: 'queued', error: null, retryable: false })
+    void this.saveMaterials()
     void this.processQueue()
   }
 
@@ -498,7 +517,7 @@ export class AppController {
         await this.runMaterial(m).catch((e) => {
           if (courseId !== this.courseId) return
           if (this.queueCancel === m.id) this.patchMaterial(m.id, { status: 'skipped' })
-          else this.patchMaterial(m.id, { status: 'error', error: String((e as Error)?.message ?? e) })
+          else this.patchMaterial(m.id, { status: 'error', error: String((e as Error)?.message ?? e), retryable: !!(e as { retryable?: boolean })?.retryable })
         })
         if (courseId !== this.courseId) break
         this.job.set(null)
@@ -542,9 +561,12 @@ export class AppController {
     // 2. extend the course map, chunk by chunk
     const chunks = chunkPages(text.pages)
     this.patchMaterial(m.id, { status: 'mapping', chunksTotal: chunks.length })
-    const added = [...m.added]
+    // the map file records which parts it holds; trust it over the materials list (they are written one after the other)
+    const start = Math.min(chunks.length, partsDone(this.ext, m))
+    const added = start > m.chunksDone ? [...new Set([...m.added, ...this.ext.concepts.filter((c) => c.material === m.id).map((c) => c.id)])] : [...m.added]
     const linked = new Set(m.linked)
-    for (let k = m.chunksDone; k < chunks.length; k++) {
+    if (start > m.chunksDone) this.patchMaterial(m.id, { chunksDone: start, added })
+    for (let k = start; k < chunks.length; k++) {
       if (!alive()) {
         if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
         return
@@ -556,28 +578,46 @@ export class AppController {
       if (pages.length) {
         const cur = { ...m, numPages: text.pages.length }
         const course = this.course
-        const reqId = uid('map_')
-        this.mapRequest = reqId
-        const r = await this.backend.generate({
-          id: reqId,
-          kind: 'map',
-          system: MAP_SYSTEM,
-          prompt: buildMapPrompt({ course, material: cur, pages, chunk: k + 1, chunks: chunks.length, outline: k === 0 ? text.outline : [] }),
-          schema: mapSchema,
-          effort: 'medium',
-          timeoutSec: 900,
-          meta: { fake: fakeMapOutput(cur, pages, course) }
-        })
+        const prompt = buildMapPrompt({ course, material: cur, pages, chunk: k + 1, chunks: chunks.length, outline: k === 0 ? text.outline : [] })
+        const fake = fakeMapOutput(cur, pages, course)
+        const r = await generateWithRetry(
+          this.backend,
+          () => ({ id: uid('map_'), kind: 'map', system: MAP_SYSTEM, prompt, schema: mapSchema, effort: 'medium', timeoutSec: 900, meta: { fake } }),
+          {
+            alive: () => alive() && this.materials.get().some((x) => x.id === m.id),
+            online: () => typeof navigator === 'undefined' || navigator.onLine !== false,
+            onRequest: (id) => {
+              this.mapRequest = id
+              if (alive()) this.job.set({ materialId: m.id, phase: 'mapping', progress: k / chunks.length, label })
+            },
+            onWait: (w) => {
+              this.mapRequest = null
+              if (!alive()) return
+              const what = chunks.length > 1 ? `part ${k + 1} of ${m.title}` : m.title
+              const msg = w.offline
+                ? `Offline. Mapping ${what} goes on when the connection is back.`
+                : `${w.error.replace(/\.$/, '')}. Trying ${what} again in ${w.secondsLeft} s (attempt ${w.next} of ${w.of}).`
+              this.job.set({ materialId: m.id, phase: 'mapping', progress: k / chunks.length, label: msg })
+            }
+          }
+        )
         this.mapRequest = null
         if (courseId !== this.courseId) return
         if (!alive() || !this.materials.get().some((x) => x.id === m.id)) {
           if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
           return
         }
-        if (!r.ok) throw new Error(r.error ?? 'The mapping call failed.')
+        if (!r.ok) {
+          const what = chunks.length > 1 ? `Part ${k + 1} of ${chunks.length} failed after ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}` : `Failed after ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}`
+          const kind = r.errorKind
+          throw Object.assign(new Error(`${what}: ${r.error ?? 'the mapping call failed.'}${k > 0 ? ` Parts 1 to ${k} are in the map; Retry continues from part ${k + 1}.` : ''}`), {
+            retryable: r.stalled || kind === undefined || kind === 'timeout' || kind === 'rate_limit' || kind === 'other'
+          })
+        }
         const delta = normalizeMapOutput(r.data, this.course, cur, nowIso())
         const out = applyMapDelta(this.ext, this.base, delta)
-        this.ext = out.ext
+        // the part is marked done in the same write that adds it, so a crash can never add it twice
+        this.ext = markParts(out.ext, m.id, k + 1)
         await this.backend.writeJson(`courses/${courseId}/map`, this.ext)
         this.rebuildCourse()
         added.push(...out.added)

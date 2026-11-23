@@ -412,7 +412,8 @@ export function applyMapDelta(ext: CourseExtension, base: Course, delta: MapDelt
     version: 1,
     chapters: [...ext.chapters, ...delta.chapters.filter((c) => !ext.chapters.some((x) => x.number === c.number) && !base.chapters.some((x) => x.number === c.number))],
     concepts: [...ext.concepts, ...delta.concepts.filter((c) => !baseIds.has(c.id) && !ext.concepts.some((x) => x.id === c.id))],
-    patches: { ...ext.patches }
+    patches: { ...ext.patches },
+    ...(ext.done ? { done: { ...ext.done } } : {})
   }
   const linked = new Set<string>()
   const addTo = (id: string, field: 'sources' | 'exercises', src: ConceptSource): void => {
@@ -453,7 +454,8 @@ export function removeMaterial(ext: CourseExtension, materialId: string, keep: (
   }
   const used = new Set(concepts.map((c) => c.chapter))
   const chapters = ext.chapters.filter((c) => used.has(c.number))
-  return { version: 1, chapters, concepts, patches }
+  const done = Object.fromEntries(Object.entries(ext.done ?? {}).filter(([id]) => id !== materialId))
+  return { version: 1, chapters, concepts, patches, ...(Object.keys(done).length ? { done } : {}) }
 }
 
 /** All page ranges of a concept: its main range first, then other sources. */
@@ -462,6 +464,16 @@ export function conceptRanges(c: CourseConcept): number[][] {
   if (c.pages.length >= 2) out.push(c.pages)
   for (const s of c.sources ?? []) if (s.pages.length >= 2) out.push(s.pages)
   return out
+}
+
+/** Record that `parts` parts of a material are in the map. */
+export function markParts(ext: CourseExtension, materialId: string, parts: number): CourseExtension {
+  return { ...ext, done: { ...(ext.done ?? {}), [materialId]: parts } }
+}
+
+/** Parts of a material already merged: whichever of the map and the materials file got further. */
+export function partsDone(ext: CourseExtension, m: Pick<Material, 'id' | 'chunksDone'>): number {
+  return Math.max(m.chunksDone, ext.done?.[m.id] ?? 0)
 }
 
 /** A deterministic stand-in for the mapping call (demo tutor and tests): one concept per few pages. */

@@ -92,6 +92,8 @@ export interface Material {
   /** what the mapping did, for the materials list */
   added: string[]
   linked: string[]
+  /** the last failure was a dropped connection or a stall: the build resumes on its own when the app is back online */
+  retryable?: boolean
 }
 
 export interface MaterialsFile {
@@ -108,6 +110,8 @@ export interface CourseExtension {
   concepts: CourseConcept[]
   /** extra sources and exercises on concepts of the base course */
   patches: Record<string, { sources?: ConceptSource[]; exercises?: ConceptSource[] }>
+  /** parts of each material already merged into this map (saved with the map, so a resumed build never adds a part twice) */
+  done?: Record<string, number>
 }
 
 /** A course the learner created (stored in the data folder, not the repository). */

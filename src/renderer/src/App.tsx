@@ -37,6 +37,13 @@ export function App(): ReactElement {
     return () => window.removeEventListener('focus', onFocus)
   }, [app])
 
+  // a map build that failed because the connection dropped goes on once the computer is back online
+  useEffect(() => {
+    const onOnline = (): void => app.resumeAfterReconnect()
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [app])
+
   return (
     <div className="app">
       <div className="drag-strip" />

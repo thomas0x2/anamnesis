@@ -208,6 +208,9 @@ export async function runClaude(req: LlmRequest, cfg: CliConfig, onEvent: (e: Ll
       if (type === 'system' && msg.subtype === 'init') {
         resultModel = typeof msg.model === 'string' ? msg.model : null
         onEvent({ id: req.id, type: 'status', status: 'started' })
+      } else if (type === 'system' && msg.subtype === 'api_retry') {
+        // the CLI retries a failed API request itself (connection lost, overloaded): alive, but no progress
+        onEvent({ id: req.id, type: 'status', status: 'retrying' })
       } else if (type === 'system' && msg.subtype === 'thinking_tokens') {
         onEvent({ id: req.id, type: 'thinking', tokens: Number(msg.estimated_tokens) || 0 })
       } else if (type === 'stream_event') {

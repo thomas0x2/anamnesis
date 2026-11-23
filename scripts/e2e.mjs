@@ -125,6 +125,15 @@ async function coursesFlow(page) {
   await page.locator('.mat-row', { hasText: '02-Feedback.pdf' }).locator('.mat-status', { hasText: 'mapped' }).waitFor({ timeout: 60_000 })
   step('a PDF added to the folder later extends the map')
 
+  // a build that fails can be retried, and goes on without starting over
+  writeFileSync(join(folder, '03-Flaky.pdf'), makePdf(['Flaky slide 1: observers [fake: fail once]', 'Flaky slide 2: observers']))
+  await page.getByRole('button', { name: /Check now/ }).click()
+  const flaky = page.locator('.mat-row', { hasText: '03-Flaky.pdf' })
+  await flaky.locator('.mat-status', { hasText: 'failed' }).waitFor({ timeout: 60_000 })
+  await flaky.getByRole('button', { name: 'Retry' }).click()
+  await flaky.locator('.mat-status', { hasText: 'mapped' }).waitFor({ timeout: 60_000 })
+  step('a failed build shows Retry, and retrying finishes it')
+
   await nav(page, 'Course map').click()
   await page.getByRole('heading', { name: 'Course map', level: 1 }).waitFor()
   const sub = (await page.locator('.page-head .sub').first().textContent()) ?? ''

@@ -208,7 +208,7 @@ function MaterialRow({ m, busy }: { m: Material; busy: boolean }): ReactElement 
   const builtinScript = app.course.builtin && m.id === 'script'
   const span = app.script.span(m)
   const ready = m.numPages > 0 && m.offset !== null
-  const st = m.status === 'skipped' && builtinScript ? 'built in' : STATUS_TEXT[m.status]
+  const st = m.status === 'skipped' && builtinScript ? 'built in' : m.status === 'error' && m.retryable ? 'retries when online' : STATUS_TEXT[m.status]
   return (
     <div className={`mat-row ${busy ? 'busy' : ''}`}>
       <div className="mat-main">
@@ -246,9 +246,23 @@ function MaterialRow({ m, busy }: { m: Material; busy: boolean }): ReactElement 
             <Icon name="eye" size={14} /> Open
           </button>
         )}
-        {!builtinScript && (m.status === 'mapped' || m.status === 'error' || m.status === 'skipped') && (
+        {!builtinScript && m.status === 'mapped' && (
           <button className="btn sm ghost" onClick={() => void app.remapMaterial(m.id)} title="Read and map this file again">
-            <Icon name="refresh" size={14} /> {m.status === 'mapped' ? 'Map again' : 'Map'}
+            <Icon name="refresh" size={14} /> Map again
+          </button>
+        )}
+        {!builtinScript && (m.status === 'error' || m.status === 'skipped') && (
+          <button
+            className="btn sm ghost"
+            onClick={() => void app.retryMaterial(m.id)}
+            title={m.chunksDone ? `Continue from part ${m.chunksDone + 1}; the parts already in the map are kept` : 'Read and map this file'}
+          >
+            <Icon name="refresh" size={14} /> {m.status === 'error' ? 'Retry' : m.chunksDone ? 'Resume' : 'Map'}
+          </button>
+        )}
+        {!builtinScript && m.status === 'error' && m.chunksDone > 0 && (
+          <button className="btn sm ghost" onClick={() => void app.remapMaterial(m.id)} title="Take out what this file added and map it from the start">
+            Start over
           </button>
         )}
         {(m.status === 'queued' || busy) && (

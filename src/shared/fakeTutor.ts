@@ -286,7 +286,16 @@ export function fakeResponse(req: LlmRequest): unknown {
 }
 
 /** Simulated streaming: emits the cards one by one, then the result. */
+/** Test hook: a map request whose pages contain this marker fails the first time (to exercise Retry). */
+export const FAKE_FAIL_ONCE = '[fake: fail once]'
+const failedOnce = new Set<string>()
+
 export async function fakeGenerate(req: LlmRequest, onEvent?: (e: LlmEvent) => void, delayMs = 250): Promise<LlmResult> {
+  if (req.kind === 'map' && req.prompt.includes(FAKE_FAIL_ONCE) && !failedOnce.has(req.prompt)) {
+    failedOnce.add(req.prompt)
+    await new Promise((r) => setTimeout(r, delayMs))
+    return { id: req.id, ok: false, errorKind: 'auth', error: 'Demo: this part failed once on purpose.' }
+  }
   const data = fakeResponse(req) as { cards?: unknown[] }
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   onEvent?.({ id: req.id, type: 'status', status: 'thinking' })

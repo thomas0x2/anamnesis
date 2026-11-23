@@ -1,5 +1,6 @@
 // One tutoring session: the phase machine (probe → plan → teach → wrap, or practice/review items),
 // card-level interaction state (attempts, hints, grading) and the model calls behind it.
+import { conceptRanges } from "@shared/courseMap";
 import { fakeGenerate } from "@shared/fakeTutor";
 import {
   combineWithReasoning,
@@ -247,9 +248,10 @@ export class SessionController {
       const goal = this.s.goalConceptId
         ? this.app.graph.get(this.s.goalConceptId)
         : null;
+      const range = goal ? conceptRanges(goal)[0] : undefined;
       const pages =
-        settings.script.sendPages && goal?.pages.length
-          ? this.app.script.range(goal.pages, settings.script.maxPages)
+        settings.script.sendPages && range
+          ? this.app.script.range(range, settings.script.maxPages)
           : [];
       this.system = buildSystemPrompt(
         this.app.course,
@@ -442,10 +444,11 @@ export class SessionController {
         : makeTarget(this.app.graph, learner, q.conceptId, index);
     const settings = this.app.settings.get();
     const c = this.app.graph.get(target.conceptId);
+    const range = c ? conceptRanges(c)[0] : undefined;
     const targetPages =
-      settings.script.sendPages && c?.pages.length
+      settings.script.sendPages && range
         ? this.app.script.range(
-            [c.pages[0], Math.min(c.pages[1], c.pages[0] + 2)],
+            [range[0], Math.min(range[1], range[0] + 2)],
             3,
           )
         : [];

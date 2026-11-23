@@ -28,7 +28,7 @@ All learning logic is plain TypeScript in `src/shared/` and runs in the renderer
 
 The renderer talks to one `Backend` interface (`src/renderer/src/backend/`) with three implementations:
 
-* **electron**: the preload bridge. IPC channels: `llm:generate`, `llm:cancel`, `llm:test`, `store:read|write|list`, `settings:get|set`, `script:read|choose`, `shell:open`, `app:info`. Streaming events come back on `llm:event`, keyed by request id.
+* **electron**: the preload bridge. IPC channels: `llm:generate`, `llm:cancel`, `llm:test`, `store:read|write|list`, `settings:get|set`, `script:read|choose`, `material:read|pick`, `folder:pick|scan`, `shell:open`, `app:info`. `material:read` takes a course and material id and reads only a `.pdf` path listed in that course's materials file. Streaming events come back on `llm:event`, keyed by request id.
 * **http**: `scripts/dev-server.ts`, which does what the main process does, so the UI can run in a normal browser for development, screenshots and the end-to-end test.
 * **demo**: entirely in the browser, with localStorage and the scripted tutor (`?backend=demo`).
 
@@ -200,13 +200,45 @@ Every chart has a table view.
 
 `src/shared/graph.ts` provides ancestors, descendants, siblings and topological order. `tests/unit/graph.test.ts` checks that ids are unique, every requirement exists, the graph is acyclic and page ranges sit inside their chapters.
 
-To support another course, write a new course file and replace the course-specific parts of `CORE_RULES` (course name, exam format, demo catalogue).
+## Courses and materials
+
+The built-in course (`courses/numcs/course.json`) is the only course in the repository. Learners add others in the app; everything about them lives in the data folder.
+
+```
+courses-index.json                      the learner's courses (CourseMeta: name, language, exam format, code language, folder)
+courses/<id>/materials.json             the course's PDFs (Material) and the folder files the learner ignored
+courses/<id>/map.json                   CourseExtension: chapters and concepts added from materials, links on base concepts
+courses/<id>/text/<materialId>.json     extracted page text, labels and outline of one PDF (local only)
+courses/<id>/state.json                 the course's learner model, rewards, calibration, session list
+courses/<id>/chats-index.json           the course's tutor chats
+courses/<id>/folder.json                the folder a built-in course watches
+profile.json                            the learner profile, shared by all courses
+```
+
+The built-in course keeps its old file names (`state.json`, `chats-index.json`, `script-index.json`), so existing data needs no migration. Its script is the material `script` at offset 0.
+
+**The course the app uses** is `buildCourse(base, extension)` (`src/shared/courseMap.ts`): the base course (the bundled file, or an empty course made from `CourseMeta`) plus the extension's chapters and concepts, with extra `sources` and `exercises` patched onto base concepts. `AppController.courseView` holds it with its graph; switching course leaves the open session, saves, loads the other course's files and remounts the views (`ui.courseKey`).
+
+**App page numbers.** Every material gets an offset when it is first read (`nextOffset`: the next multiple of 1000 after the materials already placed), and page *p* of the PDF has app page number offset + *p*. One number names a page across all PDFs of a course, so concept ranges, script blocks, `read_script` and the reader work as before. `MaterialLibrary` (`engine/script.ts`, which replaced the single-PDF index) maps numbers back to a material and its own page (`locate`, `label`: "04 Pointers, p. 12"), opens at most three PDFs at a time and searches all of them. Prompts show excerpts as `[page 1012 · 04 Pointers, p. 12]`.
+
+**Adding a material.** Files come from the file dialog or from the course folder (`scanPdfs` in `src/node/files.ts`: PDFs up to four levels deep). The folder is scanned when the course opens and when the window comes to the front (at most once a minute); new files are added right away when the course has "add automatically" on, otherwise they wait in `pending` for the learner. `inferKind` guesses the kind from the file name and folder (`Serie/`, `exercise`, `Lösung`, `mock exam`, `skript`, …), and the learner can change it.
+
+A queue (`AppController.processQueue`) handles one material at a time and survives restarts:
+
+1. **Read.** pdf.js extracts the text of every page and the outline; the result is cached.
+2. **Map.** The pages are split into chunks of about 45,000 characters (`chunkPages`). For each chunk one CLI call (`kind: 'map'`, `MAP_SYSTEM`, `mapSchema`, `buildMapPrompt`) gets the course so far (chapters, every concept with its prerequisites) and the page text, and returns new chapters, new concepts, links to existing concepts and problem-set tasks with the concepts they practise. `normalizeMapOutput` makes ids unique, keeps only known prerequisites, breaks cycles, puts concepts with an unknown chapter into a chapter named after the material, clamps pages to the PDF and converts them to app page numbers; `applyMapDelta` merges the result without duplicates. The map is saved and the views update after every chunk, so the first concepts can be learned while the rest is read. Progress (`chunksDone`) is saved too, so an interrupted material resumes at the next chunk.
+
+Removing a material (`removeMaterial`) takes out its links and tasks and the concepts it introduced, except those the learner already has evidence on and those other concepts build on. "Map again" removes the material's contributions the same way and maps it from scratch.
+
+**Prompts for learner-made courses.** `coreRules(course)` returns `CORE_RULES` unchanged for the built-in course; for other courses it swaps the course intro (name, lecturer, language of the materials), the exam format, the code language and the NumCS-specific examples, and notes that the numerical demos fit only some courses. Concept lines in prompts and in the agent's `course` tool list all sources and problem-set tasks (`conceptPlaces`), and practice items get the pages of the concept's first range.
+
+The demo tutor maps deterministically (`fakeMapOutput`: one concept per few pages, tasks linked to existing concepts), which the end-to-end test uses: it creates a course from a folder of generated PDFs, adds a file later, learns a concept in it and checks that switching back keeps the first course's progress.
 
 ## The lecture notes
 
-`src/renderer/src/engine/script.ts`. The learner picks their PDF once; the main process remembers the path and hands over the bytes. pdf.js extracts each page's text in the renderer (`src/shared/pdfText.ts` joins text items into lines, repairs hyphenation and finds labels such as `Definition 2.2.1` at the start of a line), and the result is cached as `script-index.json` in the data folder. The index is rebuilt when the file's size or page count changes. Neither the PDF nor its text is ever part of the repository: `*.pdf` and caches are git-ignored.
+`src/renderer/src/engine/script.ts` (`MaterialLibrary`, one per course; see Courses and materials for page numbering). The learner picks a PDF once; the main process remembers the path and hands over the bytes. pdf.js extracts each page's text in the renderer (`src/shared/pdfText.ts` joins text items into lines, repairs hyphenation and finds labels such as `Definition 2.2.1` at the start of a line), and the result is cached in the data folder (`script-index.json` for the built-in script, `courses/<id>/text/<material>.json` otherwise). "Re-read" rebuilds it. Neither the PDFs nor their text are ever part of the repository: `*.pdf` and caches are git-ignored.
 
-A learn session sends up to `maxPages` (8 by default) pages of the goal's range in the system prompt; a practice or review item sends up to 3 pages of its concept. With **Ground steps in the script** off, no page text is sent, and the tutor works from section and theorem numbers. Script blocks and the Script screen open the exact page in the app's own viewer (`PdfPage.tsx`).
+A learn session sends up to `maxPages` (8 by default) pages of the goal's range in the system prompt; a practice or review item sends up to 3 pages of its concept. With **Ground steps in the script** off, no page text is sent, and the tutor works from section and theorem numbers. Script blocks, the course map and the reader (Materials → Open) open the exact page in the app's own viewer (`PdfPage.tsx`).
 
 ## The Claude Code CLI
 
@@ -236,7 +268,9 @@ with the user prompt on stdin, in the app's own working folder inside the data f
 | `state.json` | the learner model, rewards, calibration points and the session list |
 | `sessions/<id>.json` | one session: its steps, cards, answers and side questions |
 | `settings.json` | tutor, voice, learning and script settings |
-| `script-index.json` | the extracted text of the lecture notes (local only) |
+| `script-index.json` | the extracted text of the built-in course's lecture notes (local only) |
+| `courses-index.json`, `courses/<id>/…` | courses the learner added, materials, maps, per-course state (see Courses and materials) |
+| `profile.json` | the learner profile, shared by all courses |
 
 Settings → Data exports the learner model, answers and points as one JSON file, imports such a file, or resets everything.
 

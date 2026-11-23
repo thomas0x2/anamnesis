@@ -23,6 +23,7 @@ export function Onboarding(): ReactElement {
   const app = useApp()
   const settings = useStore(app.settings, (s) => s)
   const script = useStore(app.script.status, (s) => s)
+  const job = useStore(app.job)
   const profile = useStore(app.state, (s) => s.learner.profile)
   const [step, setStep] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(() => new Set(profile.filter((p) => SEED_PROFILE.includes(p.text)).map((p) => p.text)))
@@ -93,11 +94,11 @@ export function Onboarding(): ReactElement {
             <div className="test-result ok row" style={{ gap: 8 }}>
               <Icon name="check" size={16} style={{ color: 'var(--good)' }} /> {script.numPages} pages ready.
             </div>
-          ) : script.state === 'indexing' || script.state === 'loading' ? (
+          ) : job?.phase === 'indexing' || script.state === 'loading' ? (
             <div className="stack" style={{ gap: 8 }}>
-              <div className="small">Reading the pages once… {pct(script.progress)}</div>
+              <div className="small">Reading the pages once… {pct(job?.progress ?? 0)}</div>
               <div className="bar">
-                <span style={{ width: pct(script.progress) }} />
+                <span style={{ width: pct(job?.progress ?? 0) }} />
               </div>
             </div>
           ) : app.backend.kind === 'electron' ? (
@@ -108,6 +109,9 @@ export function Onboarding(): ReactElement {
             <div className="small muted">In the browser preview the dev server provides the PDF (ANAMNESIS_SCRIPT). You can skip this.</div>
           )}
           {script.state === 'error' && <div className="tex-error">{script.message}</div>}
+          <p className="small muted" style={{ marginTop: 14 }}>
+            Taking other courses too? Add them later from the course menu next to the logo. A new course is built from the PDFs you give it (script, slides, problem sets), and it grows as you add the next week’s files.
+          </p>
         </>
       )}
 

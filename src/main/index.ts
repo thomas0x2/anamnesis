@@ -7,6 +7,7 @@ import { FakeAgentHost } from '../shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
 import { cancelClaude, runClaude, testClaude, type CliConfig } from '../node/claudeCli'
 import { JsonStore, loadSettings, saveSettings } from '../node/store'
+import { fileInfo, readMaterial, scanPdfs } from '../node/files'
 import type { DeepPartial, LlmRequest, Settings } from '../shared/types'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
@@ -164,7 +165,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('script:choose', async () => {
     const r = await dialog.showOpenDialog(win!, {
-      title: 'Choose the NumCS lecture notes (PDF)',
+      title: 'Choose the lecture notes (PDF)',
       properties: ['openFile'],
       filters: [{ name: 'PDF', extensions: ['pdf'] }]
     })
@@ -172,6 +173,21 @@ function registerIpc(): void {
     await saveSettings(store, { script: { path: r.filePaths[0] } })
     return r.filePaths[0]
   })
+  ipcMain.handle('material:read', async (_e, courseId: string, materialId: string) => readMaterial(store, await loadSettings(store), String(courseId), String(materialId)))
+  ipcMain.handle('material:pick', async () => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: 'Add course materials (PDF)',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (r.canceled) return []
+    return (await Promise.all(r.filePaths.map(fileInfo))).filter(Boolean)
+  })
+  ipcMain.handle('folder:pick', async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Choose the course folder', properties: ['openDirectory'] })
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
+  })
+  ipcMain.handle('folder:scan', (_e, path: string) => (typeof path === 'string' && path ? scanPdfs(path) : null))
   ipcMain.handle('shell:open', (_e, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)
     return undefined

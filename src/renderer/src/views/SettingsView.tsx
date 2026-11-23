@@ -183,10 +183,17 @@ export function SettingsView(): ReactElement {
 
         <div className="panel">
           <div className="panel-title">
-            <h3>Lecture notes</h3>
-            <span className="hint">{app.course.script.fileName}</span>
+            <h3>Course materials</h3>
+            <span className="hint">{app.course.builtin ? app.course.script.fileName : app.course.short}</span>
           </div>
-          <Row
+          {!app.course.builtin && (
+            <Row name="Materials" desc="Scripts, slides and problem sets of this course. Each new PDF extends the course map.">
+              <button className="btn sm" onClick={() => app.go({ name: 'materials' })}>
+                <Icon name="book" size={15} /> Open materials
+              </button>
+            </Row>
+          )}
+          {app.course.builtin && <Row
             name="Script PDF"
             desc={
               script.state === 'ready'
@@ -204,11 +211,11 @@ export function SettingsView(): ReactElement {
               </button>
             )}
             {script.state === 'ready' && (
-              <button className="btn sm ghost" onClick={() => void app.script.load(true)}>
+              <button className="btn sm ghost" onClick={() => void app.reindexScript()}>
                 <Icon name="refresh" size={15} /> Re-read
               </button>
             )}
-          </Row>
+          </Row>}
           <Row name="Ground steps in the script" desc="Send the pages of the concept being taught along with each step, so explanations use the script’s definitions and numbering.">
             <Toggle on={s.script.sendPages} onChange={(v) => save({ script: { sendPages: v } })} label="Ground steps in the script" />
           </Row>

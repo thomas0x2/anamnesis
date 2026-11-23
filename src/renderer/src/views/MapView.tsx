@@ -526,6 +526,7 @@ function ConceptPanel({
             <span className={`status-dot ${st}`} /> {STATUS_LABEL[st]}
           </span>
           {ready && <span className="chip accent">ready</span>}
+          {c.addedAt && Date.now() - Date.parse(c.addedAt) < 7 * 86_400_000 && <span className="chip">new this week</span>}
         </div>
         <h2>
           <Markdown text={c.title} inline />
@@ -567,9 +568,11 @@ function ConceptPanel({
         )}
         {c.pages.length >= 2 && (
           <>
-            <span className="k">Script</span>
+            <span className="k">{app.course.builtin ? "Script" : "Pages"}</span>
             <span className="row" style={{ gap: 6 }}>
-              pages {c.pages[0] + offset}–{c.pages[1] + offset}
+              {app.course.builtin
+                ? `pages ${c.pages[0] + offset}–${c.pages[1] + offset}`
+                : app.script.label(c.pages[0])}
               {status === "ready" && (
                 <button
                   className="btn sm ghost"
@@ -581,6 +584,26 @@ function ConceptPanel({
                   <Icon name="eye" size={14} /> open
                 </button>
               )}
+            </span>
+          </>
+        )}
+        {(c.sources ?? []).length > 0 && (
+          <>
+            <span className="k">Also in</span>
+            <span className="stack" style={{ gap: 2 }}>
+              {(c.sources ?? []).slice(0, 6).map((src, i) => (
+                <PageLink key={i} label={src.label} page={src.pages[0]} ready={status === "ready"} />
+              ))}
+            </span>
+          </>
+        )}
+        {(c.exercises ?? []).length > 0 && (
+          <>
+            <span className="k">Practised in</span>
+            <span className="stack" style={{ gap: 2 }}>
+              {(c.exercises ?? []).slice(0, 8).map((src, i) => (
+                <PageLink key={i} label={src.label} page={src.pages[0]} ready={status === "ready"} />
+              ))}
             </span>
           </>
         )}
@@ -676,5 +699,19 @@ function ConceptPanel({
       </div>
       {demo && <DemoModal id={demo} onClose={() => setDemo(null)} />}
     </div>
+  );
+}
+
+function PageLink({ label, page, ready }: { label: string; page: number; ready: boolean }): ReactElement {
+  const app = useApp();
+  return (
+    <span className="row small" style={{ gap: 6 }}>
+      <span>{label}</span>
+      {ready && (
+        <button className="btn sm ghost" style={{ height: 22, padding: "0 6px" }} onClick={() => app.peekScript(page, label)} title={app.script.label(page)}>
+          <Icon name="eye" size={14} /> open
+        </button>
+      )}
+    </span>
   );
 }

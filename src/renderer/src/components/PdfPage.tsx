@@ -13,17 +13,19 @@ export function PdfPage({ page, width, scale, dark = false }: { page: number; wi
   const st = useStore(app.script.status, (s) => s.state)
   const ref = useRef<HTMLCanvasElement>(null)
   const [err, setErr] = useState<string | null>(null)
+  const at = st === 'ready' ? app.script.locate(page) : null
 
   useEffect(() => {
-    const doc = app.script.document()
     const canvas = ref.current
-    if (!doc || !canvas) return
+    if (!at || !canvas) return
     let cancelled = false
     let task: RenderTask | null = null
     setErr(null)
     void (async () => {
       try {
-        const p = await doc.getPage(clamp(Math.round(page), 1, doc.numPages))
+        const doc = await app.script.doc(at.material)
+        if (cancelled) return
+        const p = await doc.getPage(clamp(Math.round(at.local), 1, doc.numPages))
         if (cancelled) return
         const base = p.getViewport({ scale: 1 })
         const s = scale ?? (width ? width / base.width : 1.3)
@@ -39,7 +41,7 @@ export function PdfPage({ page, width, scale, dark = false }: { page: number; wi
           transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
           ...(dark ? { pageColors: DARK_PAGE } : {})
         })
-        await task.promise
+        await task?.promise
       } catch (e) {
         const msg = String((e as Error)?.message ?? e)
         if (!cancelled && !/cancel/i.test(msg)) setErr(msg)
@@ -49,12 +51,13 @@ export function PdfPage({ page, width, scale, dark = false }: { page: number; wi
       cancelled = true
       task?.cancel()
     }
-  }, [app, page, width, scale, dark, st])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app, page, width, scale, dark, st, at?.material.id, at?.local])
 
-  if (st !== 'ready' && !app.script.document()) return <div className="empty">The lecture notes are not loaded.</div>
+  if (!at) return <div className="empty">{st === 'ready' ? 'This page is not in the course materials.' : 'The course materials are not loaded.'}</div>
   return (
     <div>
-      <canvas ref={ref} className="pdf-page" aria-label={`Script page ${page}`} />
+      <canvas ref={ref} className="pdf-page" aria-label={`${at.material.title}, page ${at.local}`} />
       {err && <div className="tex-error">Could not render this page: {err}</div>}
     </div>
   )
@@ -90,29 +93,30 @@ export function ScriptPeek(): ReactElement | null {
       if (e.key === 'Escape') close()
       const t = e.target as HTMLElement
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-      if (e.key === 'ArrowRight') setPage((p) => Math.min(status.numPages || p + 1, p + 1))
-      if (e.key === 'ArrowLeft') setPage((p) => Math.max(1, p - 1))
+      if (e.key === 'ArrowRight') setPage((p) => app.script.step(p, 1))
+      if (e.key === 'ArrowLeft') setPage((p) => app.script.step(p, -1))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
 
   if (!peek) return null
-  const printed = page + app.course.script.printedPageOffset
+  const at = status.state === 'ready' ? app.script.locate(page) : null
   return (
-    <div className="peek" role="dialog" aria-label="Lecture notes">
+    <div className="peek" role="dialog" aria-label="Course materials">
       <div className="peek-head">
         <Icon name="book" size={16} style={{ color: 'var(--accent-text)' }} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="small" style={{ fontWeight: 600 }}>
-            {peek.label ? `${peek.label} · ` : ''}page {printed}
+            {peek.label ? `${peek.label} · ` : ''}
+            {app.script.label(page)}
           </div>
-          <div className="tiny muted">PDF page {page} of {status.numPages || '…'}</div>
+          <div className="tiny muted">{at ? `${at.material.title} · PDF page ${at.local} of ${at.material.numPages}` : '…'}</div>
         </div>
-        <button className="btn icon sm ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} title="Previous page (←)">
+        <button className="btn icon sm ghost" onClick={() => setPage((p) => app.script.step(p, -1))} title="Previous page (←)">
           <Icon name="chev-right" size={15} style={{ transform: 'rotate(180deg)' }} />
         </button>
-        <button className="btn icon sm ghost" onClick={() => setPage((p) => Math.min(status.numPages || p + 1, p + 1))} title="Next page (→)">
+        <button className="btn icon sm ghost" onClick={() => setPage((p) => app.script.step(p, 1))} title="Next page (→)">
           <Icon name="chev-right" size={15} />
         </button>
         <button className={`btn sm ghost ${dark ? 'speak on' : ''}`} onClick={() => setDark((d) => !d)} title="Dark pages">
@@ -125,7 +129,7 @@ export function ScriptPeek(): ReactElement | null {
             app.go({ name: 'script', page })
           }}
         >
-          Open in Script
+          Open in reader
         </button>
         <button className="btn icon sm ghost" onClick={close} title="Close (Esc)">
           <Icon name="x" size={16} />

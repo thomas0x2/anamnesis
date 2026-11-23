@@ -4423,3 +4423,168 @@ b {
 .map-node {
   font-family: var(--font);
 }
+
+/* ------------------------------------------------------------ courses and materials */
+.course-switch {
+  position: relative;
+}
+.course-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.course-btn:hover {
+  color: var(--text-2);
+  background: var(--accent-soft);
+}
+.course-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 300px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+.course-item {
+  display: grid;
+  grid-template-columns: 14px auto 1fr;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.course-item:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.course-item .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  justify-self: center;
+}
+.course-item.on .dot {
+  background: var(--brand);
+}
+.course-item .t {
+  font-weight: 600;
+  color: var(--text);
+}
+.course-item .s {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.course-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+.mat-folder,
+.mat-pending,
+.mat-job {
+  margin-top: 14px;
+}
+.mat-file {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.mat-file:last-child {
+  border-bottom: 0;
+}
+.mat-list {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.mat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.mat-row.busy .mat-title {
+  color: var(--text);
+}
+.mat-kind {
+  width: 132px;
+  flex: none;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.mat-title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 550;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.mat-title:hover,
+.mat-title:focus {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.mat-meta {
+  margin: 4px 0 0 142px;
+}
+.mat-status {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--faint);
+  min-width: 70px;
+  text-align: right;
+}
+.mat-status.indexing,
+.mat-status.mapping {
+  color: var(--brand);
+}
+.mat-status.mapped {
+  color: var(--muted);
+}
+.mat-status.error {
+  color: var(--bad);
+}
+.bar > span.pulse {
+  animation: mat-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mat-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.new-badge {
+  font-family: var(--font-label);
+  font-size: 10px;
+  color: var(--brand);
+  margin-left: 6px;
+  letter-spacing: 0.04em;
+}
+.course-notice {
+  margin-bottom: 18px;
+}

@@ -1,6 +1,6 @@
 // Backend over HTTP to scripts/dev-server.ts (lets the UI run in a normal browser for development and tests).
 import type { AgentEvent } from '@shared/agentTypes'
-import type { AppInfo, Backend, DeepPartial, LlmEvent, LlmRequest, LlmResult, LlmTestResult, Settings } from '@shared/types'
+import type { AppInfo, Backend, FolderFile, DeepPartial, LlmEvent, LlmRequest, LlmResult, LlmTestResult, Settings } from '@shared/types'
 
 export function createHttpBackend(base: string): Backend {
   const j = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -97,6 +97,14 @@ export function createHttpBackend(base: string): Backend {
       return new Uint8Array(await r.arrayBuffer())
     },
     chooseScript: async () => null,
+    async readMaterial(courseId, materialId) {
+      const r = await fetch(`${base}/api/material?course=${encodeURIComponent(courseId)}&id=${encodeURIComponent(materialId)}`)
+      if (!r.ok || r.status === 204) return null
+      return new Uint8Array(await r.arrayBuffer())
+    },
+    pickMaterials: async () => [],
+    pickFolder: async () => null,
+    scanFolder: async (path) => (await (await post('/api/scan', { path })).json() as { files: FolderFile[] | null }).files,
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },

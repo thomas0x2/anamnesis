@@ -49,6 +49,10 @@ export function createDemoBackend(): Backend {
     },
     readScript: async () => null,
     chooseScript: async () => null,
+    readMaterial: async () => null,
+    pickMaterials: async () => [],
+    pickFolder: async () => null,
+    scanFolder: async () => null,
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },

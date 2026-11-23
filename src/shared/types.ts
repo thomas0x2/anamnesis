@@ -581,11 +581,33 @@ export interface AppState {
 // ---------------------------------------------------------------- settings & backend
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+export type ClaudeAuth = 'subscription' | 'api-key'
+
+/** What the app knows about the saved API key; the key itself never leaves the main process. */
+export interface ApiKeyStatus {
+  saved: boolean
+  /** the last characters, to recognise it */
+  hint: string | null
+  /** false when the system offers no encrypted storage (the key cannot be saved) */
+  canStore: boolean
+  error?: string
+}
+
 export interface Settings {
   /** the course on screen */
   activeCourse: string
   provider: 'claude-cli' | 'demo'
-  cli: { path: string | null; model: string; effort: Effort; fallbackModel: string | null; timeoutSec: number }
+  cli: {
+    path: string | null
+    model: string
+    effort: Effort
+    fallbackModel: string | null
+    timeoutSec: number
+    /** whose usage pays: the Claude Code login (subscription) or an Anthropic API key (API credits) */
+    auth: ClaudeAuth
+    /** model for building course maps from PDFs (bulk work); empty = the tutor's model */
+    mapModel: string
+  }
   script: { path: string | null; sendPages: boolean; maxPages: number }
   voice: {
     sttModel: string
@@ -602,7 +624,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   activeCourse: 'numcs',
   provider: 'claude-cli',
-  cli: { path: null, model: '', effort: 'medium', fallbackModel: null, timeoutSec: 240 },
+  cli: { path: null, model: '', effort: 'medium', fallbackModel: null, timeoutSec: 240, auth: 'subscription', mapModel: '' },
   script: { path: null, sendPages: true, maxPages: 8 },
   voice: {
     sttModel: 'onnx-community/whisper-base',
@@ -698,6 +720,10 @@ export interface Backend {
   agentSend(chatId: string, text: string): Promise<boolean>
   agentToolResult(chatId: string, callId: string, result: AgentToolResult): Promise<void>
   agentStop(chatId: string): Promise<void>
+  /** Desktop only: the saved Anthropic API key (encrypted with the system keychain). */
+  apiKeyStatus?(): Promise<ApiKeyStatus>
+  /** Desktop only: save a key, or remove it with null. */
+  setApiKey?(key: string | null): Promise<ApiKeyStatus>
   /** Electron only: run `fn` (save everything) before the window closes. */
   onBeforeQuit?(fn: () => Promise<void>): void
 }

@@ -431,6 +431,33 @@ async function flow(page) {
   await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
   step('Settings screen renders')
+  // paying with API credits instead of the subscription (the scripted tutor still answers: ANAMNESIS_FAKE)
+  await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
+  await page.getByRole('button', { name: 'API credits' }).click()
+  if (electronMode) {
+    const keyBox = page.getByLabel('Anthropic API key')
+    await keyBox.fill('not-a-key')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.getByText('does not look like an Anthropic API key').waitFor()
+    const canStore = await page.getByText('No encrypted storage on this system').count()
+    if (!canStore) {
+      await keyBox.fill('sk-ant-api03-e2e-' + 'x'.repeat(40))
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await page.getByText('sk-ant-…xxxx').waitFor()
+      await page.getByRole('button', { name: 'Remove', exact: true }).click()
+      await keyBox.waitFor()
+    }
+    step(`API credits: a malformed key is refused${canStore ? ' (no keychain here, so saving is refused too)' : ', a key is saved encrypted and removed'}`)
+  } else {
+    await page.getByText('ANTHROPIC_API_KEY').waitFor()
+    step('API credits: the browser version points to ANTHROPIC_API_KEY')
+  }
+  await page.getByRole('button', { name: 'Haiku' }).click()
+  await page.getByText(/Today \$/).waitFor()
+  await page.getByRole('button', { name: 'Claude subscription' }).click()
+  await page.getByRole('button', { name: 'Same as tutor' }).click()
+  await page.getByRole('button', { name: 'Demo tutor', exact: true }).click()
+  step('map model and cost rows work')
   if (!electronMode) await coursesFlow(page)
   else {
     // a dialog opened from the top bar must sit outside its window-drag region: on macOS that region

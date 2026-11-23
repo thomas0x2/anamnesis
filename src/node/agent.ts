@@ -8,7 +8,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MCP_SERVER, toolShortName, type AgentEvent, type AgentStartRequest, type AgentToolResult } from '../shared/agentTypes'
 import type { LlmErrorKind } from '../shared/types'
-import { buildEnv, resolveClaudePath, type CliConfig } from './claudeCli'
+import { applyAuth, authProblem, buildEnv, resolveClaudePath, type CliConfig } from './claudeCli'
 import { McpBridge, type McpEndpoint } from './mcpBridge'
 
 interface Pending {
@@ -81,6 +81,8 @@ export class AgentHost {
     const chatId = req.chatId
     const bin = await resolveClaudePath(cfg.path)
     if (!bin) return { ok: false, errorKind: 'not_found', error: 'Claude Code CLI not found. Install it or set its path in Settings.' }
+    const problem = authProblem(cfg)
+    if (problem) return { ok: false, errorKind: 'auth', error: problem }
     await mkdir(join(cfg.workDir, 'prompts'), { recursive: true })
     const sysFile = join(cfg.workDir, 'prompts', `agent_${chatId.replace(/[^\w-]/g, '_')}.txt`)
     await writeFile(sysFile, req.system, 'utf8')
@@ -99,7 +101,7 @@ export class AgentHost {
       })
     })
 
-    const env = await buildEnv(bin)
+    const env = applyAuth(await buildEnv(bin), cfg)
     // a learner can take a long time to answer: tool calls must not time out on the CLI side
     env.MCP_TOOL_TIMEOUT = String(24 * 3600 * 1000)
     env.MCP_TIMEOUT = '30000'

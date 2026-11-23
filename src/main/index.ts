@@ -8,7 +8,9 @@ import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/a
 import { cancelClaude, runClaude, testClaude, type CliConfig } from '../node/claudeCli'
 import { JsonStore, loadSettings, saveSettings } from '../node/store'
 import { fileInfo, readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../node/files'
-import type { DeepPartial, LlmRequest, Settings } from '../shared/types'
+import type { DeepPartial, LlmRequest, LlmResult, Settings } from '../shared/types'
+import { addUsage, normalizeUsage } from '../shared/usage'
+import { ApiKeyVault } from './apiKey'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
 app.setName('Anamnesis')
@@ -43,8 +45,21 @@ const CSP = [
 // Sketch blocks run model-written HTML in a sandboxed, opaque-origin iframe: inline code only, no network.
 const SKETCH_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"
 
+const vault = new ApiKeyVault(dataDir)
+
 function cliConfig(s: Settings): CliConfig {
-  return { ...s.cli, workDir: join(dataDir(), 'claude-workdir') }
+  const auth = s.cli.auth === 'api-key' ? 'api-key' : 'subscription'
+  return { ...s.cli, auth, apiKey: auth === 'api-key' ? vault.get() : null, workDir: join(dataDir(), 'claude-workdir') }
+}
+
+// what the calls cost, per day (see src/shared/usage.ts); writes are chained so none is lost
+let usageChain: Promise<void> = Promise.resolve()
+function recordUsage(kind: string, usd: number | null | undefined, s: Settings): void {
+  if (process.env.ANAMNESIS_FAKE === '1' || s.provider === 'demo') return
+  const auth = s.cli.auth === 'api-key' ? 'api-key' : 'subscription'
+  usageChain = usageChain
+    .then(async () => store.write('usage', addUsage(normalizeUsage(await store.read('usage')), { at: new Date(), kind, usd, auth })))
+    .catch(() => {})
 }
 
 function serveApp(): void {
@@ -132,6 +147,7 @@ function registerIpc(): void {
     agentOf.set(req.chatId, host)
     const sender = event.sender
     const onEvent = (e: AgentEvent): void => {
+      if (e.type === 'turn_end' && host === realAgents) recordUsage('chat', e.costUsd, settings)
       if (!sender.isDestroyed()) sender.send('agent:event', e)
     }
     return host instanceof FakeAgentHost ? host.start(req, onEvent) : host.start(req, cliConfig(settings), onEvent)
@@ -143,10 +159,14 @@ function registerIpc(): void {
   ipcMain.handle('agent:stop', (_e, chatId: string) => agentOf.get(chatId)?.stop(chatId))
   ipcMain.handle('llm:generate', async (event, req: LlmRequest) => {
     const settings = await loadSettings(store)
-    return runClaude({ ...req, files: resolveWorkFiles(dataDir(), req.files) }, cliConfig(settings), (e) => {
+    const r: LlmResult = await runClaude({ ...req, files: resolveWorkFiles(dataDir(), req.files) }, cliConfig(settings), (e) => {
       if (!event.sender.isDestroyed()) event.sender.send('llm:event', e)
     })
+    if (r.ok || r.costUsd) recordUsage(req.kind, r.costUsd, settings)
+    return r
   })
+  ipcMain.handle('apikey:status', () => vault.status())
+  ipcMain.handle('apikey:set', (_e, key: unknown) => vault.set(typeof key === 'string' ? key : null))
   ipcMain.handle('llm:cancel', (_e, id: string) => cancelClaude(id))
   ipcMain.handle('llm:test', async () => testClaude(cliConfig(await loadSettings(store))))
   ipcMain.handle('store:read', (_e, name: string) => store.read(name))

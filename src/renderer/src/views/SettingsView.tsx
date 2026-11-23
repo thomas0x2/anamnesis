@@ -1,5 +1,6 @@
 // Settings: the tutor (Claude Code CLI), the lecture notes, voice, scheduling and your data.
-import type { AppInfo, Effort, LlmTestResult, Settings } from '@shared/types'
+import type { ApiKeyStatus, AppInfo, Effort, LlmTestResult, Settings } from '@shared/types'
+import { formatUsd, normalizeUsage, usageSummary, type UsageDay, type UsageSummary } from '@shared/usage'
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Icon } from '../components/Icon'
 import { useApp } from '../engine/app'
@@ -52,6 +53,162 @@ function TextSetting({ value, placeholder, onSave, width = 240 }: { value: strin
       onBlur={() => v !== value && onSave(v.trim())}
       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
     />
+  )
+}
+
+const MAP_MODELS: { id: string; label: string }[] = [
+  { id: '', label: 'Same as tutor' },
+  { id: 'sonnet', label: 'Sonnet' },
+  { id: 'haiku', label: 'Haiku' }
+]
+
+const CONSOLE_KEYS = 'https://console.anthropic.com/settings/keys'
+const CONSOLE_BILLING = 'https://console.anthropic.com/settings/billing'
+
+/** Subscription or API credits, and the API key (saved encrypted by the desktop app). */
+function AccountRows({ s, save }: { s: Settings; save: (p: Parameters<ReturnType<typeof useApp>['saveSettings']>[0]) => void }): ReactElement {
+  const app = useApp()
+  const desktop = !!app.backend.apiKeyStatus
+  const [key, setKey] = useState<ApiKeyStatus | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void app.backend.apiKeyStatus?.().then(setKey)
+  }, [app])
+  const store = async (k: string | null): Promise<void> => {
+    if (!app.backend.setApiKey) return
+    setBusy(true)
+    try {
+      const st = await app.backend.setApiKey(k)
+      setKey(st)
+      if (!st.error) setDraft('')
+      if (!st.error && k && s.cli.auth !== 'api-key') save({ cli: { auth: 'api-key' } })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const link = (url: string, text: string): ReactElement => (
+    <a href={url} onClick={(e) => (e.preventDefault(), void app.backend.openExternal(url))}>
+      {text}
+    </a>
+  )
+  return (
+    <>
+      <Row
+        name="Account"
+        desc={
+          s.cli.auth === 'api-key'
+            ? 'Calls are billed to your Anthropic API key (pay as you go with API credits), not your Claude plan.'
+            : 'Calls count toward your Claude plan’s usage limits. Switch to API credits if you keep running out.'
+        }
+      >
+        <span className="seg">
+          <button className={s.cli.auth !== 'api-key' ? 'on' : ''} onClick={() => save({ cli: { auth: 'subscription' } })}>
+            Claude subscription
+          </button>
+          <button className={s.cli.auth === 'api-key' ? 'on' : ''} onClick={() => save({ cli: { auth: 'api-key' } })}>
+            API credits
+          </button>
+        </span>
+      </Row>
+      {s.cli.auth === 'api-key' && (
+        <Row
+          name="API key"
+          desc={
+            desktop ? (
+              <>
+                Create one in the {link(CONSOLE_KEYS, 'Anthropic Console')} and add credits under {link(CONSOLE_BILLING, 'Billing')}. It is stored encrypted with your system keychain, only on this computer.
+              </>
+            ) : (
+              <>The browser version uses <code>ANTHROPIC_API_KEY</code> from the environment of the dev server.</>
+            )
+          }
+        >
+          {desktop && (
+            <div className="stack" style={{ gap: 6, alignItems: 'flex-end' }}>
+              {key?.saved ? (
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="small mono">sk-ant-{key.hint}</span>
+                  <button className="btn sm ghost" disabled={busy} onClick={() => void store(null)}>
+                    Remove
+                  </button>
+                </span>
+              ) : (
+                <span className="row" style={{ gap: 6 }}>
+                  <input
+                    className="input"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    style={{ width: 220 }}
+                    placeholder="sk-ant-…"
+                    aria-label="Anthropic API key"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && draft.trim() && void store(draft)}
+                  />
+                  <button className="btn sm" disabled={busy || !draft.trim()} onClick={() => void store(draft)}>
+                    Save
+                  </button>
+                </span>
+              )}
+              {key?.error && <span className="tiny" style={{ color: 'var(--bad)' }}>{key.error}</span>}
+              {key && !key.saved && !key.canStore && <span className="tiny" style={{ color: 'var(--bad)' }}>No encrypted storage on this system.</span>}
+            </div>
+          )}
+        </Row>
+      )}
+      <Row name="Model for course maps" desc="Reading slides and scripts into the course map is bulk work. A smaller model costs a fraction and is usually good enough.">
+        <span className="seg">
+          {MAP_MODELS.map((m) => (
+            <button key={m.id} className={s.cli.mapModel === m.id ? 'on' : ''} onClick={() => save({ cli: { mapModel: m.id } })}>
+              {m.label}
+            </button>
+          ))}
+        </span>
+      </Row>
+    </>
+  )
+}
+
+const KIND_LABEL: Record<string, string> = { tutor: 'tutor', map: 'course maps', grading: 'grading', other: 'other' }
+
+function costLine(d: UsageDay, auth: Settings['cli']['auth']): string {
+  const main = auth === 'api-key' ? d.api : d.api + d.subscription
+  const parts = Object.entries(d.byKind)
+    .filter(([, x]) => (x ?? 0) >= 0.005)
+    .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+    .map(([k, x]) => `${KIND_LABEL[k] ?? k} ${formatUsd(x ?? 0)}`)
+  return `${formatUsd(main)}${parts.length ? ` (${parts.join(', ')})` : ''}`
+}
+
+/** What the calls cost, as Claude Code reports it. */
+function UsageRow({ auth }: { auth: Settings['cli']['auth'] }): ReactElement {
+  const app = useApp()
+  const [u, setU] = useState<UsageSummary | null>(null)
+  useEffect(() => {
+    void app.backend.readJson('usage').then((raw) => setU(usageSummary(normalizeUsage(raw), new Date())))
+  }, [app])
+  const sub = u ? u.month.subscription : 0
+  return (
+    <Row
+      name="Cost"
+      desc={
+        auth === 'api-key'
+          ? 'Billed to your API key, as Claude Code reports it. The Console shows the exact amount.'
+          : 'What these calls would cost on API credits (your plan covers them), as Claude Code reports it.'
+      }
+    >
+      {u ? (
+        <div className="stack small" style={{ gap: 2, textAlign: 'right' }}>
+          <span>Today {costLine(u.today, auth)}</span>
+          <span>This month {costLine(u.month, auth)}</span>
+          {auth === 'api-key' && sub > 0 && <span className="tiny muted">plus {formatUsd(sub)} on the subscription this month</span>}
+        </div>
+      ) : (
+        <span className="small muted">…</span>
+      )}
+    </Row>
   )
 }
 
@@ -140,7 +297,7 @@ export function SettingsView(): ReactElement {
         <div className="panel">
           <div className="panel-title">
             <h3>Tutor</h3>
-            <span className="hint">Claude, through your Claude Code login</span>
+            <span className="hint">{s.cli.auth === 'api-key' ? 'Claude, on your API credits' : 'Claude, through your Claude Code login'}</span>
           </div>
           <Row name="Tutor" desc="The demo tutor is a scripted stand-in for trying the interface without Claude.">
             <span className="seg">
@@ -152,6 +309,7 @@ export function SettingsView(): ReactElement {
               </button>
             </span>
           </Row>
+          {s.provider === 'claude-cli' && <AccountRows s={s} save={save} />}
           <Row name="Connection" desc="Runs a tiny request through the Claude Code CLI.">
             <CliTest />
           </Row>
@@ -173,6 +331,7 @@ export function SettingsView(): ReactElement {
               ))}
             </span>
           </Row>
+          {s.provider === 'claude-cli' && <UsageRow auth={s.cli.auth} />}
           <Row name="Time limit per step" desc="A step that takes longer is stopped and can be retried.">
             <span className="row" style={{ gap: 6 }}>
               <input className="input" type="number" min={60} max={900} step={30} style={{ width: 90 }} value={s.cli.timeoutSec} onChange={(e) => save({ cli: { timeoutSec: Math.max(60, Math.min(900, Number(e.target.value) || 240)) } })} />

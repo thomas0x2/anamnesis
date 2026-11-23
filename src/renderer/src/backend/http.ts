@@ -105,6 +105,15 @@ export function createHttpBackend(base: string): Backend {
     pickMaterials: async () => [],
     pickFolder: async () => null,
     scanFolder: async (path) => (await (await post('/api/scan', { path })).json() as { files: FolderFile[] | null }).files,
+    async saveWork(courseId, submissionId, files) {
+      const b64 = (u: Uint8Array): string => {
+        let s = ''
+        for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000))
+        return btoa(s)
+      }
+      const r = await post('/api/work', { course: courseId, id: submissionId, files: files.map((f) => ({ name: f.name, data: b64(f.bytes) })) })
+      return ((await r.json()) as { files: { name: string; size: number }[] }).files
+    },
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },

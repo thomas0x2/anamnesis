@@ -15,7 +15,7 @@ import { FakeAgentHost } from '../src/shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../src/shared/agentTypes'
 import { cancelClaude, runClaude, testClaude, type CliConfig } from '../src/node/claudeCli'
 import { JsonStore, loadSettings, saveSettings } from '../src/node/store'
-import { readMaterial, scanPdfs } from '../src/node/files'
+import { readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../src/node/files'
 import { fakeGenerate } from '../src/shared/fakeTutor'
 import type { LlmRequest, LlmResult, Settings } from '../src/shared/types'
 
@@ -94,6 +94,11 @@ const server = createServer((req, res) => {
           const { path } = await body<{ path: string }>(req)
           return send(res, 200, { files: typeof path === 'string' && path ? await scanPdfs(path) : null })
         }
+        case 'POST /api/work': {
+          const b = await body<{ course: string; id: string; files: { name: string; data: string }[] }>(req)
+          const files = (b.files ?? []).map((f) => ({ name: String(f.name), bytes: new Uint8Array(Buffer.from(String(f.data), 'base64')) }))
+          return send(res, 200, { files: await saveWork(dataDir, String(b.course), String(b.id), files) })
+        }
         case 'GET /api/test':
           if (fake) return send(res, 200, { ok: true, message: 'Dev server in fake mode: the scripted tutor answers.', path: null, version: null })
           return send(res, 200, await testClaude(cliConfig(await loadSettings(store))))
@@ -113,7 +118,7 @@ const server = createServer((req, res) => {
             if (!res.writableEnded) res.write(JSON.stringify(line) + '\n')
           }
           const settings = await loadSettings(store)
-          const result: LlmResult = fake || settings.provider === 'demo' ? await fakeGenerate(r, (event) => emit({ event }), 120) : await runClaude(r, cliConfig(settings), (event) => emit({ event }))
+          const result: LlmResult = fake || settings.provider === 'demo' ? await fakeGenerate(r, (event) => emit({ event }), 120) : await runClaude({ ...r, files: resolveWorkFiles(dataDir, r.files) }, cliConfig(settings), (event) => emit({ event }))
           open = false
           emit({ result })
           return res.end()

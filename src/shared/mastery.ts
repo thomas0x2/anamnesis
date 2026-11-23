@@ -70,6 +70,11 @@ export function evidenceWeight(kind: EvidenceKind, level: number | null): number
       return 1
     case 'practice':
       return 1 + 0.15 * (clamp(level ?? 1, 1, 5) - 1)
+    // a whole worked problem from a problem set, and one under exam conditions, say more than one item
+    case 'work':
+      return 1.4
+    case 'exam':
+      return 1.8
   }
 }
 
@@ -135,7 +140,7 @@ export interface EvidenceOutcome {
   rating: Rating | null
 }
 
-const RETRIEVAL_KINDS: EvidenceKind[] = ['check', 'practice', 'review', 'reflect']
+const RETRIEVAL_KINDS: EvidenceKind[] = ['check', 'practice', 'review', 'reflect', 'work', 'exam']
 
 export function applyEvidence(prev: ConceptState, input: EvidenceInput, now: Date, desiredRetention = 0.9): EvidenceOutcome {
   const cs: ConceptState = { ...prev, evidence: prev.evidence.slice(), successDays: prev.successDays.slice() }

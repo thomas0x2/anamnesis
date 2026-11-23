@@ -7,7 +7,7 @@ import { FakeAgentHost } from '../shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
 import { cancelClaude, runClaude, testClaude, type CliConfig } from '../node/claudeCli'
 import { JsonStore, loadSettings, saveSettings } from '../node/store'
-import { fileInfo, readMaterial, scanPdfs } from '../node/files'
+import { fileInfo, readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../node/files'
 import type { DeepPartial, LlmRequest, Settings } from '../shared/types'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
@@ -143,7 +143,7 @@ function registerIpc(): void {
   ipcMain.handle('agent:stop', (_e, chatId: string) => agentOf.get(chatId)?.stop(chatId))
   ipcMain.handle('llm:generate', async (event, req: LlmRequest) => {
     const settings = await loadSettings(store)
-    return runClaude(req, cliConfig(settings), (e) => {
+    return runClaude({ ...req, files: resolveWorkFiles(dataDir(), req.files) }, cliConfig(settings), (e) => {
       if (!event.sender.isDestroyed()) event.sender.send('llm:event', e)
     })
   })
@@ -187,6 +187,7 @@ function registerIpc(): void {
     const r = await dialog.showOpenDialog(win!, { title: 'Choose the course folder', properties: ['openDirectory'] })
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })
+  ipcMain.handle('work:save', (_e, courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]) => saveWork(dataDir(), courseId, submissionId, files))
   ipcMain.handle('folder:scan', (_e, path: string) => (typeof path === 'string' && path ? scanPdfs(path) : null))
   ipcMain.handle('shell:open', (_e, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)

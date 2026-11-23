@@ -126,6 +126,8 @@ export interface AgentContext {
   scope: string[]
   /** practice and review items the app selected */
   queue?: PracticeTarget[]
+  /** the exam date and the problem sets and mock exams done (exam preparation) */
+  examPrep?: string | null
 }
 
 const FLOW = String.raw`# How a session runs
@@ -155,7 +157,9 @@ export function buildAgentSystemPrompt(course: Course, graph: CourseGraph, learn
   const out = [intro, '', FLOW, '', doctrine(course), '']
   out.push('# Course concepts (id: title [chapter])')
   for (const c of course.concepts) out.push(`- ${c.id}: ${c.title} [${c.chapter}]`)
-  out.push('', `Exam: ${course.exam.format}`, '', '# This session')
+  out.push('', `Exam: ${course.exam.format}`)
+  if (ctx.examPrep) out.push(`Exam preparation: ${ctx.examPrep} Shape practice toward the exam when it is close.`)
+  out.push('', '# This session')
   if (ctx.mode === 'learn' && ctx.goalConceptId) {
     const g = graph.get(ctx.goalConceptId)
     out.push(`Mode: LEARN. Goal concept: ${g?.title ?? ctx.goalConceptId} (id ${ctx.goalConceptId}).`)

@@ -1,4 +1,5 @@
 // In-browser backend: localStorage persistence and the scripted demo tutor. No model, no files.
+import { workFileName } from '@shared/exam'
 import { FakeAgentHost } from '@shared/fakeAgent'
 import { fakeGenerate } from '@shared/fakeTutor'
 import { DEFAULT_SETTINGS, type Backend, type DeepPartial, type Settings } from '@shared/types'
@@ -53,6 +54,8 @@ export function createDemoBackend(): Backend {
     pickMaterials: async () => [],
     pickFolder: async () => null,
     scanFolder: async () => null,
+    // the demo keeps nothing on disk: the scripted grade does not read the files
+    saveWork: async (_c, _s, files) => files.map((f, i) => ({ name: workFileName(f.name, i) ?? `file-${i + 1}`, size: f.bytes.byteLength })),
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },

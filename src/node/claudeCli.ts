@@ -91,6 +91,8 @@ function classify(text: string): LlmErrorKind {
 }
 
 export function cliArgs(req: LlmRequest, cfg: CliConfig, systemFile: string): string[] {
+  // the learner's own files (absolute paths, checked by the caller): the model may only read them
+  const files = req.files ?? []
   const args = [
     '-p',
     '--output-format',
@@ -102,7 +104,7 @@ export function cliArgs(req: LlmRequest, cfg: CliConfig, systemFile: string): st
     '--system-prompt-file',
     systemFile,
     '--tools',
-    '',
+    files.length ? 'Read' : '',
     '--no-session-persistence',
     '--strict-mcp-config',
     '--disable-slash-commands',
@@ -116,6 +118,8 @@ export function cliArgs(req: LlmRequest, cfg: CliConfig, systemFile: string): st
   if (model) args.push('--model', model)
   const fb = (cfg.fallbackModel || '').trim()
   if (fb && fb !== model) args.push('--fallback-model', fb)
+  // reads inside the added folder need no approval; anything else is denied in print mode
+  if (files.length) args.push('--add-dir', ...new Set(files.map((f) => dirname(f))))
   return args
 }
 
@@ -271,7 +275,9 @@ export async function runClaude(req: LlmRequest, cfg: CliConfig, onEvent: (e: Ll
     child.stdin.on('error', () => {
       /* process died early; reported via close */
     })
-    child.stdin.end(req.prompt, 'utf8')
+    const files = req.files ?? []
+    const prompt = files.length ? `${req.prompt}\n\nFiles:\n${files.map((f) => `- ${f}`).join('\n')}` : req.prompt
+    child.stdin.end(prompt, 'utf8')
   })
 }
 

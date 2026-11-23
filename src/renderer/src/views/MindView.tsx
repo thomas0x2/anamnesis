@@ -243,7 +243,7 @@ function ProfilePanel(): ReactElement {
   )
 }
 
-const KIND_NAME: Record<Evidence['kind'], string> = { probe: 'Probe', predict: 'Prediction', check: 'Check', practice: 'Practice', review: 'Review', reflect: 'Explain-back' }
+const KIND_NAME: Record<Evidence['kind'], string> = { probe: 'Probe', predict: 'Prediction', check: 'Check', practice: 'Practice', review: 'Review', reflect: 'Explain-back', work: 'Problem set', exam: 'Mock exam' }
 
 function ConceptDetail({ id }: { id: string }): ReactElement {
   const app = useApp()

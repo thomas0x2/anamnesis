@@ -1,5 +1,5 @@
-// Today: what to continue or learn next, then review and practice side by side,
-// what is ready to learn, chapter readiness and recent sessions.
+// Today: a glance row (due, started, exam, this week), what to continue or learn next,
+// review / practice / exam side by side, what is ready to learn, chapter readiness and recent sessions.
 import { prepProgress, workItems, workState } from '@shared/exam'
 import { statusRank, STATUS_ORDER } from '@shared/mastery'
 import { dueConcepts, nextDue } from '@shared/selection'
@@ -32,12 +32,12 @@ export function HomeView(): ReactElement {
   const first = frontier[0] ? graph.get(frontier[0]) : undefined
   const reviewFirst = due.length > 0
 
-  const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-  const summary = due.length
-    ? `${due.length === 1 ? 'One idea is' : `${plural(due.length, 'idea')} are`} ready to be remembered.`
-    : first
-      ? 'Something new is ready to learn.'
-      : 'Everything is underway.'
+  const dateLabel = now.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  })
+  const summary = due.length ? `${due.length === 1 ? 'One idea is' : `${plural(due.length, 'idea')} are`} ready to be remembered.` : first ? 'Something new is ready to learn.' : 'Everything is underway.'
 
   return (
     <div className="page">
@@ -55,8 +55,9 @@ export function HomeView(): ReactElement {
         </button>
       </div>
 
+      <Glance due={due.length} learned={learned.length} />
+
       <CourseNotice />
-      <ExamNotice />
 
       <div className="today-grid">
         {sc ? (
@@ -78,7 +79,7 @@ export function HomeView(): ReactElement {
           </div>
         )}
 
-        <div className="today-block">
+        <div className="today-block third">
           <div className="eyebrow">review</div>
           {due.length ? (
             <div className="row" style={{ alignItems: 'baseline', gap: 10 }}>
@@ -100,7 +101,7 @@ export function HomeView(): ReactElement {
           </button>
         </div>
 
-        <div className="today-block">
+        <div className="today-block third">
           <div className="eyebrow">practice</div>
           <div className="title">{learned.length ? plural(learned.length, 'concept') : 'Nothing yet'}</div>
           <div className="desc">Mixed problems that get harder as you succeed: composed demands, unfamiliar cues, exam-style surfaces.</div>
@@ -109,7 +110,9 @@ export function HomeView(): ReactElement {
           </button>
         </div>
 
-        <div className="today-block">
+        <ExamNotice />
+
+        <div className="today-block half">
           <div className="row between">
             <div className="eyebrow">ready to learn</div>
             <span className="eyebrow">prerequisites in place</span>
@@ -144,7 +147,7 @@ export function HomeView(): ReactElement {
           )}
         </div>
 
-        <div className="today-block">
+        <div className="today-block half">
           <div className="row between">
             <div className="eyebrow">course</div>
             <span className="eyebrow">how far along × how well remembered</span>
@@ -156,7 +159,15 @@ export function HomeView(): ReactElement {
                 <button
                   key={r.chapter}
                   className="chapter-row"
-                  style={{ background: 'none', border: 0, padding: 0, color: 'inherit', font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+                  style={{
+                    background: 'none',
+                    border: 0,
+                    padding: 0,
+                    color: 'inherit',
+                    font: 'inherit',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
                   onClick={() => {
                     const firstInCh = graph.chapterConcepts(r.chapter)[0]
                     app.go({ name: 'map', conceptId: firstInCh?.id })
@@ -173,7 +184,7 @@ export function HomeView(): ReactElement {
           <StatusLegend />
         </div>
 
-        <div className="today-block" style={{ gridColumn: '1 / -1' }}>
+        <div className="today-block wide-list">
           <div className="row between">
             <div className="eyebrow">recent sessions</div>
             <button className="btn sm ghost" onClick={() => app.go({ name: 'stats' })}>
@@ -186,7 +197,13 @@ export function HomeView(): ReactElement {
                 <div className="session-row" key={s.id}>
                   <span className="row" style={{ minWidth: 0 }}>
                     <span className="chip">{s.type}</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
                       <Markdown text={s.title} inline />
                     </span>
                   </span>
@@ -262,36 +279,112 @@ export function StatusLegend(): ReactElement {
 
 /** What the course's materials are doing: an empty course, files waiting in the folder, a PDF being mapped, concepts new this week. */
 /** The exam goal at a glance: days left, problem sets and mock exams done, and the newest set still open. */
-function ExamNotice(): ReactElement | null {
+function ExamNotice(): ReactElement {
   const app = useApp()
   const prep = useStore(app.exam)
   const materials = useStore(app.materials)
   const now = useNow()
   const p = prepProgress(prep, materials, now)
-  const { sets, mocks } = workItems(materials)
-  if (p.daysLeft === null && !sets.length && !mocks.length) return null
-  if (p.daysLeft !== null && p.daysLeft < 0) return null
+  const { sets } = workItems(materials)
   const open = [...sets].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).find((m) => !workState(prep, m.id).done)
-  const parts = [p.sets.total ? `${p.sets.done} of ${p.sets.total} problem sets done` : null, `${p.mocks.done} of ${p.mocks.goal} mock exams`].filter(Boolean)
+  const over = p.daysLeft !== null && p.daysLeft < 0
   return (
-    <div className="today-block wide exam-notice">
-      <div className="grow">
-        <div className="eyebrow">exam prep</div>
-        <div className="title" style={{ marginTop: 8 }}>
-          {p.daysLeft === null ? 'Set the exam date' : p.daysLeft === 0 ? 'The exam is today' : `Exam in ${plural(p.daysLeft, 'day')}`}
-          <span className="muted" style={{ fontWeight: 400 }}> · {parts.join(' · ')}</span>
-        </div>
-        <div className="desc" style={{ marginTop: 4 }}>
-          {open
-            ? `Next: ${open.title}. Solve it, then upload your solution to have it checked.`
+    <div className="today-block third exam-notice">
+      <div className="eyebrow">exam prep</div>
+      <div className="title">{p.daysLeft === null || over ? 'No exam date yet' : p.daysLeft === 0 ? 'The exam is today' : `Exam in ${plural(p.daysLeft, 'day')}`}</div>
+      <div className="meters">
+        <Meter label="problem sets" done={p.sets.done} total={p.sets.total} />
+        <Meter label="mock exams" done={p.mocks.done} total={p.mocks.goal} />
+      </div>
+      <div className="desc">
+        {open
+          ? `Next: ${open.title}.`
+          : p.daysLeft === null || over
+            ? 'Set the date to pace problem sets and mock exams.'
             : p.perWeek !== null
-              ? `About ${p.perWeek < 1 ? p.perWeek.toFixed(1) : Math.ceil(p.perWeek * 10) / 10} a week to finish before the exam.`
+              ? `About ${p.perWeek < 1 ? p.perWeek.toFixed(1) : Math.ceil(p.perWeek * 10) / 10} a week to finish in time.`
               : 'Every problem set that is out is done.'}
-        </div>
       </div>
       <button className="btn go" onClick={() => app.go({ name: 'exam', materialId: open?.id })}>
-        Exam prep <Icon name="chev-right" size={14} />
+        {p.daysLeft === null || over ? 'Set the exam date' : 'Exam prep'}
       </button>
+    </div>
+  )
+}
+
+function Meter({ label, done, total }: { label: string; done: number; total: number }): ReactElement {
+  return (
+    <div className="meter">
+      <span className="k">{label}</span>
+      <span className="bar">
+        <span
+          style={{
+            width: total ? `${Math.min(100, (done / total) * 100)}%` : 0
+          }}
+        />
+      </span>
+      <span className="v">
+        {done}/{total || '–'}
+      </span>
+    </div>
+  )
+}
+
+/** The whole picture in one row: what is due, how much is learned, the exam, and this week. */
+function Glance({ due, learned }: { due: number; learned: number }): ReactElement {
+  const app = useApp()
+  const state = useStore(app.state, (s) => s)
+  const prep = useStore(app.exam)
+  const materials = useStore(app.materials)
+  const now = useNow()
+  const total = app.course.concepts.length
+  const p = prepProgress(prep, materials, now)
+  const weekAgo = now.getTime() - 7 * 86_400_000
+  const weekPts = state.rewards.events.filter((e) => Date.parse(e.at) >= weekAgo).reduce((s, e) => s + e.points, 0)
+  const weekSessions = state.sessions.filter((s) => Date.parse(s.startedAt) >= weekAgo).length
+  const exam = p.daysLeft === null || p.daysLeft < 0 ? '–' : String(p.daysLeft)
+  const cells: {
+    k: string
+    v: string
+    s: string
+    hot?: boolean
+    go: () => void
+  }[] = [
+    {
+      k: 'due for review',
+      v: String(due),
+      s: due ? 'fading, worth recalling now' : 'all caught up',
+      hot: due > 0,
+      go: () => (due ? void app.startReview() : app.go({ name: 'mind' }))
+    },
+    {
+      k: 'concepts started',
+      v: `${learned}`,
+      s: `of ${total} in ${app.course.short}`,
+      go: () => app.go({ name: 'map' })
+    },
+    {
+      k: 'days to the exam',
+      v: exam,
+      s: p.sets.total || p.mocks.goal ? `${p.sets.done + p.mocks.done} of ${p.sets.total + p.mocks.goal} sets and mocks done` : 'no date set',
+      go: () => app.go({ name: 'exam' })
+    },
+    {
+      k: 'this week',
+      v: `+${weekPts}`,
+      s: `${plural(weekSessions, 'session')}`,
+      go: () => app.go({ name: 'stats' })
+    }
+  ]
+  return (
+    <div className="glance" role="list">
+      {cells.map((c) => (
+        <button key={c.k} className="glance-cell" role="listitem" onClick={c.go}>
+          <span className="k">{c.k}</span>
+          <span className={`v ${c.hot ? 'hot' : ''}`}>{c.v}</span>
+          <span className="s">{c.s}</span>
+        </button>
+      ))}
     </div>
   )
 }

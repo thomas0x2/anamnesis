@@ -4738,3 +4738,272 @@ b {
     grid-column: 1 / -1;
   }
 }
+
+/* ================================================================ structure
+   Still Ma (dark, quiet, one vermilion point), but with enough framing to read the
+   navigation and the Today overview at a glance: grouped nav in a soft track, a course
+   chip, a glance row of four numbers, and softly framed blocks on Today. */
+
+/* top bar: brand + course chip | grouped nav | settings + points */
+.topbar {
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  margin-right: 0;
+}
+.course-btn {
+  margin-left: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+  font-size: 11px;
+}
+.course-btn:hover {
+  border-color: var(--accent-line);
+  background: transparent;
+  color: var(--text);
+}
+.topnav {
+  margin: 0 auto;
+  gap: 0;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+.nav-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-group + .nav-group {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line-2);
+}
+.topnav .nav-item {
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  color: var(--muted);
+}
+.topnav .nav-item svg {
+  opacity: 0.75;
+}
+.topnav .nav-item:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.topnav .nav-item.active {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.topnav .nav-item.active svg {
+  opacity: 1;
+}
+.topnav .nav-item .count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  display: inline-grid;
+  place-items: center;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 10.5px;
+}
+.topnav .nav-item .count:not(.hot) {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.topbar-end .points {
+  margin-left: 4px;
+}
+.resume-card {
+  max-width: 260px;
+}
+@media (max-width: 1240px) {
+  .topnav .nav-label {
+    display: none;
+  }
+  .topnav .nav-item {
+    padding: 7px 10px;
+  }
+  .topnav .nav-item.active .nav-label {
+    display: inline;
+  }
+}
+
+/* Today: a glance row, then softly framed blocks on a 6-column grid */
+.glance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.glance-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 20px 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.glance-cell + .glance-cell {
+  border-left: 1px solid var(--line);
+}
+.glance-cell:hover {
+  background: var(--surface-2);
+}
+.glance-cell .k {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.glance-cell .v {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.glance-cell .v.hot {
+  color: var(--brand);
+}
+.glance-cell .s {
+  font-size: 12.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.today-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+}
+.today-block,
+.today-block.wide {
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px 20px;
+}
+.today-block.third {
+  grid-column: span 2;
+}
+.today-block.half {
+  grid-column: span 3;
+}
+.today-block.wide-list {
+  grid-column: 1 / -1;
+}
+.today-block .title {
+  font-size: 20px;
+}
+.today-block .big {
+  font-size: 34px;
+}
+.today-block .go {
+  margin-top: auto;
+  padding-top: 8px;
+}
+.today-block.wide .go {
+  padding-top: 0;
+}
+.course-notice {
+  margin-bottom: 14px;
+}
+.exam-notice {
+  margin-bottom: 0;
+}
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+.meter {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+}
+.meter .k,
+.meter .v {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--muted);
+}
+.meter .v {
+  text-align: right;
+}
+.meter .bar {
+  display: block;
+  height: 3px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.meter .bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-2);
+  border-radius: 3px;
+}
+.today-block .seg-bar {
+  height: 4px;
+}
+.today-block .seg-bar > span {
+  border-radius: 2px;
+}
+.today-block .chapter-row {
+  grid-template-columns: 18px minmax(0, 1fr) 120px 36px;
+}
+.today-block .next-item {
+  padding: 10px 0;
+}
+@media (max-width: 1100px) {
+  .glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .glance-cell:nth-child(3) {
+    border-left: 0;
+  }
+  .glance-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .today-block.third {
+    grid-column: span 3;
+  }
+  .today-block.half {
+    grid-column: 1 / -1;
+  }
+}
+.topnav .nav-item {
+  white-space: nowrap;
+}
+.topbar .brand,
+.topbar-end {
+  flex: none;
+}
+.resume-card {
+  min-width: 0;
+  flex: 0 1 240px;
+}

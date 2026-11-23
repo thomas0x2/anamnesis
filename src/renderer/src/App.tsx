@@ -78,14 +78,22 @@ function RouteView({ route }: { route: Route }): ReactElement {
   }
 }
 
-const NAV: { name: Route['name']; label: string; icon: string }[] = [
-  { name: 'home', label: 'Today', icon: 'home' },
-  { name: 'chat', label: 'Tutor', icon: 'chat' },
-  { name: 'map', label: 'Course map', icon: 'map' },
-  { name: 'mind', label: 'Mind model', icon: 'mind' },
-  { name: 'exam', label: 'Exam prep', icon: 'target' },
-  { name: 'stats', label: 'Stats', icon: 'stats' },
-  { name: 'materials', label: 'Materials', icon: 'book' }
+type NavItem = { name: Route['name']; label: string; icon: string }
+// Three groups: study now, the course itself, and how you are doing.
+const NAV_GROUPS: NavItem[][] = [
+  [
+    { name: 'home', label: 'Today', icon: 'home' },
+    { name: 'chat', label: 'Tutor', icon: 'chat' }
+  ],
+  [
+    { name: 'map', label: 'Course map', icon: 'map' },
+    { name: 'materials', label: 'Materials', icon: 'book' },
+    { name: 'mind', label: 'Mind model', icon: 'mind' }
+  ],
+  [
+    { name: 'exam', label: 'Exam prep', icon: 'target' },
+    { name: 'stats', label: 'Stats', icon: 'stats' }
+  ]
 ]
 
 function TopBar(): ReactElement {
@@ -108,38 +116,45 @@ function TopBar(): ReactElement {
         <span className="brand-name">anamnesis</span>
         <CourseSwitcher />
       </div>
-      {sc && route !== 'session' && <ResumeCard sc={sc} />}
+      {sc && route !== 'session' && route !== 'home' && <ResumeCard sc={sc} />}
       <nav className="topnav" aria-label="Main">
-        {NAV.map((n) => {
-          const on = route === n.name || (n.name === 'materials' && route === 'script')
-          return (
-          <button key={n.name} className={`nav-item ${on ? 'active' : ''}`} onClick={() => app.go({ name: n.name } as Route)} aria-current={on ? 'page' : undefined} aria-label={n.label}>
-            {n.label}
-            {n.name === 'materials' && (jobRunning || pending > 0) && (
-              <span className={`count ${pending ? 'hot' : ''}`} title={jobRunning ? 'Reading new material' : `${pending} new files in the course folder`}>
-                {pending || '…'}
-              </span>
-            )}
-            {n.name === 'exam' && checking > 0 && (
-              <span className="count" title="Checking your solution">
-                …
-              </span>
-            )}
-            {n.name === 'home' && due > 0 && (
-              <span className="count hot" title={`${due} concepts due for review`}>
-                {due}
-              </span>
-            )}
-          </button>
-          )
-        })}
+        {NAV_GROUPS.map((group, gi) => (
+          <div className="nav-group" key={gi}>
+            {group.map((n) => {
+              const on = route === n.name || (n.name === 'materials' && route === 'script')
+              return (
+                <button key={n.name} className={`nav-item ${on ? 'active' : ''}`} title={n.label} onClick={() => app.go({ name: n.name } as Route)} aria-current={on ? 'page' : undefined} aria-label={n.label}>
+                  <Icon name={n.icon} size={15} />
+                  <span className="nav-label">{n.label}</span>
+                  {n.name === 'materials' && (jobRunning || pending > 0) && (
+                    <span className={`count ${pending ? 'hot' : ''}`} title={jobRunning ? 'Reading new material' : `${pending} new files in the course folder`}>
+                      {pending || '…'}
+                    </span>
+                  )}
+                  {n.name === 'exam' && checking > 0 && (
+                    <span className="count" title="Checking your solution">
+                      …
+                    </span>
+                  )}
+                  {n.name === 'home' && due > 0 && (
+                    <span className="count hot" title={`${due} concepts due for review`}>
+                      {due}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </nav>
+      <div className="topbar-end">
         <button className={`nav-item icon ${route === 'settings' ? 'active' : ''}`} onClick={() => app.go({ name: 'settings' })} aria-label="Settings" title="Settings">
           <Icon name="settings" size={16} />
         </button>
         <span className="points" title={`Points come from retrieving and understanding, not from time spent${week > 0 ? ` · +${week} this week` : ''}`}>
           {rewards.total.toLocaleString('en-US')} pts
         </span>
-      </nav>
+      </div>
     </header>
   )
 }

@@ -54,6 +54,8 @@ On first start a short welcome tour connects the tutor (it tests the CLI), asks 
 
 To add another course: course menu (next to the logo) → **New course…**, fill in the name and, if you know it, the exam format, choose the folder where you keep its PDFs, and let the app read them. Mapping a set of slides takes about a minute; a long script is read in parts and takes a few minutes. The **Materials** page lists every file, what it added to the map, and lets you change a file's kind, map it again or remove it.
 
+**Exam prep** tracks each course toward its exam: set the exam date, how many problem sets the course will have and how many mock exams you want to write (two by default), and see what is done and the pace you need. Problem sets are the files of kind "problem set", mock exams those of kind "exam". **Check my solution** takes a scan, photos or a tablet PDF of your own solution (handwriting is fine) or typed answers: Claude reads it, grades every task against the problem statement (and the official solution, if the course has one), and the grade updates the concepts each task tests in your mind model. Say honestly how you worked (on your own, with notes, with help): work done with help counts less.
+
 To build a standalone app: `npm run dist:mac`, then open `dist/mac-arm64/Anamnesis.app` (or `dist/mac/` on Intel). Drag it to Applications if you like.
 
 No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings. It runs a scripted tutor that shows every card type and screen, with generic content.
@@ -70,6 +72,7 @@ No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings.
 
 * PDFs never leave your computer as files and are not part of this repository. Only the text of the few pages relevant to the current step is sent to Claude, inside your own Claude Code session. When you add a material, its text is sent to Claude once (in parts) to build the course map; the map of a course you create is stored in your data folder, not in this repository. Check that your course's materials may be used this way.
 * The script's title page asks that it not be uploaded to generative AI without the author's consent. The author agreed to this use for this app demo. If that agreement does not cover you, turn off **Settings → Lecture notes → Ground steps in the script**; the tutor then works from section and theorem numbers, and you can still open every page in the app.
+* Solutions you upload for checking are copied to your data folder (`courses/<id>/work/`) and read by Claude from there. For that one request the CLI gets the Read tool, limited to that submission's folder.
 * Your learner model, sessions, settings, courses and their maps are JSON files in `~/Library/Application Support/Anamnesis` (written atomically, with one backup each).
 * The CLI runs with no built-in tools, no slash commands and no settings, in an empty working folder. The tutor agent can only use the app's own tools (cards, plan, mind model, script pages), served on 127.0.0.1 with a per-chat token. It cannot read or change anything else on your computer.
 

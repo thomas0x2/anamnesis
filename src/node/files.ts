@@ -1,7 +1,8 @@
 // Course materials on disk: the PDFs in a course folder, and reading a material's bytes by its
 // entry in the course's materials file (the renderer names a material, never a path).
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { join, relative, resolve, sep } from 'node:path'
+import { MAX_WORK_FILE_BYTES, WORK_PATH_RE, workFileName, workFilePath } from '../shared/exam'
 import type { FolderFile, MaterialsFile, Settings } from '../shared/types'
 import type { JsonStore } from './store'
 
@@ -66,4 +67,30 @@ export async function readMaterial(store: JsonStore, settings: Settings, courseI
   } catch {
     return null
   }
+}
+
+/** Save the learner's solution files under <dataDir>/courses/<course>/work/<submission>/ (only readable kinds, at most 40 MB each). */
+export async function saveWork(dataDir: string, courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]): Promise<{ name: string; size: number }[]> {
+  if (!/^[\w-]+$/.test(String(courseId)) || !/^[\w-]+$/.test(String(submissionId)) || !Array.isArray(files)) return []
+  const out: { name: string; size: number }[] = []
+  for (const [i, f] of files.slice(0, 40).entries()) {
+    const name = workFileName(String(f?.name ?? ''), i)
+    const bytes = f?.bytes instanceof Uint8Array ? f.bytes : null
+    if (!name || !bytes || bytes.byteLength > MAX_WORK_FILE_BYTES) continue
+    const full = resolve(dataDir, workFilePath(courseId, submissionId, name))
+    await mkdir(resolve(full, '..'), { recursive: true })
+    await writeFile(full, bytes)
+    out.push({ name, size: bytes.byteLength })
+  }
+  return out
+}
+
+/** Absolute paths of submission files named by a model request (anything else is dropped). */
+export function resolveWorkFiles(dataDir: string, names: unknown): string[] {
+  if (!Array.isArray(names)) return []
+  const root = resolve(dataDir)
+  return names
+    .filter((n): n is string => typeof n === 'string' && WORK_PATH_RE.test(n) && !n.includes('..'))
+    .map((n) => resolve(root, n))
+    .filter((p) => p.startsWith(root + sep))
 }

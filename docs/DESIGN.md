@@ -234,6 +234,14 @@ Removing a material (`removeMaterial`) takes out its links and tasks and the con
 
 The demo tutor maps deterministically (`fakeMapOutput`: one concept per few pages, tasks linked to existing concepts), which the end-to-end test uses: it creates a course from a folder of generated PDFs, adds a file later, learns a concept in it and checks that switching back keeps the first course's progress.
 
+## Exam preparation
+
+`src/shared/exam.ts`, `views/ExamView.tsx`. Each course has `courses/<id>/exam.json` (`ExamPrep`): the exam date, how many problem sets the course will have (they appear one by one, so the goal is `max(that, sets added)`), the number of mock exams to write, a manual status per material (`records`) and the learner's submissions. Problem sets are materials of kind `exercises`, mock exams of kind `exam`; `solutionFor` pairs a problem set with a `solutions` material by the numbers in its title. `prepProgress` gives done counts, days left and the pace (items left per week); `prepSummary` goes into the tutor agent's prompt.
+
+**Checking a solution.** The learner uploads PDFs, images or text, or types answers, and says how they worked (`alone`, `notes`, `help`; mock exams also whether under exam conditions). The files are saved by the main process to `courses/<id>/work/<submission>/` (safe names, readable types only, 40 MB each). One `work` request (`WORK_SYSTEM`, `buildWorkPrompt`, `workSchema`) gets the problem statement's text, the official solution's text if there is one, the concept list (concepts linked to the material first) and the file paths. For that request only, the CLI runs with `--tools Read --add-dir <submission folder>`: it can read handwritten scans and photos, and reads outside that folder are denied (print mode cannot ask). The main process accepts only paths matching `courses/<id>/work/<id>/<name>` inside the data folder (`resolveWorkFiles`).
+
+`normalizeWork` clamps scores, derives verdicts and drops unknown concept ids. `applyWork` turns each attempted task into evidence on its 1-3 concepts (kind `work`, weight 1.4, level 3; mock exams kind `exam`, weight 1.8, level 4 under exam conditions), with `notes` and `help` counted as one or two hints, records misconceptions and tutor notes, and awards points (more for mock exams, less with help). Tasks left out add no evidence. A re-check replaces the shown grade but does not add the evidence twice. Grading continues when the learner switches course: the result is written to that course's files.
+
 ## The lecture notes
 
 `src/renderer/src/engine/script.ts` (`MaterialLibrary`, one per course; see Courses and materials for page numbering). The learner picks a PDF once; the main process remembers the path and hands over the bytes. pdf.js extracts each page's text in the renderer (`src/shared/pdfText.ts` joins text items into lines, repairs hyphenation and finds labels such as `Definition 2.2.1` at the start of a line), and the result is cached in the data folder (`script-index.json` for the built-in script, `courses/<id>/text/<material>.json` otherwise). "Re-read" rebuilds it. Neither the PDFs nor their text are ever part of the repository: `*.pdf` and caches are git-ignored.
@@ -271,6 +279,7 @@ with the user prompt on stdin, in the app's own working folder inside the data f
 | `script-index.json` | the extracted text of the built-in course's lecture notes (local only) |
 | `courses-index.json`, `courses/<id>/…` | courses the learner added, materials, maps, per-course state (see Courses and materials) |
 | `profile.json` | the learner profile, shared by all courses |
+| `courses/<id>/exam.json`, `courses/<id>/work/<submission>/` | exam date and goals, problem sets and mock exams done, uploaded solutions and their grades |
 
 Settings → Data exports the learner model, answers and points as one JSON file, imports such a file, or resets everything.
 
@@ -294,7 +303,7 @@ Model-written expressions are evaluated by a locked-down math.js instance (`src/
 * Navigation away from the app is blocked, and external links open in the system browser.
 * The only permission granted is the microphone, and only to the app's own pages.
 * The dev server listens on 127.0.0.1 only and refuses requests with a foreign Host or Origin header, and writes without a JSON content type.
-* The CLI runs without built-in tools, so model output can never act on the computer. The tutor agent can only call the app's own tools, through a server that listens on 127.0.0.1, needs a random bearer token per chat and refuses requests with an Origin header.
+* The CLI runs without built-in tools, so model output can never act on the computer. The one exception is checking an uploaded solution: that request may use Read, confined to the submission's folder. The tutor agent can only call the app's own tools, through a server that listens on 127.0.0.1, needs a random bearer token per chat and refuses requests with an Origin header.
 
 ## Testing
 

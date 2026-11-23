@@ -137,6 +137,68 @@ export interface FolderFile {
   mtimeMs: number
 }
 
+// ---------------------------------------------------------------- exam preparation
+/** How the learner worked on a submission: what it says about unaided mastery. */
+export type WorkHelp = 'alone' | 'notes' | 'help'
+
+/** One task of a problem set or mock exam, as the grader judged it. */
+export interface WorkTask {
+  label: string
+  /** 0..1 */
+  score: number
+  verdict: 'correct' | 'partial' | 'incorrect' | 'missing'
+  feedback: string
+  /** concrete errors in the learner's work */
+  errors: string[]
+  conceptIds: string[]
+  misconceptions: string[]
+}
+
+/** The learner's own solution to a problem set or mock exam, and how it was graded. */
+export interface Submission {
+  id: string
+  materialId: string
+  at: string
+  /** files saved in the data folder: courses/<course>/work/<submission>/<name> */
+  files: { name: string; size: number }[]
+  /** typed answers (instead of or next to files) */
+  text: string | null
+  help: WorkHelp
+  /** mock exams: written timed, without notes */
+  examConditions: boolean
+  minutes: number | null
+  status: 'grading' | 'graded' | 'error'
+  error: string | null
+  /** 0..1 over all tasks */
+  score: number | null
+  summary: string | null
+  tasks: WorkTask[]
+  strengths: string[]
+  next: string[]
+  gradedAt: string | null
+  /** the learner model was updated from this grade */
+  applied: boolean
+}
+
+export interface WorkRecord {
+  status: 'todo' | 'started' | 'done'
+  doneAt: string | null
+}
+
+/** A course's exam goal and the problem sets and mock exams done towards it (courses/<id>/exam). */
+export interface ExamPrep {
+  version: 1
+  /** YYYY-MM-DD */
+  examDate: string | null
+  /** how many problem sets the course will have (they are published one by one); null: as many as were added */
+  problemSets: number | null
+  /** mock exams to write before the exam */
+  mockExams: number
+  /** by material id */
+  records: Record<string, WorkRecord>
+  submissions: Submission[]
+}
+
 // ---------------------------------------------------------------- tutor output (LLM)
 export const BLOCK_TYPES = [
   'text',
@@ -427,7 +489,8 @@ export interface Misconception {
   count: number
 }
 
-export type EvidenceKind = 'probe' | 'predict' | 'check' | 'practice' | 'review' | 'reflect'
+/** work: a problem set the learner solved and uploaded; exam: a mock exam */
+export type EvidenceKind = 'probe' | 'predict' | 'check' | 'practice' | 'review' | 'reflect' | 'work' | 'exam'
 
 export interface Evidence {
   id: string
@@ -549,7 +612,7 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarded: false
 }
 
-export type LlmKind = 'step' | 'grade' | 'chat' | 'test' | 'map'
+export type LlmKind = 'step' | 'grade' | 'chat' | 'test' | 'map' | 'work'
 
 export interface LlmRequest {
   id: string
@@ -562,6 +625,8 @@ export interface LlmRequest {
   meta?: Record<string, unknown>
   /** overrides the configured timeout when longer (mapping a long material) */
   timeoutSec?: number | null
+  /** the learner's own files the model may read (paths in the data folder: courses/<course>/work/<submission>/<name>) */
+  files?: string[] | null
 }
 
 export interface LlmEvent {
@@ -620,6 +685,8 @@ export interface Backend {
   pickFolder(): Promise<string | null>
   /** The PDFs in a folder (and its subfolders, a few levels deep). */
   scanFolder(path: string): Promise<FolderFile[] | null>
+  /** Save the learner's solution files (PDF, images, text) in the data folder; returns what was stored. */
+  saveWork(courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]): Promise<{ name: string; size: number }[]>
   openExternal(url: string): Promise<void>
   info(): Promise<AppInfo>
   /** Start the tutor agent for a chat; events stream until it exits. */

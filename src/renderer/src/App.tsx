@@ -8,6 +8,7 @@ import type { SessionController } from './engine/session'
 import { useStore } from './engine/store'
 import { useNow } from './lib/hooks'
 import { ChatScreen } from './views/ChatView'
+import { ExamView } from './views/ExamView'
 import { HomeView } from './views/HomeView'
 import { CourseDialog, MaterialsView } from './views/MaterialsView'
 import { MapView } from './views/MapView'
@@ -54,6 +55,8 @@ function RouteView({ route }: { route: Route }): ReactElement {
   switch (route.name) {
     case 'materials':
       return <MaterialsView />
+    case 'exam':
+      return <ExamView materialId={route.materialId} />
     case 'home':
       return <HomeView />
     case 'map':
@@ -80,6 +83,7 @@ const NAV: { name: Route['name']; label: string; icon: string }[] = [
   { name: 'chat', label: 'Tutor', icon: 'chat' },
   { name: 'map', label: 'Course map', icon: 'map' },
   { name: 'mind', label: 'Mind model', icon: 'mind' },
+  { name: 'exam', label: 'Exam prep', icon: 'target' },
   { name: 'stats', label: 'Stats', icon: 'stats' },
   { name: 'materials', label: 'Materials', icon: 'book' }
 ]
@@ -95,6 +99,7 @@ function TopBar(): ReactElement {
   const week = useMemo(() => rewards.events.filter((e) => now.getTime() - Date.parse(e.at) < 7 * 86_400_000).reduce((s, e) => s + e.points, 0), [rewards, now])
   const jobRunning = useStore(app.job, (j) => !!j)
   const pending = useStore(app.pending, (p) => p.length)
+  const checking = useStore(app.exam, (e) => e.submissions.filter((x) => x.status === 'grading').length)
 
   return (
     <header className="topbar">
@@ -113,6 +118,11 @@ function TopBar(): ReactElement {
             {n.name === 'materials' && (jobRunning || pending > 0) && (
               <span className={`count ${pending ? 'hot' : ''}`} title={jobRunning ? 'Reading new material' : `${pending} new files in the course folder`}>
                 {pending || '…'}
+              </span>
+            )}
+            {n.name === 'exam' && checking > 0 && (
+              <span className="count" title="Checking your solution">
+                …
               </span>
             )}
             {n.name === 'home' && due > 0 && (

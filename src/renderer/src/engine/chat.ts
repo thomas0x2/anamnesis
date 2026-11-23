@@ -5,6 +5,7 @@
 // the lecture notes. The phase in the header follows the tools the agent uses.
 import { AGENT_TOOLS, buildAgentSystemPrompt, type AgentMode } from '@shared/agentTools'
 import type { AgentEvent, AgentToolResult } from '@shared/agentTypes'
+import { prepSummary } from '@shared/exam'
 import { sanitizePlan } from '@shared/graph'
 import { getConcept } from '@shared/mastery'
 import { normalizeCard, normalizeModelUpdate, normalizePlan, type NormalizeContext } from '@shared/normalize'
@@ -202,7 +203,7 @@ export class ChatController {
     if (this.running) return true
     this.setAgent('starting', { error: null })
     const c = this.chat
-    const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue }, new Date())
+    const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue, examPrep: prepSummary(this.app.exam.get(), this.app.materials.get(), new Date()) }, new Date())
     const settings = this.app.settings.get()
     const r = await this.app.backend.agentStart(
       { chatId: c.id, system, tools: AGENT_TOOLS, resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId, model: settings.cli.model, effort: settings.cli.effort },

@@ -1,5 +1,6 @@
 // Today: what to continue or learn next, then review and practice side by side,
 // what is ready to learn, chapter readiness and recent sessions.
+import { prepProgress, workItems, workState } from '@shared/exam'
 import { statusRank, STATUS_ORDER } from '@shared/mastery'
 import { dueConcepts, nextDue } from '@shared/selection'
 import { chapterReadiness } from '@shared/stats'
@@ -55,6 +56,7 @@ export function HomeView(): ReactElement {
       </div>
 
       <CourseNotice />
+      <ExamNotice />
 
       <div className="today-grid">
         {sc ? (
@@ -259,6 +261,41 @@ export function StatusLegend(): ReactElement {
 }
 
 /** What the course's materials are doing: an empty course, files waiting in the folder, a PDF being mapped, concepts new this week. */
+/** The exam goal at a glance: days left, problem sets and mock exams done, and the newest set still open. */
+function ExamNotice(): ReactElement | null {
+  const app = useApp()
+  const prep = useStore(app.exam)
+  const materials = useStore(app.materials)
+  const now = useNow()
+  const p = prepProgress(prep, materials, now)
+  const { sets, mocks } = workItems(materials)
+  if (p.daysLeft === null && !sets.length && !mocks.length) return null
+  if (p.daysLeft !== null && p.daysLeft < 0) return null
+  const open = [...sets].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).find((m) => !workState(prep, m.id).done)
+  const parts = [p.sets.total ? `${p.sets.done} of ${p.sets.total} problem sets done` : null, `${p.mocks.done} of ${p.mocks.goal} mock exams`].filter(Boolean)
+  return (
+    <div className="today-block wide exam-notice">
+      <div className="grow">
+        <div className="eyebrow">exam prep</div>
+        <div className="title" style={{ marginTop: 8 }}>
+          {p.daysLeft === null ? 'Set the exam date' : p.daysLeft === 0 ? 'The exam is today' : `Exam in ${plural(p.daysLeft, 'day')}`}
+          <span className="muted" style={{ fontWeight: 400 }}> · {parts.join(' · ')}</span>
+        </div>
+        <div className="desc" style={{ marginTop: 4 }}>
+          {open
+            ? `Next: ${open.title}. Solve it, then upload your solution to have it checked.`
+            : p.perWeek !== null
+              ? `About ${p.perWeek < 1 ? p.perWeek.toFixed(1) : Math.ceil(p.perWeek * 10) / 10} a week to finish before the exam.`
+              : 'Every problem set that is out is done.'}
+        </div>
+      </div>
+      <button className="btn go" onClick={() => app.go({ name: 'exam', materialId: open?.id })}>
+        Exam prep <Icon name="chev-right" size={14} />
+      </button>
+    </div>
+  )
+}
+
 function CourseNotice(): ReactElement | null {
   const app = useApp()
   const { course } = useStore(app.courseView)

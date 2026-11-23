@@ -3,6 +3,7 @@
 // profile (how they like to learn) is shared by all courses.
 import numcsJson from '@courses/numcs/course.json'
 import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, removeMaterial, slug } from '@shared/courseMap'
+import { applyWork, buildWorkPrompt, emptyPrep, fakeWorkOutput, normalizePrep, normalizeWork, solutionFor, WORK_SYSTEM, workFilePath, workSchema } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
 import { milestoneReward, rewardsForResponse } from '@shared/rewards'
@@ -16,6 +17,7 @@ import type {
   CourseExtension,
   CourseMeta,
   DeepPartial,
+  ExamPrep,
   FolderFile,
   Material,
   MaterialsFile,
@@ -26,7 +28,10 @@ import type {
   RewardEvent,
   Session,
   SessionSummary,
-  Settings
+  Settings,
+  Submission,
+  WorkHelp,
+  WorkRecord
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { practiceQueue, reviewQueue } from '@shared/selection'
@@ -46,6 +51,7 @@ export type Route =
   | { name: 'stats' }
   | { name: 'script'; page?: number }
   | { name: 'materials' }
+  | { name: 'exam'; materialId?: string }
   | { name: 'settings' }
 
 export interface Toast {
@@ -108,6 +114,15 @@ export interface CourseEntry {
   builtin: boolean
 }
 
+export interface WorkInput {
+  materialId: string
+  files: { name: string; bytes: Uint8Array }[]
+  text: string | null
+  help: WorkHelp
+  examConditions: boolean
+  minutes: number | null
+}
+
 export interface MaterialJob {
   materialId: string
   phase: 'indexing' | 'mapping'
@@ -133,6 +148,10 @@ export class AppController {
   /** PDFs in the course folder that are not materials yet (and not ignored) */
   readonly pending: Store<FolderFile[]> = createStore<FolderFile[]>([])
   readonly job: Store<MaterialJob | null> = createStore<MaterialJob | null>(null)
+  /** the exam date, goals, and the problem sets and mock exams done (with the learner's checked solutions) */
+  readonly exam: Store<ExamPrep> = createStore<ExamPrep>(emptyPrep())
+  /** submissions being graded right now (any course): submission id → model request id */
+  private grading = new Map<string, string>()
   script: MaterialLibrary
   private base: Course
   private ext: CourseExtension = emptyExtension()
@@ -219,6 +238,11 @@ export class AppController {
     // the course on screen changes only once its learner model is in place
     this.rebuildCourse()
     this.chats.set((await this.backend.readJson<ChatIndexEntry[]>(chatsName(id))) ?? [])
+    // exam preparation; a check that stopped with the app can be started again
+    const prep = normalizePrep(await this.backend.readJson<ExamPrep>(`courses/${id}/exam`))
+    const stale = prep.submissions.some((x) => x.status === 'grading' && !this.grading.has(x.id))
+    this.exam.set(stale ? { ...prep, submissions: prep.submissions.map((x) => (x.status === 'grading' && !this.grading.has(x.id) ? { ...x, status: 'error' as const, error: 'The check was interrupted (the app was closed). Check it again.' } : x)) } : prep)
+    if (stale) await this.saveExam()
     // materials
     const file = await this.backend.readJson<MaterialsFile>(`courses/${id}/materials`)
     let items = file?.items ?? []
@@ -565,6 +589,146 @@ export class AppController {
     this.patchMaterial(m.id, { status: 'mapped', mappedAt: nowIso() })
     const n = new Set(added).size
     this.toast({ kind: 'info', text: `${m.title}: ${n ? `${n} new concept${n === 1 ? '' : 's'}` : 'no new concepts'}${linked.size ? `, ${linked.size} linked` : ''}.` }, 6000)
+  }
+
+  // ------------------------------------------------------------ exam preparation
+  private async saveExam(): Promise<void> {
+    await this.backend.writeJson(`courses/${this.courseId}/exam`, this.exam.get())
+  }
+
+  /** Change the exam preparation of a course; another course's file is read and written directly. */
+  private async updatePrep(courseId: string, fn: (p: ExamPrep) => ExamPrep): Promise<void> {
+    if (courseId === this.courseId) {
+      this.exam.set(fn(this.exam.get()))
+      await this.saveExam()
+      return
+    }
+    const cur = normalizePrep(await this.backend.readJson<ExamPrep>(`courses/${courseId}/exam`))
+    await this.backend.writeJson(`courses/${courseId}/exam`, fn(cur))
+  }
+
+  async setExamGoals(patch: Partial<Pick<ExamPrep, 'examDate' | 'problemSets' | 'mockExams'>>): Promise<void> {
+    await this.updatePrep(this.courseId, (p) => ({ ...p, ...patch }))
+  }
+
+  /** Mark a problem set or mock exam as started or done by hand (without a checked solution). */
+  async setWorkStatus(materialId: string, status: WorkRecord['status']): Promise<void> {
+    await this.updatePrep(this.courseId, (p) => ({ ...p, records: { ...p.records, [materialId]: { status, doneAt: status === 'done' ? nowIso() : null } } }))
+  }
+
+  /** Save the learner's solution and have it checked; the result updates the learner model. */
+  async submitWork(input: WorkInput): Promise<string | null> {
+    const m = this.materials.get().find((x) => x.id === input.materialId)
+    if (!m) return null
+    const id = uid('w_')
+    const files = input.files.length ? await this.backend.saveWork(this.courseId, id, input.files) : []
+    const text = input.text?.trim() || null
+    if (input.files.length && !files.length && !text) {
+      this.toast({ kind: 'error', text: 'Those files could not be read. Use PDF, PNG, JPG or text files.' })
+      return null
+    }
+    const sub: Submission = {
+      id,
+      materialId: m.id,
+      at: nowIso(),
+      files,
+      text,
+      help: input.help,
+      examConditions: m.kind === 'exam' && input.examConditions,
+      minutes: input.minutes && input.minutes > 0 ? Math.round(input.minutes) : null,
+      status: 'grading',
+      error: null,
+      score: null,
+      summary: null,
+      tasks: [],
+      strengths: [],
+      next: [],
+      gradedAt: null,
+      applied: false
+    }
+    await this.updatePrep(this.courseId, (p) => ({ ...p, submissions: [...p.submissions, sub] }))
+    void this.gradeWork(sub)
+    return id
+  }
+
+  /** Check a submission again (after an error, or when the learner disagrees with the grade). */
+  async regradeWork(submissionId: string): Promise<void> {
+    const sub = this.exam.get().submissions.find((x) => x.id === submissionId)
+    if (!sub || this.grading.has(sub.id)) return
+    const next: Submission = { ...sub, status: 'grading', error: null }
+    await this.updatePrep(this.courseId, (p) => ({ ...p, submissions: p.submissions.map((x) => (x.id === sub.id ? next : x)) }))
+    void this.gradeWork(next)
+  }
+
+  async deleteSubmission(submissionId: string): Promise<void> {
+    const req = this.grading.get(submissionId)
+    if (req) void this.backend.cancel(req)
+    this.grading.delete(submissionId)
+    await this.updatePrep(this.courseId, (p) => ({ ...p, submissions: p.submissions.filter((x) => x.id !== submissionId) }))
+  }
+
+  /** Grade one submission. It finishes even if the learner switches course meanwhile. */
+  private async gradeWork(sub: Submission): Promise<void> {
+    const courseId = this.courseId
+    const course = this.course
+    const graph = this.graph
+    const materials = this.materials.get()
+    const m = materials.find((x) => x.id === sub.materialId)
+    if (!m) return
+    const pagesOf = (x: typeof m): { label: string; text: string }[] => (this.script.materialText(x.id)?.pages ?? []).map((text, i) => ({ label: `${x.title}, page ${i + 1}`, text }))
+    const sol = solutionFor(m, materials)
+    const linked = (c: (typeof course.concepts)[number]): boolean =>
+      c.material === m.id || !!c.exercises?.some((e) => e.material === m.id) || !!c.sources?.some((e) => e.material === m.id) || (!!sol && !!c.exercises?.some((e) => e.material === sol.id))
+    const concepts = [...course.concepts.filter(linked), ...course.concepts.filter((c) => !linked(c))].map((c) => ({ id: c.id, title: c.title }))
+    const reqId = uid('work_')
+    this.grading.set(sub.id, reqId)
+    const r = await this.backend.generate({
+      id: reqId,
+      kind: 'work',
+      system: WORK_SYSTEM,
+      prompt: buildWorkPrompt({ course, material: m, problem: pagesOf(m), solution: sol ? pagesOf(sol) : [], concepts, fileCount: sub.files.length, text: sub.text, help: sub.help, examConditions: sub.examConditions, minutes: sub.minutes }),
+      schema: workSchema,
+      effort: 'high',
+      timeoutSec: 900,
+      files: sub.files.map((f) => workFilePath(courseId, sub.id, f.name)),
+      meta: { fake: fakeWorkOutput(m, concepts.slice(0, 3), sub.text) }
+    })
+    if (this.grading.get(sub.id) !== reqId) return
+    this.grading.delete(sub.id)
+    if (!r.ok) {
+      const error = r.errorKind === 'cancelled' ? 'Stopped.' : r.error ?? 'The check failed.'
+      await this.updatePrep(courseId, (p) => ({ ...p, submissions: p.submissions.map((x) => (x.id === sub.id ? { ...x, status: 'error', error } : x)) }))
+      if (courseId === this.courseId) this.toast({ kind: 'error', text: `Checking ${m.title} failed: ${error.slice(0, 160)}` }, 7000)
+      return
+    }
+    const grade = normalizeWork(r.data, (id) => !!graph.get(id))
+    // a second grade of the same work replaces the first in the list, but its evidence counts once
+    const graded: Submission = { ...sub, status: 'graded', error: null, score: grade.score, summary: grade.summary, tasks: grade.tasks, strengths: grade.strengths, next: grade.next, gradedAt: nowIso(), applied: true }
+    if (!sub.applied) await this.applyWorkToLearner(courseId, graded, m, grade.notes, (id) => graph.title(id))
+    await this.updatePrep(courseId, (p) => ({ ...p, submissions: p.submissions.map((x) => (x.id === sub.id ? graded : x)) }))
+    if (courseId === this.courseId && grade.score !== null) this.toast({ kind: 'info', text: `${m.title} checked: ${Math.round(grade.score * 100)}%. The mind model was updated.` }, 6000)
+  }
+
+  private async applyWorkToLearner(courseId: string, sub: Submission, m: Material, notes: { conceptId: string; note: string }[], title: (id: string) => string): Promise<void> {
+    const now = new Date()
+    const desired = this.settings.get().learning.desiredRetention
+    if (courseId === this.courseId) {
+      const out = applyWork(this.state.get().learner, sub, m, notes, title, now, desired)
+      this.updateState((s) => ({ ...s, learner: { ...out.learner, profile: s.learner.profile } }))
+      this.addRewards(out.rewards)
+      await this.flush()
+      return
+    }
+    const saved = await this.backend.readJson<AppState>(stateName(courseId))
+    const st = saved && saved.version === 1 ? { ...freshState(), ...saved } : freshState()
+    const out = applyWork(st.learner, sub, m, notes, title, now, desired)
+    const pts = out.rewards.reduce((a, e) => a + e.points, 0)
+    await this.backend.writeJson(stateName(courseId), {
+      ...st,
+      updatedAt: nowIso(),
+      learner: out.learner,
+      rewards: { total: st.rewards.total + pts, events: [...st.rewards.events, ...out.rewards].slice(-600) }
+    })
   }
 
   // ------------------------------------------------------------ persistence

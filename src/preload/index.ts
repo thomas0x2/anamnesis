@@ -38,6 +38,7 @@ const api = {
   pickMaterials: () => ipcRenderer.invoke('material:pick'),
   pickFolder: () => ipcRenderer.invoke('folder:pick'),
   scanFolder: (path: string) => ipcRenderer.invoke('folder:scan', path),
+  saveWork: (courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]) => ipcRenderer.invoke('work:save', courseId, submissionId, files),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open', url),
   info: () => ipcRenderer.invoke('app:info'),
   onBeforeQuit(fn: () => Promise<void>) {

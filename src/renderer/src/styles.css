@@ -4585,6 +4585,156 @@ b {
   margin-left: 6px;
   letter-spacing: 0.04em;
 }
-.course-notice {
+.course-notice,
+.exam-notice {
   margin-bottom: 18px;
+}
+
+/* ---------------------------------------------------------------- exam prep */
+.exam-goals {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.exam-count {
+  min-width: 28px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.exam-progress {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+}
+.exam-goal .big {
+  font-size: 34px;
+  line-height: 1;
+}
+.exam-goal .title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.exam-goal .desc {
+  font-size: 13px;
+  color: var(--muted);
+}
+.work-row {
+  border-bottom: 1px solid var(--line);
+}
+.work-row:first-of-type {
+  border-top: 1px solid var(--line);
+}
+.work-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 0;
+}
+.work-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.work-title span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-title:hover,
+.work-row.open .work-title {
+  color: var(--text);
+}
+.work-status {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--faint);
+  min-width: 70px;
+  text-align: right;
+  white-space: nowrap;
+}
+.work-status.started {
+  color: var(--warn);
+}
+.work-status.grading {
+  color: var(--brand);
+}
+.work-status.done {
+  color: var(--good);
+}
+.work-body {
+  padding: 0 0 14px 21px;
+}
+.submission {
+  padding: 12px 0;
+  border-top: 1px dashed var(--line);
+}
+.submission:first-child {
+  border-top: 0;
+}
+.submission .big {
+  font-size: 28px;
+  line-height: 1;
+}
+.work-tasks {
+  margin-top: 12px;
+  display: grid;
+  gap: 2px;
+}
+.work-task {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.work-task:last-child {
+  border-bottom: 0;
+}
+.work-errors {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+}
+.drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 16px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-2);
+}
+.drop:hover,
+.drop:focus-visible,
+.drop.over {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  outline: none;
+}
+@media (max-width: 760px) {
+  .exam-goals,
+  .exam-progress {
+    grid-template-columns: 1fr;
+  }
+  .work-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .work-head > .row {
+    grid-column: 1 / -1;
+  }
 }

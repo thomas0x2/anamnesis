@@ -3,10 +3,8 @@
 import katex from 'katex'
 import { memo, type ReactElement } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import rehypeKatex from 'rehype-katex'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
 import { fixTex, normalizeMd } from '@shared/mdtex'
+import { katexOptions, rehypePlugins, remarkPlugins } from '../lib/mdPipeline'
 
 let openLink: (href: string) => void = (href) => void window.open(href, '_blank')
 export function setLinkHandler(fn: (href: string) => void): void {
@@ -33,12 +31,10 @@ const inlineComponents: Components = {
   p: ({ children }) => <>{children}</>
 }
 
-const katexOptions = { throwOnError: false, strict: 'ignore' as const, trust: false, maxSize: 40, maxExpand: 400 }
-
 function MarkdownImpl({ text, inline = false, className }: { text: string | null | undefined; inline?: boolean; className?: string }): ReactElement | null {
   if (!text) return null
   const body = (
-    <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[[rehypeKatex, katexOptions]]} components={inline ? inlineComponents : baseComponents} skipHtml>
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={inline ? inlineComponents : baseComponents} skipHtml>
       {normalizeMd(text)}
     </ReactMarkdown>
   )

@@ -30,7 +30,8 @@ const fakeAgents = new FakeAgentHost(120)
 const agentOf = new Map<string, AgentHost | FakeAgentHost>()
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`, '127.0.0.1:5317', 'localhost:5317'])
 
-const cliConfig = (s: Settings): CliConfig => ({ ...s.cli, workDir: join(dataDir, 'claude-workdir') })
+// the browser dev server has no keychain: with API credits chosen, it uses ANTHROPIC_API_KEY from its own environment
+const cliConfig = (s: Settings): CliConfig => ({ ...s.cli, apiKey: s.cli.auth === 'api-key' ? process.env.ANTHROPIC_API_KEY || null : null, workDir: join(dataDir, 'claude-workdir') })
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })

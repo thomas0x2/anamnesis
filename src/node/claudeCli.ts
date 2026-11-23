@@ -9,7 +9,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { parsePartialJson } from '../shared/partialJson'
-import type { Effort, LlmErrorKind, LlmEvent, LlmRequest, LlmResult, LlmTestResult } from '../shared/types'
+import type { ClaudeAuth, Effort, LlmErrorKind, LlmEvent, LlmRequest, LlmResult, LlmTestResult } from '../shared/types'
 
 export interface CliConfig {
   path: string | null
@@ -19,6 +19,39 @@ export interface CliConfig {
   timeoutSec: number
   /** empty working directory, so no project CLAUDE.md is picked up */
   workDir: string
+  /** who pays: the Claude Code login, or the API key below (missing = subscription) */
+  auth?: ClaudeAuth
+  /** the learner's Anthropic API key, decrypted in the main process just for this call */
+  apiKey?: string | null
+  /** model for building course maps; empty = `model` */
+  mapModel?: string
+}
+
+/** Why a call cannot start with this configuration (an API key was chosen but none is saved). */
+export function authProblem(cfg: Pick<CliConfig, 'auth' | 'apiKey'>): string | null {
+  if (cfg.auth === 'api-key' && !cfg.apiKey) return 'API credits are chosen in Settings, but no API key is saved. Add one under Settings → Tutor, or switch back to your Claude subscription.'
+  return null
+}
+
+/**
+ * Pick the account: with an API key, Claude Code bills the key instead of the subscription login.
+ * On the subscription, a key from the shell environment is removed so it is not billed by surprise.
+ */
+export function applyAuth(env: NodeJS.ProcessEnv, cfg: Pick<CliConfig, 'auth' | 'apiKey'>): NodeJS.ProcessEnv {
+  const out = { ...env }
+  if (cfg.auth === 'api-key' && cfg.apiKey) {
+    out.ANTHROPIC_API_KEY = cfg.apiKey
+    delete out.CLAUDE_CODE_OAUTH_TOKEN
+    delete out.ANTHROPIC_AUTH_TOKEN
+  } else {
+    delete out.ANTHROPIC_API_KEY
+  }
+  return out
+}
+
+/** The model for a request: its own, the map model for map building, else the configured one. */
+export function modelFor(req: Pick<LlmRequest, 'kind' | 'model'>, cfg: Pick<CliConfig, 'model' | 'mapModel'>): string {
+  return (req.model || (req.kind === 'map' ? cfg.mapModel : '') || cfg.model || '').trim()
 }
 
 let loginShellPath: string | null | undefined
@@ -114,7 +147,7 @@ export function cliArgs(req: LlmRequest, cfg: CliConfig, systemFile: string): st
     req.effort || cfg.effort || 'medium'
   ]
   // no model given: Claude Code uses the learner's own default
-  const model = (req.model || cfg.model || '').trim()
+  const model = modelFor(req, cfg)
   if (model) args.push('--model', model)
   const fb = (cfg.fallbackModel || '').trim()
   if (fb && fb !== model) args.push('--fallback-model', fb)
@@ -143,10 +176,12 @@ export async function runClaude(req: LlmRequest, cfg: CliConfig, onEvent: (e: Ll
       error: 'Claude Code CLI not found. Install it (https://docs.claude.com/claude-code) or set its path in Settings.'
     }
   }
+  const problem = authProblem(cfg)
+  if (problem) return { id: req.id, ok: false, errorKind: 'auth', error: problem }
   await mkdir(join(cfg.workDir, 'prompts'), { recursive: true })
   const sysFile = join(cfg.workDir, 'prompts', `${req.id.replace(/[^\w-]/g, '_')}.txt`)
   await writeFile(sysFile, req.system, 'utf8')
-  const env = await buildEnv(bin)
+  const env = applyAuth(await buildEnv(bin), cfg)
 
   return new Promise<LlmResult>((resolve) => {
     const child = spawn(bin, cliArgs(req, cfg, sysFile), { cwd: cfg.workDir, env, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -313,8 +348,10 @@ export async function testClaude(cfg: CliConfig): Promise<LlmTestResult> {
     () => {}
   )
   if (!r.ok) {
-    const hint = r.errorKind === 'auth' ? ' Run `claude` in a terminal once and log in.' : ''
+    const hint =
+      r.errorKind === 'auth' ? (cfg.auth === 'api-key' ? ' Check the API key, and that the Console account has credits.' : ' Run `claude` in a terminal once and log in.') : ''
     return { ok: false, message: `${v.version} found, but a test call failed: ${r.error}.${hint}`, path: v.path, version: v.version }
   }
-  return { ok: true, message: `${v.version} is working (test call took ${((r.durationMs ?? 0) / 1000).toFixed(1)} s).`, path: v.path, version: v.version }
+  const via = cfg.auth === 'api-key' ? 'on your API key' : 'on your Claude subscription'
+  return { ok: true, message: `${v.version} is working ${via} (test call took ${((r.durationMs ?? 0) / 1000).toFixed(1)} s).`, path: v.path, version: v.version }
 }

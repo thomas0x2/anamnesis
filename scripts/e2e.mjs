@@ -174,7 +174,18 @@ async function coursesFlow(page) {
   step('the graded tasks updated the concepts in the mind model')
   await nav(page, 'Today').click()
   await page.locator('.exam-notice', { hasText: 'Exam in 60 days' }).waitFor()
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-exam.png`) })
   step('Today shows the exam countdown and the goal')
+  await page.locator('.mastery-map .cell.here').first().waitFor()
+  await page.locator('.exam-pace .pace-note', { hasText: /of 12/ }).waitFor()
+  await page.locator('.activity .day.today').waitFor()
+  if (shotsDir) {
+    await page.setViewportSize({ width: 1380, height: 2000 })
+    await page.locator('.toast').first().waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+    await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-progress.png`) })
+    await page.setViewportSize({ width: 1380, height: 900 })
+  }
+  step('Today shows where you are on the course, the pace toward the exam and recent activity')
 
   await page.locator('.course-btn').click()
   await page.getByRole('menuitemradio', { name: /NumCS/ }).click()
@@ -384,7 +395,7 @@ async function flow(page) {
   await nav(page, 'Tutor').click()
 
   step('guided session (classic mode)')
-  await page.locator('nav.topnav').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('button', { name: 'Guided sessions' }).click()
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
@@ -408,7 +419,7 @@ async function flow(page) {
       step(`course map zooms out (${before} -> ${await pctButton.textContent()})`)
     }
   }
-  await page.locator('nav.topnav').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
   step('Settings screen renders')
   if (!electronMode) await coursesFlow(page)

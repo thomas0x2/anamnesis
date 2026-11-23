@@ -4738,3 +4738,484 @@ b {
     grid-column: 1 / -1;
   }
 }
+
+/* ================================================================ structure
+   Still Ma (dark, quiet, one vermilion point), but with enough framing to read the
+   navigation and the Today overview at a glance: grouped nav in a soft track, a course
+   chip, a glance row of four numbers, and softly framed blocks on Today. */
+
+/* top bar: brand + course chip | grouped nav | settings + points */
+.topbar {
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  margin-right: 0;
+}
+.course-btn {
+  margin-left: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+  font-size: 11px;
+}
+.course-btn:hover {
+  border-color: var(--accent-line);
+  background: transparent;
+  color: var(--text);
+}
+.topnav {
+  margin: 0 auto;
+  gap: 0;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+.nav-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-group + .nav-group {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line-2);
+}
+.topnav .nav-item {
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  color: var(--muted);
+}
+.topnav .nav-item svg {
+  opacity: 0.75;
+}
+.topnav .nav-item:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.topnav .nav-item.active {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.topnav .nav-item.active svg {
+  opacity: 1;
+}
+.topnav .nav-item .count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  display: inline-grid;
+  place-items: center;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 10.5px;
+}
+.topnav .nav-item .count:not(.hot) {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.topbar-end .points {
+  margin-left: 4px;
+}
+.resume-card {
+  max-width: 260px;
+}
+@media (max-width: 1240px) {
+  .topnav .nav-label {
+    display: none;
+  }
+  .topnav .nav-item {
+    padding: 7px 10px;
+  }
+  .topnav .nav-item.active .nav-label {
+    display: inline;
+  }
+}
+
+/* Today: a glance row, then softly framed blocks on a 6-column grid */
+.glance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.glance-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 20px 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.glance-cell + .glance-cell {
+  border-left: 1px solid var(--line);
+}
+.glance-cell:hover {
+  background: var(--surface-2);
+}
+.glance-cell .k {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.glance-cell .v {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.glance-cell .v.hot {
+  color: var(--brand);
+}
+.glance-cell .s {
+  font-size: 12.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.today-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+}
+.today-block,
+.today-block.wide {
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px 20px;
+}
+.today-block.third {
+  grid-column: span 2;
+}
+.today-block.half {
+  grid-column: span 3;
+}
+.today-block.wide-list {
+  grid-column: 1 / -1;
+}
+.today-block .title {
+  font-size: 20px;
+}
+.today-block .big {
+  font-size: 34px;
+}
+.today-block .go {
+  margin-top: auto;
+  padding-top: 8px;
+}
+.today-block.wide .go {
+  padding-top: 0;
+}
+.course-notice {
+  margin-bottom: 14px;
+}
+.exam-notice {
+  margin-bottom: 0;
+}
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+.meter {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+}
+.meter .k,
+.meter .v {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--muted);
+}
+.meter .v {
+  text-align: right;
+}
+.meter .bar {
+  display: block;
+  height: 3px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.meter .bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-2);
+  border-radius: 3px;
+}
+.today-block .seg-bar {
+  height: 4px;
+}
+.today-block .seg-bar > span {
+  border-radius: 2px;
+}
+.today-block .chapter-row {
+  grid-template-columns: 18px minmax(0, 1fr) 120px 36px;
+}
+.today-block .next-item {
+  padding: 10px 0;
+}
+@media (max-width: 1100px) {
+  .glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .glance-cell:nth-child(3) {
+    border-left: 0;
+  }
+  .glance-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .today-block.third {
+    grid-column: span 3;
+  }
+  .today-block.half {
+    grid-column: 1 / -1;
+  }
+}
+.topnav .nav-item {
+  white-space: nowrap;
+}
+.topbar .brand,
+.topbar-end {
+  flex: none;
+}
+.resume-card {
+  min-width: 0;
+  flex: 0 1 240px;
+}
+
+/* ---------- progress visuals (Today) ---------- */
+.mastery-map {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 6px;
+}
+.mm-stack {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+}
+.mm-stack > span {
+  border-radius: 2px;
+  min-width: 3px;
+}
+.mm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mm-row {
+  display: grid;
+  grid-template-columns: 22px minmax(120px, 220px) minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 12px;
+}
+.mm-row .n,
+.mm-row .v {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--faint);
+}
+.mm-row .v {
+  text-align: right;
+  color: var(--muted);
+}
+.mm-row .t {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mm-row .t:hover {
+  color: var(--text);
+}
+.mm-row .cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.cell {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 0;
+  padding: 0;
+  background: var(--m-unseen);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+button.cell:hover {
+  transform: scale(1.25);
+}
+.cell.introduced {
+  background: var(--m-introduced);
+}
+.cell.developing {
+  background: var(--m-developing);
+}
+.cell.proficient {
+  background: var(--m-proficient);
+}
+.cell.mastered {
+  background: var(--m-mastered);
+}
+.cell.here {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.mm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--muted);
+}
+.mm-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mm-legend .cell {
+  width: 9px;
+  height: 9px;
+  cursor: default;
+}
+.mm-legend .cell.here {
+  outline-offset: 1px;
+  outline-width: 1.5px;
+}
+.mm-legend b {
+  font-weight: 500;
+  color: var(--text-2);
+}
+svg.pace {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+}
+.pace .grid,
+.pace .axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.pace .ideal {
+  stroke: var(--faint);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  fill: none;
+}
+.pace .actual {
+  stroke: var(--text);
+  stroke-width: 1.6;
+  fill: none;
+  stroke-linejoin: round;
+}
+.pace .today {
+  stroke: var(--brand);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+.pace .here {
+  fill: var(--brand);
+}
+.pace .lbl {
+  font-family: var(--font-label);
+  font-size: 9px;
+  fill: var(--faint);
+}
+.pace-note {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pace-note b {
+  font-weight: 500;
+  color: var(--text);
+}
+.viz-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.viz-empty svg.pace {
+  opacity: 0.5;
+  max-height: 110px;
+}
+.activity .bars {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 6px;
+  height: 130px;
+  margin-top: 10px;
+  align-items: end;
+}
+.activity .day {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  height: 100%;
+  gap: 6px;
+}
+.activity .fill {
+  display: block;
+  background: var(--m-developing);
+  border-radius: 2px;
+  max-height: calc(100% - 18px);
+}
+.activity .day.today .fill {
+  background: var(--brand);
+}
+.activity .dl {
+  font-family: var(--font-label);
+  font-size: 10px;
+  color: var(--faint);
+  text-align: center;
+  line-height: 12px;
+}
+.activity .day.today .dl {
+  color: var(--brand);
+}
+.today-block.progress-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}

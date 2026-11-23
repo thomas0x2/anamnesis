@@ -423,6 +423,16 @@ async function flow(page) {
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
   step('Settings screen renders')
   if (!electronMode) await coursesFlow(page)
+  else {
+    // a dialog opened from the top bar must sit outside its window-drag region: on macOS that region
+    // swallows clicks on inputs (Playwright's synthetic clicks are not affected, so check the CSS)
+    await page.locator('.course-btn').click()
+    await page.getByRole('menuitem', { name: /New course/ }).click()
+    const region = await page.getByPlaceholder('SPCA').evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region'))
+    if (region === 'drag') throw new Error('the New course dialog fields are inside a window-drag region')
+    await page.keyboard.press('Escape')
+    step('the New course dialog is outside the window-drag region')
+  }
 }
 
 try {

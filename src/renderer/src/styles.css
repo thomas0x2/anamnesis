@@ -2674,6 +2674,8 @@ kbd {
   background: rgba(5, 6, 9, 0.72);
   backdrop-filter: blur(6px);
   padding: 24px;
+  /* the window-drag strip at the top must not swallow clicks in a dialog */
+  -webkit-app-region: no-drag;
 }
 .modal {
   width: min(680px, 100%);

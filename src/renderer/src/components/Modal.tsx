@@ -1,5 +1,6 @@
 // A modal dialog (Esc or a click outside closes it) and the demo playground built on it.
 import { useEffect, type ReactElement, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { DEMOS, DemoView } from '../demos'
 import { Icon } from './Icon'
 
@@ -11,12 +12,15 @@ export function Modal({ onClose, children, width, label }: { onClose: () => void
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  return (
+  // rendered at the end of <body>: a dialog opened from the sidebar or top bar must not sit inside their
+  // window-drag region, where Electron swallows clicks on everything but buttons
+  return createPortal(
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={label} style={width ? { width: `min(${width}px, 100%)` } : undefined}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

@@ -176,6 +176,16 @@ async function coursesFlow(page) {
   await page.locator('.exam-notice', { hasText: 'Exam in 60 days' }).waitFor()
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-exam.png`) })
   step('Today shows the exam countdown and the goal')
+  await page.locator('.mastery-map .cell.here').first().waitFor()
+  await page.locator('.exam-pace .pace-note', { hasText: /of 12/ }).waitFor()
+  await page.locator('.activity .day.today').waitFor()
+  if (shotsDir) {
+    await page.setViewportSize({ width: 1380, height: 2000 })
+    await page.locator('.toast').first().waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+    await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-progress.png`) })
+    await page.setViewportSize({ width: 1380, height: 900 })
+  }
+  step('Today shows where you are on the course, the pace toward the exam and recent activity')
 
   await page.locator('.course-btn').click()
   await page.getByRole('menuitemradio', { name: /NumCS/ }).click()

@@ -3,14 +3,14 @@
 import { prepProgress, workItems, workState } from '@shared/exam'
 import { statusRank, STATUS_ORDER } from '@shared/mastery'
 import { dueConcepts, nextDue } from '@shared/selection'
-import { chapterReadiness } from '@shared/stats'
 import type { ConceptStatus } from '@shared/types'
 import { useMemo, type ReactElement } from 'react'
 import { Icon } from '../components/Icon'
+import { ActivityBars, CourseMasteryMap, ExamPace } from '../components/ProgressViz'
 import { Markdown } from '../components/Markdown'
 import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
-import { pct, plural, relTime, STATUS_LABEL } from '../lib/format'
+import { plural, relTime, STATUS_LABEL } from '../lib/format'
 import { useNow } from '../lib/hooks'
 
 export function HomeView(): ReactElement {
@@ -24,7 +24,7 @@ export function HomeView(): ReactElement {
   const due = useMemo(() => dueConcepts(learner, now).filter((id) => graph.get(id)), [learner, now, graph])
   const frontier = useMemo(() => graph.frontier(learner).slice(0, 5), [learner, graph])
   const learned = useMemo(() => app.course.concepts.filter((c) => statusRank(learner.concepts[c.id]?.status ?? 'unseen') >= 1).map((c) => c.id), [learner, app])
-  const readiness = useMemo(() => chapterReadiness(graph, state, now), [graph, state, now])
+  const here = (sc ? sc.view.get().session.goalConceptId : null) ?? frontier[0] ?? null
   const upcoming = nextDue(learner)
   const sessions = state.sessions.slice(-6).reverse()
   const hour = now.getHours()
@@ -112,6 +112,30 @@ export function HomeView(): ReactElement {
 
         <ExamNotice />
 
+        <div className="today-block wide progress-block">
+          <div className="row between">
+            <div className="eyebrow">where you are</div>
+            <span className="eyebrow">one square per concept · brighter is further along</span>
+          </div>
+          <CourseMasteryMap here={here} />
+        </div>
+
+        <div className="today-block half">
+          <div className="row between">
+            <div className="eyebrow">exam pace</div>
+            <span className="eyebrow">sets and mocks done</span>
+          </div>
+          <ExamPace />
+        </div>
+
+        <div className="today-block half">
+          <div className="row between">
+            <div className="eyebrow">last two weeks</div>
+            <span className="eyebrow">insight points per day</span>
+          </div>
+          <ActivityBars />
+        </div>
+
         <div className="today-block half">
           <div className="row between">
             <div className="eyebrow">ready to learn</div>
@@ -148,43 +172,6 @@ export function HomeView(): ReactElement {
         </div>
 
         <div className="today-block half">
-          <div className="row between">
-            <div className="eyebrow">course</div>
-            <span className="eyebrow">how far along × how well remembered</span>
-          </div>
-          <div className="chapter-strip" style={{ marginTop: 6 }}>
-            {readiness
-              .filter((r) => r.concepts > 0)
-              .map((r) => (
-                <button
-                  key={r.chapter}
-                  className="chapter-row"
-                  style={{
-                    background: 'none',
-                    border: 0,
-                    padding: 0,
-                    color: 'inherit',
-                    font: 'inherit',
-                    cursor: 'pointer',
-                    textAlign: 'left'
-                  }}
-                  onClick={() => {
-                    const firstInCh = graph.chapterConcepts(r.chapter)[0]
-                    app.go({ name: 'map', conceptId: firstInCh?.id })
-                  }}
-                  title={STATUS_ORDER.map((s) => `${STATUS_LABEL[s]}: ${r.counts[s]}`).join(' · ')}
-                >
-                  <span className="n">{r.chapter || '·'}</span>
-                  <span className="t">{r.title}</span>
-                  <SegBar counts={r.counts} />
-                  <span className="v">{pct(r.readiness)}</span>
-                </button>
-              ))}
-          </div>
-          <StatusLegend />
-        </div>
-
-        <div className="today-block wide-list">
           <div className="row between">
             <div className="eyebrow">recent sessions</div>
             <button className="btn sm ghost" onClick={() => app.go({ name: 'stats' })}>

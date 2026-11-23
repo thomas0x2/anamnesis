@@ -17,6 +17,11 @@ export function normalizeMd(src: string): string {
   s = s.replace(/&#0*36;|&#x0*24;|&dollar;/gi, '$').replace(/[＄﹩]/g, '$')
   // Markdown-escaped math delimiters (\$x\$) would render literally. A span closed by another \$ is math; a lone \$5 stays.
   s = s.replace(/\\\$([^$\n]+?)\\\$/g, (_m, x: string) => `$${x}$`)
+  // Half-escaped spans (\$x^2$ or $x^2\$) render as literal text too. Repair them only when the inside is
+  // clearly TeX (a command, ^, _ or braces), so a price like \$5 next to real math stays as it is.
+  const texish = (x: string): boolean => /\\[a-zA-Z]|[\^_{}]/.test(x)
+  s = s.replace(/(^|[^\\])\\\$([^$\n]+?)(?<!\\)\$/g, (m, pre: string, x: string) => (texish(x) ? `${pre}$${x}$` : m))
+  s = s.replace(/(^|[^\\$])\$([^$\n]+?)\\\$/g, (m, pre: string, x: string) => (texish(x) ? `${pre}$${x}$` : m))
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, x: string) => `\n$$\n${x.trim()}\n$$\n`)
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, x: string) => `$${x.trim()}$`)
   // $$...$$ inside a running line (not a list item or table row) becomes its own display block

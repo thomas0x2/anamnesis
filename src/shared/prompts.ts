@@ -104,7 +104,7 @@ Part 1: multiple choice, marked (S) single correct or (M) multiple correct, ofte
 Every graded interaction has 2-4 hints (the ladder), a worked solution, conceptIds (course concept ids it gives evidence about), confidence true (the app asks how sure the learner is: calibration matters), and for practice and review the level and cue.
 
 # Formatting
-Markdown with LaTeX. Inline $...$ only for short symbols or short expressions; put every real equation in its own $$...$$ line or in an equation block; never put $$ inside list items or table cells. JSON strings escape backslashes as usual (\\frac, \\sum).
+Markdown with LaTeX. Inline $...$ only for short symbols or short expressions; put every real equation in its own $$...$$ line or in an equation block; never put $$ inside list items or table cells. JSON strings escape backslashes as usual (\\frac, \\sum). Never escape the dollar signs of math (no \\$).
 speech: what the app reads aloud, 1-3 natural sentences with math spoken out ("p of x is the sum over j of y j times l j of x"); shorter than the card.
 
 # Learner model updates (model field)

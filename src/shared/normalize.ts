@@ -24,6 +24,17 @@ const ns = (x: unknown): string | null => {
   const v = s(x).trim()
   return v ? v : null
 }
+/** Tool arguments sometimes arrive with a nested array or object sent as a JSON string; parse those back. */
+export function jsonish(x: unknown): unknown {
+  if (typeof x !== 'string') return x
+  const t = x.trim()
+  if (!/^[[{][\s\S]*[\]}]$/.test(t)) return x
+  try {
+    return JSON.parse(t)
+  } catch {
+    return x
+  }
+}
 const strArr = (x: unknown): string[] => (Array.isArray(x) ? x.map(s).map((v) => v.trim()).filter(Boolean) : [])
 const num = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : typeof x === 'string' && x.trim() && Number.isFinite(Number(x)) ? Number(x) : null)
 
@@ -42,6 +53,7 @@ function stripMathDelims(latex: string): string {
 }
 
 export function normalizeBlock(raw: unknown): Block | null {
+  raw = jsonish(raw)
   if (typeof raw === 'string') return raw.trim() ? { type: 'text', md: raw } : null
   if (!isObj(raw)) return null
   let type = s(raw.type) as Block['type']
@@ -139,10 +151,12 @@ export function normalizeBlock(raw: unknown): Block | null {
       return b
     }
     case 'code': {
-      const c = isObj(raw.code) ? raw.code : null
-      const source = ns(c?.source) ?? md
+      // code may come as { language, source }, as a plain string, or with source and language beside type
+      const code = jsonish(raw.code)
+      const c = isObj(code) ? code : null
+      const source = ns(c?.source) ?? (typeof code === 'string' ? ns(code) : null) ?? ns(raw.source) ?? md
       if (!source) return null
-      b.code = { language: ns(c?.language) ?? 'python', source: source.replace(/^```\w*\s*/, '').replace(/```\s*$/, '') }
+      b.code = { language: ns(c?.language) ?? ns(raw.language) ?? 'python', source: source.replace(/^```\w*\s*/, '').replace(/```\s*$/, '') }
       return b
     }
     case 'table': {
@@ -161,6 +175,7 @@ export function normalizeBlock(raw: unknown): Block | null {
 const LETTERS = 'abcdefghij'
 
 export function normalizeInteraction(raw: unknown, ctx: NormalizeContext): Interaction | null {
+  raw = jsonish(raw)
   if (!isObj(raw)) return null
   let type = s(raw.type) as Interaction['type']
   if (!(INTERACTION_TYPES as readonly string[]).includes(type)) type = 'free'
@@ -196,7 +211,8 @@ export function normalizeInteraction(raw: unknown, ctx: NormalizeContext): Inter
     case 'continue':
       return { ...it, confidence: false, hints: [], solution: '' }
     case 'mcq': {
-      const rawOpts = Array.isArray(raw.options) ? raw.options : []
+      const optsIn = jsonish(raw.options)
+      const rawOpts = Array.isArray(optsIn) ? optsIn : []
       const opts = rawOpts
         .map((o, i) =>
           typeof o === 'string'
@@ -257,8 +273,15 @@ export function normalizeCard(raw: unknown, ctx: NormalizeContext): Card | null 
   if (!isObj(raw)) return null
   let kind = s(raw.kind) as Card['kind']
   if (!(CARD_KINDS as readonly string[]).includes(kind)) kind = 'explain'
-  const blocks = (Array.isArray(raw.blocks) ? raw.blocks : []).map(normalizeBlock).filter((b): b is Block => !!b)
+  const rawBlocks = jsonish(raw.blocks)
+  const blocks = (Array.isArray(rawBlocks) ? rawBlocks : isObj(rawBlocks) ? [rawBlocks] : []).map(normalizeBlock).filter((b): b is Block => !!b)
   let interaction = normalizeInteraction(raw.interaction, ctx)
+  // a code snippet put on the interaction itself (not a schema field) still belongs above the question
+  const ia = jsonish(raw.interaction)
+  if (isObj(ia) && ia.code) {
+    const cb = normalizeBlock({ type: 'code', code: ia.code, language: ia.language })
+    if (cb && !blocks.some((b) => b.type === 'code' && b.code?.source === cb.code?.source)) blocks.push(cb)
+  }
   if (interaction && !interaction.prompt && interaction.type !== 'continue') {
     interaction.prompt = kind === 'predict' ? 'What do you predict?' : 'Your answer:'
   }

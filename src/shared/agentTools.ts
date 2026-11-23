@@ -38,7 +38,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       properties: {
         kind: { type: 'string', enum: ASK_KINDS },
         title: nstr,
-        blocks: { type: 'array', items: blockSchema, description: 'optional context shown above the question (0-2 blocks)' },
+        blocks: { type: 'array', items: blockSchema, description: 'optional context shown above the question (0-2 blocks). Code the question asks about goes here as a code block (code.source); the prompt cannot show it otherwise.' },
         interaction: interactionSchema,
         speech: nstr,
         nodeId: { ...nstr, description: 'plan node this question belongs to (teaching), if any' },

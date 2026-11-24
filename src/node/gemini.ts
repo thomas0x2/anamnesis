@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { parsePartialJson } from '../shared/partialJson'
 import { geminiThinking, textGeminiModels } from '../shared/models'
+import { sttPrompt, type CloudSttRequest } from '../shared/stt'
 import type { Effort, LlmErrorKind, LlmEvent, LlmRequest, LlmResult, LlmTestResult } from '../shared/types'
 
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
@@ -255,4 +256,39 @@ export async function testGemini(cfg: GeminiConfig): Promise<LlmTestResult> {
   )
   if (!r.ok) return { ok: false, message: `Gemini (${cfg.model}) failed a test call: ${r.error}`, path: null, version: cfg.model }
   return { ok: true, message: `Gemini ${cfg.model} is working (test call took ${((r.durationMs ?? 0) / 1000).toFixed(1)} s).`, path: null, version: cfg.model }
+}
+
+/** Transcribe a recording with Gemini (Settings → Voice → Gemini). Returns the transcript, or an error to fall back on. */
+export async function transcribeGemini(req: CloudSttRequest, cfg: GeminiConfig): Promise<{ ok: true; text: string; model: string } | { ok: false; error: string }> {
+  if (!cfg.apiKey) return { ok: false, error: 'no Google AI API key is saved (Settings → Models)' }
+  if (!req.audio || req.audio.length > 25_000_000) return { ok: false, error: 'the recording is empty or too long' }
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort('timeout'), Math.max(30, Math.min(cfg.timeoutSec, 120)) * 1000)
+  try {
+    const thinking = geminiThinking(cfg.model, cfg.effort ?? 'low')
+    const f = cfg.fetch ?? fetch
+    const res = await f(`${cfg.base ?? GEMINI_BASE}/models/${encodeURIComponent(cfg.model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: sttPrompt(req.context, req.language) }, { inlineData: { mimeType: 'audio/wav', data: req.audio } }] }],
+        generationConfig: { temperature: 0, ...(thinking ? { thinkingConfig: { ...thinking, includeThoughts: false } } : {}) }
+      }),
+      signal: ctl.signal
+    })
+    if (!res.ok) return { ok: false, error: geminiError(res.status, await res.text().catch(() => '')).message }
+    const j = (await res.json()) as Record<string, unknown>
+    const c = chunkParts(j)
+    if (c.blocked) return { ok: false, error: `Gemini blocked the request (${c.blocked})` }
+    const text = c.parts
+      .filter((p) => !p.thought && typeof p.text === 'string')
+      .map((p) => p.text)
+      .join('')
+      .trim()
+    return { ok: true, text, model: cfg.model }
+  } catch (e) {
+    return { ok: false, error: ctl.signal.aborted ? 'Gemini took too long' : `could not reach Gemini: ${String((e as Error)?.message ?? e)}` }
+  } finally {
+    clearTimeout(timer)
+  }
 }

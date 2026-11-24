@@ -30,7 +30,7 @@ The tutor is Claude, run through the **Claude Code CLI** on your own Claude logi
 
 **Visual.** Fourteen interactive demos (interpolation and the Runge phenomenon, Lebesgue functions, Chebyshev polynomials, cancellation, Fourier series, roots of unity, trigonometric interpolation, aliasing, splines, quadrature, fixed-point cobwebs, Newton, the SVD, least squares), plots, diagrams and small sketches.
 
-**Voice.** Answers can be spoken: Whisper runs locally on your computer (the model downloads once). Cards can be read aloud with your system voices.
+**Voice.** Answers can be spoken: Whisper runs locally on your computer (the model downloads once), or, if you choose it in Settings → Voice, Gemini transcribes the recording with your Google AI key (better with technical terms, and it writes spoken math as LaTeX; the audio is sent to Google, and the local model takes over if Gemini fails). Cards can be read aloud with your system voices.
 
 **Insight points.** Points reward evidence of understanding (a prediction you committed to, a check solved without help, an explanation of the whole chain, a confident error you corrected), never time spent or clicks. Every award says what earned it.
 
@@ -68,7 +68,7 @@ No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings.
 
 * **Model and effort.** By default the CLI uses your Claude Code default model. Settings → Tutor lets you name a model, a fallback model, and the effort level (higher is slower but more careful).
 * **Script pages per step.** How many PDF pages the tutor gets as context for one step (default 8).
-* **Voice.** Whisper model size and language (English, German or auto), speech output, voice and rate.
+* **Voice.** Speech recognition (a local Whisper size, or Gemini in the cloud) and language (English, German or auto), speech output, voice and rate.
 * **Learning.** Target retention for reviews (default 90%) and items per practice session.
 * **Data.** Export everything as JSON, import it again, or reset.
 

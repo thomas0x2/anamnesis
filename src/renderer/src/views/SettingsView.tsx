@@ -8,12 +8,14 @@ import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { pct } from '../lib/format'
 import { speak, transcriber, voices } from '../voice/voice'
+import { GEMINI_STT, LOCAL_STT_FALLBACK } from '@shared/stt'
 
 export const STT_MODELS: { id: string; label: string }[] = [
   { id: 'onnx-community/whisper-tiny.en', label: 'Tiny, English only (fastest, ~40 MB)' },
   { id: 'onnx-community/whisper-base.en', label: 'Base, English only (~80 MB)' },
   { id: 'onnx-community/whisper-base', label: 'Base, English and German (~80 MB)' },
-  { id: 'onnx-community/whisper-small', label: 'Small, English and German (best, ~250 MB)' }
+  { id: 'onnx-community/whisper-small', label: 'Small, English and German (best local, ~250 MB)' },
+  { id: GEMINI_STT, label: 'Gemini, in the cloud (best for terms and math)' }
 ]
 
 
@@ -345,6 +347,11 @@ export function SettingsView(): ReactElement {
   const fileRef = useRef<HTMLInputElement>(null)
   const save = (patch: Parameters<typeof app.saveSettings>[0]): void => void app.saveSettings(patch)
   const isDemo = app.backend.kind === 'demo'
+  const sttGemini = s.voice.sttModel === GEMINI_STT
+  const [googleKey, setGoogleKey] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (sttGemini) void app.backend.apiKeyStatus?.('google').then((k) => setGoogleKey(k.saved)).catch(() => setGoogleKey(null))
+  }, [sttGemini]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     void app.backend
@@ -495,16 +502,28 @@ export function SettingsView(): ReactElement {
               </span>
             </span>
           </Row>
-          <Row name="Speech recognition model" desc="Downloaded once from Hugging Face, then cached. Answer by voice with the microphone button.">
-            <select className="select" style={{ width: 260 }} value={s.voice.sttModel} onChange={(e) => save({ voice: { sttModel: e.target.value } })}>
-              {STT_MODELS.map((m) => (
+          <Row
+            name="Speech recognition model"
+            desc={
+              sttGemini ? (
+                <>
+                  Your recording is <b>sent to Google</b> and transcribed by Gemini with your Google AI key, together with the course name and its topic list, so terms come out right and spoken math is written as LaTeX.
+                  {googleKey === false ? ' No Google AI key is saved yet: add one under Models.' : ''} If Gemini fails, this computer transcribes instead (local Whisper Base).
+                </>
+              ) : (
+                'Runs on this computer: downloaded once from Hugging Face, then cached; audio never leaves your Mac. Answer by voice with the microphone button.'
+              )
+            }
+          >
+            <select className="select" style={{ width: 260 }} value={s.voice.sttModel} onChange={(e) => save({ voice: { sttModel: e.target.value } })} aria-label="Speech recognition model">
+              {STT_MODELS.filter((m) => m.id !== GEMINI_STT || !!app.backend.transcribeCloud || sttGemini).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>
               ))}
             </select>
           </Row>
-          <Row name="Spoken language" desc="English-only models always transcribe English.">
+          <Row name="Spoken language" desc={sttGemini ? 'Gemini writes what you say in this language; it never translates.' : 'English-only models always transcribe English.'}>
             <select className="select" style={{ width: 160 }} value={s.voice.sttLanguage} onChange={(e) => save({ voice: { sttLanguage: e.target.value as Settings['voice']['sttLanguage'] } })}>
               <option value="english">English</option>
               <option value="german">German</option>
@@ -512,7 +531,7 @@ export function SettingsView(): ReactElement {
             </select>
           </Row>
           <Row
-            name="Prepare speech recognition"
+            name={sttGemini ? 'Prepare the local fallback' : 'Prepare speech recognition'}
             desc={
               stt.state === 'ready'
                 ? `Ready${stt.device ? ` (${stt.device === 'webgpu' ? 'GPU' : 'CPU'})` : ''}.`
@@ -525,7 +544,7 @@ export function SettingsView(): ReactElement {
                     : 'Otherwise it loads the first time you press the microphone.'
             }
           >
-            <button className="btn sm" disabled={stt.state === 'loading' || stt.state === 'ready'} onClick={() => transcriber.preload(s.voice.sttModel)}>
+            <button className="btn sm" disabled={stt.state === 'loading' || stt.state === 'ready'} onClick={() => transcriber.preload(sttGemini ? LOCAL_STT_FALLBACK : s.voice.sttModel)}>
               <Icon name="mic" size={15} /> Load now
             </button>
           </Row>

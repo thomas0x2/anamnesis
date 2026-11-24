@@ -204,9 +204,8 @@ export class ChatController {
     this.setAgent('starting', { error: null })
     const c = this.chat
     const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue, examPrep: prepSummary(this.app.exam.get(), this.app.materials.get(), new Date()) }, new Date())
-    const settings = this.app.settings.get()
     const r = await this.app.backend.agentStart(
-      { chatId: c.id, system, tools: AGENT_TOOLS, resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId, model: settings.cli.model, effort: settings.cli.effort },
+      { chatId: c.id, system, tools: AGENT_TOOLS, resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId },
       (e) => this.onEvent(e)
     )
     if (!r.ok) {

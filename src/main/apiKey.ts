@@ -1,18 +1,22 @@
-// The learner's Anthropic API key, encrypted with the system keychain (Electron safeStorage).
+// The learner's API keys (Anthropic, Google), each encrypted with the system keychain (Electron safeStorage).
 // It lives in a .bin file the renderer's store calls cannot reach (they only read .json), is only
 // decrypted in the main process for a CLI call, and is never written to settings or logs.
 import { safeStorage } from 'electron'
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { looksLikeApiKey } from '../shared/usage'
 import type { ApiKeyStatus } from '../shared/types'
 
 export class ApiKeyVault {
   private cached: string | null | undefined
-  constructor(private readonly dataDir: () => string) {}
+  constructor(
+    private readonly dataDir: () => string,
+    private readonly name: string,
+    private readonly valid: (key: string) => boolean,
+    private readonly invalidMessage: string
+  ) {}
 
   private get file(): string {
-    return join(this.dataDir(), 'secrets', 'anthropic-api-key.bin')
+    return join(this.dataDir(), 'secrets', `${this.name}.bin`)
   }
 
   private canStore(): boolean {
@@ -34,7 +38,7 @@ export class ApiKeyVault {
     } catch {
       key = null
     }
-    this.cached = key && looksLikeApiKey(key) ? key : null
+    this.cached = key && this.valid(key) ? key : null
     return this.cached
   }
 
@@ -54,7 +58,7 @@ export class ApiKeyVault {
       return this.status()
     }
     const k = String(key).trim()
-    if (!looksLikeApiKey(k)) return this.status('That does not look like an Anthropic API key (it starts with sk-ant-).')
+    if (!this.valid(k)) return this.status(this.invalidMessage)
     if (!this.canStore()) return this.status('This system offers no encrypted storage, so the key cannot be saved safely.')
     try {
       mkdirSync(dirname(this.file), { recursive: true })

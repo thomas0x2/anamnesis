@@ -4,12 +4,12 @@ import { addUsage, emptyUsage, formatUsd, looksLikeApiKey, normalizeUsage, usage
 import { DEFAULT_SETTINGS } from '../../src/shared/types'
 
 const KEY = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789'
-const cfg: CliConfig = { path: null, model: 'opus', effort: 'medium', fallbackModel: null, timeoutSec: 60, workDir: '/tmp/w', auth: 'subscription', mapModel: '' }
+const cfg: CliConfig = { path: null, model: 'opus', effort: 'medium', fallbackModel: null, timeoutSec: 60, workDir: '/tmp/w', auth: 'subscription' }
 
 describe('subscription or API credits', () => {
   it('defaults to the subscription', () => {
     expect(DEFAULT_SETTINGS.cli.auth).toBe('subscription')
-    expect(DEFAULT_SETTINGS.cli.mapModel).toBe('')
+    expect(DEFAULT_SETTINGS.tasks.map).toEqual({ provider: 'claude', model: '', effort: 'medium' })
   })
 
   it('passes the API key only when API credits are chosen', () => {
@@ -36,13 +36,10 @@ describe('subscription or API credits', () => {
     expect(args.join(' ')).not.toContain('sk-ant')
   })
 
-  it('uses the map model for map building only', () => {
-    const c = { ...cfg, mapModel: 'haiku' }
-    expect(modelFor({ kind: 'map' }, c)).toBe('haiku')
-    expect(modelFor({ kind: 'step' }, c)).toBe('opus')
-    expect(modelFor({ kind: 'map', model: 'sonnet' }, c)).toBe('sonnet')
-    expect(modelFor({ kind: 'map' }, cfg)).toBe('opus')
-    const args = cliArgs({ id: 'r', kind: 'map', system: 's', prompt: 'p', schema: {} }, c, 'f')
+  it('uses the request model, else the configured one', () => {
+    expect(modelFor({ model: 'sonnet' }, cfg)).toBe('sonnet')
+    expect(modelFor({}, cfg)).toBe('opus')
+    const args = cliArgs({ id: 'r', kind: 'map', system: 's', prompt: 'p', schema: {}, model: 'haiku' }, cfg, 'f')
     expect(args[args.indexOf('--model') + 1]).toBe('haiku')
   })
 

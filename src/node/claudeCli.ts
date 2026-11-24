@@ -23,8 +23,6 @@ export interface CliConfig {
   auth?: ClaudeAuth
   /** the learner's Anthropic API key, decrypted in the main process just for this call */
   apiKey?: string | null
-  /** model for building course maps; empty = `model` */
-  mapModel?: string
 }
 
 /** Why a call cannot start with this configuration (an API key was chosen but none is saved). */
@@ -49,9 +47,9 @@ export function applyAuth(env: NodeJS.ProcessEnv, cfg: Pick<CliConfig, 'auth' | 
   return out
 }
 
-/** The model for a request: its own, the map model for map building, else the configured one. */
-export function modelFor(req: Pick<LlmRequest, 'kind' | 'model'>, cfg: Pick<CliConfig, 'model' | 'mapModel'>): string {
-  return (req.model || (req.kind === 'map' ? cfg.mapModel : '') || cfg.model || '').trim()
+/** The model for a request: its own, else the configured one (empty: Claude Code's default). */
+export function modelFor(req: Pick<LlmRequest, 'model'>, cfg: Pick<CliConfig, 'model'>): string {
+  return (req.model || cfg.model || '').trim()
 }
 
 let loginShellPath: string | null | undefined

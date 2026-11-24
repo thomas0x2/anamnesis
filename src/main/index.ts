@@ -2,14 +2,14 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } fr
 import { readFile } from 'node:fs/promises'
 import { join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { AgentHost } from '../node/agent'
 import { FakeAgentHost } from '../shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
-import { cancelClaude, runClaude, testClaude, type CliConfig } from '../node/claudeCli'
+import { Providers } from '../node/providers'
 import { JsonStore, loadSettings, saveSettings } from '../node/store'
 import { fileInfo, readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../node/files'
-import type { DeepPartial, LlmRequest, LlmResult, Settings } from '../shared/types'
-import { addUsage, normalizeUsage } from '../shared/usage'
+import type { DeepPartial, KeyProvider, LlmRequest, Provider, Settings } from '../shared/types'
+import { looksLikeGoogleKey, routeFor } from '../shared/models'
+import { addUsage, looksLikeApiKey, normalizeUsage } from '../shared/usage'
 import { ApiKeyVault } from './apiKey'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
@@ -45,18 +45,18 @@ const CSP = [
 // Sketch blocks run model-written HTML in a sandboxed, opaque-origin iframe: inline code only, no network.
 const SKETCH_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"
 
-const vault = new ApiKeyVault(dataDir)
-
-function cliConfig(s: Settings): CliConfig {
-  const auth = s.cli.auth === 'api-key' ? 'api-key' : 'subscription'
-  return { ...s.cli, auth, apiKey: auth === 'api-key' ? vault.get() : null, workDir: join(dataDir(), 'claude-workdir') }
+const vaults: Record<KeyProvider, ApiKeyVault> = {
+  anthropic: new ApiKeyVault(dataDir, 'anthropic-api-key', looksLikeApiKey, 'That does not look like an Anthropic API key (it starts with sk-ant-).'),
+  google: new ApiKeyVault(dataDir, 'google-api-key', looksLikeGoogleKey, 'That does not look like a Google AI Studio API key.')
 }
+const keyProvider = (p: unknown): KeyProvider => (p === 'google' ? 'google' : 'anthropic')
+const providers = new Providers({ dataDir, key: (p) => vaults[p].get() })
 
 // what the calls cost, per day (see src/shared/usage.ts); writes are chained so none is lost
 let usageChain: Promise<void> = Promise.resolve()
-function recordUsage(kind: string, usd: number | null | undefined, s: Settings): void {
+function recordUsage(kind: string, usd: number | null | undefined, s: Settings, provider: Provider): void {
   if (process.env.ANAMNESIS_FAKE === '1' || s.provider === 'demo') return
-  const auth = s.cli.auth === 'api-key' ? 'api-key' : 'subscription'
+  const auth = provider === 'gemini' || s.cli.auth === 'api-key' ? 'api-key' : 'subscription'
   usageChain = usageChain
     .then(async () => store.write('usage', addUsage(normalizeUsage(await store.read('usage')), { at: new Date(), kind, usd, auth })))
     .catch(() => {})
@@ -134,41 +134,46 @@ function createWindow(): void {
   else void win.loadURL('app://anamnesis/index.html')
 }
 
-const realAgents = new AgentHost()
 const fakeAgents = new FakeAgentHost(160)
-const agentOf = new Map<string, AgentHost | FakeAgentHost>()
-app.on('will-quit', () => realAgents.stopAll())
+const fakeChats = new Set<string>()
+app.on('will-quit', () => providers.stopAll())
 
 function registerIpc(): void {
   ipcMain.handle('agent:start', async (event, req: AgentStartRequest) => {
     const settings = await loadSettings(store)
-    const host = settings.provider === 'demo' || process.env.ANAMNESIS_FAKE === '1' ? fakeAgents : realAgents
-    agentOf.get(req.chatId)?.stop(req.chatId)
-    agentOf.set(req.chatId, host)
+    const fake = settings.provider === 'demo' || process.env.ANAMNESIS_FAKE === '1'
+    providers.agentStop(req.chatId)
+    fakeAgents.stop(req.chatId)
+    if (fake) fakeChats.add(req.chatId)
+    else fakeChats.delete(req.chatId)
     const sender = event.sender
+    const provider = routeFor('chat', settings).provider
     const onEvent = (e: AgentEvent): void => {
-      if (e.type === 'turn_end' && host === realAgents) recordUsage('chat', e.costUsd, settings)
+      if (e.type === 'turn_end' && !fake) recordUsage('chat', e.costUsd, settings, provider)
       if (!sender.isDestroyed()) sender.send('agent:event', e)
     }
-    return host instanceof FakeAgentHost ? host.start(req, onEvent) : host.start(req, cliConfig(settings), onEvent)
+    return fake ? fakeAgents.start(req, onEvent) : providers.agentStart(req, settings, onEvent)
   })
-  ipcMain.handle('agent:send', (_e, chatId: string, text: string) => agentOf.get(chatId)?.send(chatId, text) ?? false)
+  ipcMain.handle('agent:send', (_e, chatId: string, text: string) => (fakeChats.has(chatId) ? fakeAgents.send(chatId, text) : providers.agentSend(chatId, text)))
   ipcMain.handle('agent:result', (_e, chatId: string, callId: string, result: AgentToolResult) => {
-    agentOf.get(chatId)?.toolResult(chatId, callId, result)
+    if (fakeChats.has(chatId)) fakeAgents.toolResult(chatId, callId, result)
+    else providers.agentToolResult(chatId, callId, result)
   })
-  ipcMain.handle('agent:stop', (_e, chatId: string) => agentOf.get(chatId)?.stop(chatId))
+  ipcMain.handle('agent:stop', (_e, chatId: string) => (fakeChats.has(chatId) ? fakeAgents.stop(chatId) : providers.agentStop(chatId)))
   ipcMain.handle('llm:generate', async (event, req: LlmRequest) => {
     const settings = await loadSettings(store)
-    const r: LlmResult = await runClaude({ ...req, files: resolveWorkFiles(dataDir(), req.files) }, cliConfig(settings), (e) => {
+    const r = await providers.generate({ ...req, files: resolveWorkFiles(dataDir(), req.files) }, settings, (e) => {
       if (!event.sender.isDestroyed()) event.sender.send('llm:event', e)
     })
-    if (r.ok || r.costUsd) recordUsage(req.kind, r.costUsd, settings)
-    return r
+    if (r.ok || r.costUsd) recordUsage(req.kind, r.costUsd, settings, r.route.provider)
+    const { route: _route, ...result } = r
+    return result
   })
-  ipcMain.handle('apikey:status', () => vault.status())
-  ipcMain.handle('apikey:set', (_e, key: unknown) => vault.set(typeof key === 'string' ? key : null))
-  ipcMain.handle('llm:cancel', (_e, id: string) => cancelClaude(id))
-  ipcMain.handle('llm:test', async () => testClaude(cliConfig(await loadSettings(store))))
+  ipcMain.handle('apikey:status', (_e, p: unknown) => vaults[keyProvider(p)].status())
+  ipcMain.handle('apikey:set', (_e, p: unknown, key: unknown) => vaults[keyProvider(p)].set(typeof key === 'string' ? key : null))
+  ipcMain.handle('models:list', (_e, p: unknown) => providers.listModels(p === 'gemini' ? 'gemini' : 'claude'))
+  ipcMain.handle('llm:cancel', (_e, id: string) => providers.cancel(id))
+  ipcMain.handle('llm:test', async () => providers.test(await loadSettings(store)))
   ipcMain.handle('store:read', (_e, name: string) => store.read(name))
   ipcMain.handle('store:write', (_e, name: string, data: unknown) => store.write(name, data))
   ipcMain.handle('store:list', (_e, prefix: string) => store.list(prefix))

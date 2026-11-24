@@ -10,28 +10,26 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { AgentHost } from '../src/node/agent'
 import { FakeAgentHost } from '../src/shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../src/shared/agentTypes'
-import { cancelClaude, runClaude, testClaude, type CliConfig } from '../src/node/claudeCli'
+import { Providers } from '../src/node/providers'
 import { JsonStore, loadSettings, saveSettings } from '../src/node/store'
 import { readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../src/node/files'
 import { fakeGenerate } from '../src/shared/fakeTutor'
-import type { LlmRequest, LlmResult, Settings } from '../src/shared/types'
+import type { LlmRequest, LlmResult } from '../src/shared/types'
 
 const port = Number(process.env.PORT ?? 5318)
 const dataDir = resolve(process.env.ANAMNESIS_DATA_DIR ?? join(tmpdir(), 'anamnesis-dev'))
 const scriptPath = process.env.ANAMNESIS_SCRIPT ? resolve(process.env.ANAMNESIS_SCRIPT) : null
 const fake = process.env.ANAMNESIS_FAKE === '1'
 const store = new JsonStore(dataDir)
-const realAgents = new AgentHost()
+// the browser dev server has no keychain: API keys come from its own environment
+const providers = new Providers({ dataDir: () => dataDir, key: (p) => (p === 'google' ? process.env.GEMINI_API_KEY : process.env.ANTHROPIC_API_KEY) || null })
 const fakeAgents = new FakeAgentHost(120)
 /** which host runs each chat (the provider can change between chats) */
-const agentOf = new Map<string, AgentHost | FakeAgentHost>()
+const fakeChats = new Set<string>()
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`, '127.0.0.1:5317', 'localhost:5317'])
 
-// the browser dev server has no keychain: with API credits chosen, it uses ANTHROPIC_API_KEY from its own environment
-const cliConfig = (s: Settings): CliConfig => ({ ...s.cli, apiKey: s.cli.auth === 'api-key' ? process.env.ANTHROPIC_API_KEY || null : null, workDir: join(dataDir, 'claude-workdir') })
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
@@ -102,10 +100,10 @@ const server = createServer((req, res) => {
         }
         case 'GET /api/test':
           if (fake) return send(res, 200, { ok: true, message: 'Dev server in fake mode: the scripted tutor answers.', path: null, version: null })
-          return send(res, 200, await testClaude(cliConfig(await loadSettings(store))))
+          return send(res, 200, await providers.test(await loadSettings(store)))
         case 'POST /api/cancel': {
           const { id } = await body<{ id: string }>(req)
-          cancelClaude(id)
+          providers.cancel(id)
           return send(res, 200, { ok: true })
         }
         case 'POST /api/generate': {
@@ -113,13 +111,13 @@ const server = createServer((req, res) => {
           res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' })
           let open = true
           res.on('close', () => {
-            if (open) cancelClaude(r.id)
+            if (open) providers.cancel(r.id)
           })
           const emit = (line: unknown): void => {
             if (!res.writableEnded) res.write(JSON.stringify(line) + '\n')
           }
           const settings = await loadSettings(store)
-          const result: LlmResult = fake || settings.provider === 'demo' ? await fakeGenerate(r, (event) => emit({ event }), 120) : await runClaude({ ...r, files: resolveWorkFiles(dataDir, r.files) }, cliConfig(settings), (event) => emit({ event }))
+          const result: LlmResult = fake || settings.provider === 'demo' ? await fakeGenerate(r, (event) => emit({ event }), 120) : await providers.generate({ ...r, files: resolveWorkFiles(dataDir, r.files) }, settings, (event) => emit({ event }))
           open = false
           emit({ result })
           return res.end()
@@ -127,16 +125,19 @@ const server = createServer((req, res) => {
         case 'POST /api/agent/start': {
           const r = await body<AgentStartRequest>(req)
           const settings = await loadSettings(store)
-          const host = fake || settings.provider === 'demo' ? fakeAgents : realAgents
-          agentOf.get(r.chatId)?.stop(r.chatId)
-          agentOf.set(r.chatId, host)
+          const useFake = fake || settings.provider === 'demo'
+          providers.agentStop(r.chatId)
+          fakeAgents.stop(r.chatId)
+          if (useFake) fakeChats.add(r.chatId)
+          else fakeChats.delete(r.chatId)
+          const stop = (id: string): void => (fakeChats.has(id) ? fakeAgents.stop(id) : providers.agentStop(id))
           res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' })
           const emit = (line: unknown): void => {
             if (!res.writableEnded) res.write(JSON.stringify(line) + '\n')
           }
           let alive = true
           res.on('close', () => {
-            if (alive) host.stop(r.chatId)
+            if (alive) stop(r.chatId)
           })
           const onEvent = (event: AgentEvent): void => {
             emit({ event })
@@ -145,7 +146,7 @@ const server = createServer((req, res) => {
               res.end()
             }
           }
-          const started = host instanceof FakeAgentHost ? await host.start(r, onEvent) : await host.start(r, cliConfig(settings), onEvent)
+          const started = useFake ? await fakeAgents.start(r, onEvent) : await providers.agentStart(r, settings, onEvent)
           emit({ started })
           if (!started.ok) {
             alive = false
@@ -155,15 +156,16 @@ const server = createServer((req, res) => {
         }
         case 'POST /api/agent/send': {
           const { chatId, text } = await body<{ chatId: string; text: string }>(req)
-          return send(res, 200, { ok: agentOf.get(chatId)?.send(chatId, text) ?? false })
+          return send(res, 200, { ok: fakeChats.has(chatId) ? fakeAgents.send(chatId, text) : providers.agentSend(chatId, text) })
         }
         case 'POST /api/agent/result': {
           const { chatId, callId, result } = await body<{ chatId: string; callId: string; result: AgentToolResult }>(req)
-          return send(res, 200, { ok: agentOf.get(chatId)?.toolResult(chatId, callId, result) ?? false })
+          return send(res, 200, { ok: fakeChats.has(chatId) ? fakeAgents.toolResult(chatId, callId, result) : providers.agentToolResult(chatId, callId, result) })
         }
         case 'POST /api/agent/stop': {
           const { chatId } = await body<{ chatId: string }>(req)
-          agentOf.get(chatId)?.stop(chatId)
+          if (fakeChats.has(chatId)) fakeAgents.stop(chatId)
+          else providers.agentStop(chatId)
           return send(res, 200, { ok: true })
         }
         default:

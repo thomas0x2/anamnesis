@@ -583,6 +583,21 @@ export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export type ClaudeAuth = 'subscription' | 'api-key'
 
+/** Who runs a model call: Claude (through the Claude Code CLI) or Google Gemini (through the Gemini API). */
+export type Provider = 'claude' | 'gemini'
+export type KeyProvider = 'anthropic' | 'google'
+
+/** The kinds of work that can each use their own model: tutoring (steps and chat), building course maps, grading. */
+export type TaskName = 'tutor' | 'map' | 'grading'
+
+export interface TaskModel {
+  provider: Provider
+  /** empty = the provider's default (Claude Code's own default, or the app's Gemini default) */
+  model: string
+  /** 'auto' = what the app asks for per call (e.g. low for quick grading, high for checking a solution) */
+  effort: Effort | 'auto'
+}
+
 /** What the app knows about the saved API key; the key itself never leaves the main process. */
 export interface ApiKeyStatus {
   saved: boolean
@@ -599,15 +614,14 @@ export interface Settings {
   provider: 'claude-cli' | 'demo'
   cli: {
     path: string | null
-    model: string
-    effort: Effort
+    /** Claude only, used when the Claude model is overloaded */
     fallbackModel: string | null
     timeoutSec: number
-    /** whose usage pays: the Claude Code login (subscription) or an Anthropic API key (API credits) */
+    /** whose usage pays for Claude: the Claude Code login (subscription) or an Anthropic API key (API credits) */
     auth: ClaudeAuth
-    /** model for building course maps from PDFs (bulk work); empty = the tutor's model */
-    mapModel: string
   }
+  /** which provider, model and effort each kind of work uses */
+  tasks: Record<TaskName, TaskModel>
   script: { path: string | null; sendPages: boolean; maxPages: number }
   voice: {
     sttModel: string
@@ -624,7 +638,12 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   activeCourse: 'numcs',
   provider: 'claude-cli',
-  cli: { path: null, model: '', effort: 'medium', fallbackModel: null, timeoutSec: 240, auth: 'subscription', mapModel: '' },
+  cli: { path: null, fallbackModel: null, timeoutSec: 240, auth: 'subscription' },
+  tasks: {
+    tutor: { provider: 'claude', model: '', effort: 'medium' },
+    map: { provider: 'claude', model: '', effort: 'medium' },
+    grading: { provider: 'claude', model: '', effort: 'auto' }
+  },
   script: { path: null, sendPages: true, maxPages: 8 },
   voice: {
     sttModel: 'onnx-community/whisper-base',
@@ -720,10 +739,12 @@ export interface Backend {
   agentSend(chatId: string, text: string): Promise<boolean>
   agentToolResult(chatId: string, callId: string, result: AgentToolResult): Promise<void>
   agentStop(chatId: string): Promise<void>
-  /** Desktop only: the saved Anthropic API key (encrypted with the system keychain). */
-  apiKeyStatus?(): Promise<ApiKeyStatus>
+  /** Desktop only: the saved API key of a provider (encrypted with the system keychain). */
+  apiKeyStatus?(provider: KeyProvider): Promise<ApiKeyStatus>
   /** Desktop only: save a key, or remove it with null. */
-  setApiKey?(key: string | null): Promise<ApiKeyStatus>
+  setApiKey?(provider: KeyProvider, key: string | null): Promise<ApiKeyStatus>
+  /** Models the provider offers (Gemini: listed with the saved key); empty when unknown. */
+  listModels?(provider: Provider): Promise<string[]>
   /** Electron only: run `fn` (save everything) before the window closes. */
   onBeforeQuit?(fn: () => Promise<void>): void
 }

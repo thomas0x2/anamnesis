@@ -268,7 +268,28 @@ async function runChat(page, label, { askMidway = false } = {}) {
   throw new Error(`${label}: the agent session did not finish`)
 }
 
+/**
+ * Math must never show as source: every rendered Markdown element (cards, options, feedback, chat) is checked for
+ * dollar signs or TeX commands left in its visible text (code and KaTeX output excluded).
+ */
+let mathChecks = 0
+async function assertMathRendered(page, where) {
+  const raw = await page.evaluate(() => {
+    const bad = []
+    for (const el of document.querySelectorAll('.md')) {
+      const c = el.cloneNode(true)
+      c.querySelectorAll('code, pre, .katex, .katex-display, textarea, input').forEach((x) => x.remove())
+      const t = (c.textContent || '').replace(/\s+/g, ' ')
+      if (/\$[^$]*[\\^_{]|\\(frac|cdot|varepsilon|approx|times|sum|ell|prod|sqrt|alpha|lambda)\b|\\[()[\]]/.test(t)) bad.push(t.slice(0, 160))
+    }
+    return bad
+  })
+  if (raw.length) throw new Error(`${where}: math shown as source: ${JSON.stringify(raw.slice(0, 3))}`)
+  mathChecks++
+}
+
 async function answerCard(page, card, label) {
+  await assertMathRendered(page, label)
   {
     const kind = ((await card.locator('.kind').first().textContent().catch(() => '')) || '').trim()
     if (shotsDir && kind && !seenKinds.has(kind)) {
@@ -419,6 +440,7 @@ async function flow(page) {
     await nav(page, name).click()
     await page.getByRole('heading', { name: heading, level: 1 }).waitFor()
     step(`${name} screen renders`)
+    await assertMathRendered(page, name)
     if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-screen-${name.replace(/\W+/g, '_')}.png`) })
     if (name === 'Course map') {
       const pctButton = page.locator('.map-zoom .zoom-pct')
@@ -524,5 +546,9 @@ try {
 } finally {
   cleanup()
 }
+if (!failed && !mathChecks) {
+  failed = true
+  console.error('\nE2E failed: math rendering was never checked')
+} else if (!failed) console.log(`· math rendered as KaTeX in all ${mathChecks} checks`)
 console.log(failed ? '\nE2E: FAILED' : '\nE2E: passed')
 process.exit(failed ? 1 : 0)

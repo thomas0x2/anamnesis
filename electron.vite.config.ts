@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { execSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
@@ -26,6 +27,17 @@ export function copyOrtRuntime(): Plugin {
   }
 }
 
+/** The commit this build comes from, with its date (and "+changes" for uncommitted edits), shown in Settings. */
+export function buildId(): string {
+  try {
+    const git = (c: string): string => execSync(`git ${c}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    const dirty = git('status --porcelain --untracked-files=no') ? ' +changes' : ''
+    return `${git('log -1 --format=%h·%cs')}${dirty}`
+  } catch {
+    return 'unknown'
+  }
+}
+
 export default defineConfig({
   main: {
     build: { externalizeDeps: true }
@@ -40,6 +52,7 @@ export default defineConfig({
     root: resolve('src/renderer'),
     publicDir: resolve('src/renderer/public'),
     plugins: [react(), copyOrtRuntime()],
+    define: { __BUILD_ID__: JSON.stringify(buildId()) },
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),

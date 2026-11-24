@@ -54,3 +54,9 @@ function TexImpl({ latex, display = true }: { latex: string; display?: boolean }
 }
 
 export const Tex = memo(TexImpl)
+
+/** Short model-written text (titles, captions, labels): plain when it has no math, else inline Markdown with KaTeX. */
+export function MathText({ text }: { text: string | null | undefined }): ReactElement | null {
+  if (!text) return null
+  return /[$＄]|\\[([]|&#0*36;|&dollar;/i.test(text) ? <Markdown text={text} inline /> : <>{text}</>
+}

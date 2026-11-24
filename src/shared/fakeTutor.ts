@@ -27,7 +27,7 @@ export function probeStep(m: Meta) {
         kind: 'probe',
         title: 'Warm-up: a value by hand',
         nodeId: null,
-        blocks: [{ type: 'text', md: 'Take the nodes $x_0=0, x_1=1, x_2=2$ and the Lagrange polynomial' }, { type: 'equation', latex: '\\ell_1(x)=\\prod_{k\\neq 1}\\frac{x-x_k}{x_1-x_k}' }],
+        blocks: [{ type: 'text', md: 'Take the nodes \\\\$x_0=0, x_1=1, x_2=2\\\\$ and the Lagrange polynomial' /* escaped twice, as Gemini does */ }, { type: 'equation', latex: '\\ell_1(x)=\\prod_{k\\neq 1}\\frac{x-x_k}{x_1-x_k}' }],
         interaction: { type: 'numeric', prompt: 'Compute $\\ell_1(3)$.', answer: { value: '-3', tolerance: 1e-9, relative: false }, hints, solution: '$\\ell_1(3)=\\frac{3}{1}\\cdot\\frac{1}{-1}=-3$.', confidence: true, conceptIds: [c] },
         speech: 'Evaluate l one at three.'
       },
@@ -35,12 +35,12 @@ export function probeStep(m: Meta) {
         kind: 'probe',
         title: 'Warm-up: cost',
         nodeId: null,
-        blocks: [{ type: 'text', md: 'You evaluate $p(x)=\\sum_j y_j\\ell_j(x)$ directly at one point, with $n+1$ nodes.' }],
+        blocks: [{ type: 'text', md: 'You evaluate \\(p(x)=\\sum_j y_j\\ell_j(x)\\) directly at one point, with \\$n+1\\$ nodes.' }],
         interaction: {
           type: 'mcq',
           prompt: 'What does one evaluation cost?',
           options: [
-            { id: 'a', md: '$O(n)$', correct: false, feedback: 'Each term has its own product of about $n$ factors.' },
+            { id: 'a', md: '\\\\(O(n)\\\\)', correct: false, feedback: 'Each term has its own product of about \\$n\\$ factors.' },
             { id: 'b', md: '$O(n^2)$', correct: true, feedback: 'Right: $n+1$ terms times $n$ factors.' },
             { id: 'c', md: '$O(n^3)$', correct: false, feedback: 'That is the cost of solving a dense system.' }
           ],

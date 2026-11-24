@@ -360,7 +360,7 @@ function TableBlock({ headers, rows, caption }: { headers: string[]; rows: strin
           ))}
         </tbody>
       </table>
-      {caption && <div className="block-caption">{caption}</div>}
+      {caption && <div className="block-caption"><Markdown text={caption} inline /></div>}
     </div>
   )
 }

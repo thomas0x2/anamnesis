@@ -7,8 +7,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/check-deps.mjs",
     "dev": "electron-vite dev",
+    "prebuild": "node scripts/check-deps.mjs",
     "build": "electron-vite build",
+    "prestart": "node scripts/check-deps.mjs",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",

@@ -50,6 +50,8 @@ npm install
 npm run dev       # starts the app with hot reload
 ```
 
+After a `git pull`, run `npm ci` before `npm run dev`: the app refuses to start when the installed packages do not match `package-lock.json` (old packages break things quietly, such as math showing as raw `$…$`). Settings shows the build at the bottom (commit and date), so you can check you are on the latest version.
+
 On first start a short welcome tour connects the tutor (it tests the CLI), asks for your copy of `lnNPIinf26.pdf` (the NumCS lecture notes), and lets you tick a few notes about how you learn. The PDF is read once and indexed locally.
 
 To add another course: course menu (next to the logo) → **New course…**, fill in the name and, if you know it, the exam format, choose the folder where you keep its PDFs, and let the app read them. Mapping a set of slides takes about a minute; a long script is read in parts and takes a few minutes. The **Materials** page lists every file, what it added to the map, and lets you change a file's kind, map it again or remove it.

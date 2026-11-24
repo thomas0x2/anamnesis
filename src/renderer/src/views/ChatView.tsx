@@ -155,7 +155,7 @@ export function CardPreview({ it }: { it: ToolItem }): ReactElement {
           <Icon name="spark" size={15} /> {it.name === 'ask' ? 'Writing a question…' : 'Writing…'}
         </span>
       </div>
-      {typeof a.title === 'string' && <div className="card-title">{a.title}</div>}
+      {typeof a.title === 'string' && <div className="card-title"><Markdown text={a.title} inline /></div>}
       {blocks.length > 0 && <Blocks blocks={blocks} live />}
       {prompt && (
         <div className="prompt">

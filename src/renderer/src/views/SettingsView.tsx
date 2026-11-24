@@ -620,7 +620,7 @@ export function SettingsView(): ReactElement {
             </button>
           </Row>
           <div className="tiny muted" style={{ marginTop: 10 }}>
-            Anamnesis {info?.version ?? ''} · {info?.backend === 'electron' ? 'desktop app' : info?.backend === 'http' ? 'browser, dev server' : 'browser demo'}
+            Anamnesis {info?.version ?? ''} · build {typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'unknown'} · {info?.backend === 'electron' ? 'desktop app' : info?.backend === 'http' ? 'browser, dev server' : 'browser demo'}
           </div>
         </div>
       </div>

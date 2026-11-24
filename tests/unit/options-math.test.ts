@@ -36,6 +36,24 @@ describe('math in multiple-choice options', () => {
     expect(isMath('about \\$2.2\\cdot 10^{-16}\\$')).toBe(true)
   })
 
+  it('renders doubly escaped delimiters (a backslash escaped once too often)', () => {
+    const opt = '`False`, because doubles resolve differences down to about '
+    for (const math of ['\\\\$2.2\\cdot 10^{-16}\\\\$', '$2.2\\cdot 10^{-16}\\\\$', '\\\\(2.2\\cdot 10^{-16}\\\\)', '\\\\(2.2\\\\cdot 10^{-16}\\\\)']) {
+      expect(isMath(opt + math)).toBe(true)
+      expect(html(opt + math)).not.toMatch(/\\\(|\$2\.2/)
+    }
+    expect(html('so \\\\[2.2\\cdot 10^{-16}\\\\] holds')).toContain('katex-display')
+    // a matrix line break with spacing inside real math is left as it is
+    expect(normalizeMd('$\\begin{pmatrix}a \\\\[2pt] b\\end{pmatrix}$')).toBe('$\\begin{pmatrix}a \\\\[2pt] b\\end{pmatrix}$')
+  })
+
+  it('renders the option the same way through a Gemini tool call', () => {
+    // Gemini function arguments arrive as parsed JSON; an over-escaped option keeps its doubled backslashes
+    const args = JSON.parse(JSON.stringify({ ...base, options: [{ id: 'b', md: 'about \\\\$2.2\\cdot 10^{-16}\\\\$', correct: true }, { id: 'a', md: 'no', correct: false }] }))
+    const card = normalizeCard(ask(args, [code]), ctx)!
+    expect(isMath(card.interaction!.options!.find((o) => o.id === 'b')!.md)).toBe(true)
+  })
+
   it('leaves escaped prices alone', () => {
     expect(normalizeMd('it costs \\$5 and $x^2$ more')).toBe('it costs \\$5 and $x^2$ more')
   })

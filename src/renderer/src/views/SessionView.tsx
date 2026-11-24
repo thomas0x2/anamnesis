@@ -1,5 +1,6 @@
 // The learning session: a stream of interactive cards, the plan tree, side questions and the results.
 import { masteryMean } from '@shared/mastery'
+import { waitingCards } from '../lib/waiting'
 import { cardRetrievability } from '@shared/fsrs'
 import type { CardResponse, PlanNodeState, Session, StepRecord } from '@shared/types'
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
@@ -301,9 +302,20 @@ function Stream({ sc, v, cc, expanded, toggle }: { sc: SessionController; v: Vie
     }
   }
 
+  // agent sessions: cards the tutor posted while the learner is still on an earlier one wait their turn.
+  // A placeholder holds their place in the conversation, so the tutor's lead-in ("here is the picture:")
+  // doesn't end in nothing and the card doesn't later pop in above newer messages.
+  const waiting = cc && !v.planReview ? waitingCards(s.steps, cursor) : 0
+  let placeholder = false
+  const holdPlace = (): void => {
+    if (!waiting || placeholder) return
+    placeholder = true
+    out.push(<WaitingCards key="waiting" n={waiting} />)
+  }
+
   s.steps.forEach((rec, si) => {
     if (cc) flushItems(si)
-    if (si > cursor.step) return
+    if (si > cursor.step) return holdPlace()
     if (v.planReview && rec.phase === 'teach' && !s.plan?.confirmed) return
     const visible = si < cursor.step ? rec.step.cards.length : Math.min(cursor.card + 1, rec.step.cards.length)
     if (!visible) return
@@ -353,6 +365,7 @@ function Stream({ sc, v, cc, expanded, toggle }: { sc: SessionController; v: Vie
         />
       )
     }
+    if (si === cursor.step && visible < rec.step.cards.length) holdPlace()
   })
 
   if (cc) {
@@ -368,6 +381,28 @@ function Stream({ sc, v, cc, expanded, toggle }: { sc: SessionController; v: Vie
   else if (v.error) out.push(<ErrorCard key="err" sc={sc} v={v} />)
   else if ((cur && cur.pending && cursor.card >= cur.step.cards.length) || (pastEnd && s.phase !== 'done') || (pastEnd && v.status)) out.push(<Thinking key="thinking" sc={sc} v={v} />)
   return <>{out}</>
+}
+
+function WaitingCards({ n }: { n: number }): ReactElement {
+  return (
+    <div className="card-waiting" role="status">
+      <span className="dots" aria-hidden>
+        <i />
+        <i />
+        <i />
+      </span>
+      <span style={{ flex: 1 }}>
+        {n === 1 ? 'The tutor’s next card is ready.' : `The tutor has ${n} cards ready.`} It appears here once you finish the card above.
+      </span>
+      <button
+        type="button"
+        className="btn sm ghost"
+        onClick={() => document.querySelector('.session .card.current')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+      >
+        Go to that card
+      </button>
+    </div>
+  )
 }
 
 function Thinking({ sc, v }: { sc: SessionController; v: View }): ReactElement {

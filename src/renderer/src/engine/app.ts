@@ -4,7 +4,7 @@
 import numcsJson from '@courses/numcs/course.json'
 import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
 import { generateWithRetry } from '@shared/retry'
-import { applyWork, buildWorkPrompt, emptyPrep, fakeWorkOutput, normalizePrep, normalizeWork, solutionFor, WORK_SYSTEM, workFilePath, workSchema } from '@shared/exam'
+import { applyWork, buildWorkPrompt, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
 import { milestoneReward, rewardsForResponse } from '@shared/rewards'
@@ -22,6 +22,7 @@ import type {
   FolderFile,
   Material,
   MaterialsFile,
+  OnlineTask,
   ProfileNote,
   EvidenceKind,
   ModelUpdate,
@@ -651,6 +652,51 @@ export class AppController {
     await this.updatePrep(this.courseId, (p) => ({ ...p, ...patch }))
   }
 
+  /** A problem set or mock exam: a material, or a task added as living online (Code Expert, GitLab…). */
+  workMaterial(id: string): Material | null {
+    const m = this.materials.get().find((x) => x.id === id)
+    if (m) return m
+    const t = onlineTask(this.exam.get(), id)
+    return t ? onlineMaterial(t) : null
+  }
+
+  /** Add a problem set or mock exam that has no PDF (a coding task on Code Expert or GitLab, a Moodle quiz…). */
+  async addOnlineTask(input: Parameters<typeof newOnlineTask>[0]): Promise<string | null> {
+    const t = newOnlineTask(input, new Date())
+    if (!t) return null
+    await this.updatePrep(this.courseId, (p) => ({ ...p, online: [...p.online, t] }))
+    return t.id
+  }
+
+  async updateOnlineTask(id: string, patch: Partial<Omit<OnlineTask, 'id' | 'addedAt'>>): Promise<void> {
+    await this.updatePrep(this.courseId, (p) => ({ ...p, online: p.online.map((t) => (t.id === id ? normalizeOnline({ ...t, ...patch, id: t.id, addedAt: t.addedAt }) ?? t : t)) }))
+  }
+
+  /** Remove an online task with its records (the mind model keeps what it learned from them). */
+  async deleteOnlineTask(id: string): Promise<void> {
+    for (const s of this.exam.get().submissions) if (s.materialId === id) await this.deleteSubmission(s.id)
+    await this.updatePrep(this.courseId, (p) => {
+      const records = { ...p.records }
+      delete records[id]
+      return { ...p, online: p.online.filter((t) => t.id !== id), records, submissions: p.submissions.filter((s) => s.materialId !== id) }
+    })
+  }
+
+  /** Log a result without files (e.g. tests passed on Code Expert, points on Moodle): marks it done and updates the concepts it practises, with less weight than a checked solution. */
+  async reportWork(input: ReportInput): Promise<boolean> {
+    const m = this.workMaterial(input.materialId)
+    if (!m) return false
+    const prep = this.exam.get()
+    const concepts = practisedConcepts(m, this.course.concepts, prep).filter((id) => !!this.graph.get(id))
+    const sub = reportedSubmission({ ...input, examConditions: m.kind === 'exam' && input.examConditions }, concepts, new Date())
+    if (!sub) return false
+    const courseId = this.courseId
+    await this.applyWorkToLearner(courseId, sub, m, [], (id) => this.graph.title(id))
+    await this.updatePrep(courseId, (p) => ({ ...p, submissions: [...p.submissions, { ...sub, applied: true }] }))
+    this.toast({ kind: 'info', text: concepts.length ? `${m.title}: logged. The mind model was updated.` : `${m.title}: logged.` }, 5000)
+    return true
+  }
+
   /** Mark a problem set or mock exam as started or done by hand (without a checked solution). */
   async setWorkStatus(materialId: string, status: WorkRecord['status']): Promise<void> {
     await this.updatePrep(this.courseId, (p) => ({ ...p, records: { ...p.records, [materialId]: { status, doneAt: status === 'done' ? nowIso() : null } } }))
@@ -658,13 +704,13 @@ export class AppController {
 
   /** Save the learner's solution and have it checked; the result updates the learner model. */
   async submitWork(input: WorkInput): Promise<string | null> {
-    const m = this.materials.get().find((x) => x.id === input.materialId)
+    const m = this.workMaterial(input.materialId)
     if (!m) return null
     const id = uid('w_')
     const files = input.files.length ? await this.backend.saveWork(this.courseId, id, input.files) : []
     const text = input.text?.trim() || null
     if (input.files.length && !files.length && !text) {
-      this.toast({ kind: 'error', text: 'Those files could not be read. Use PDF, PNG, JPG or text files.' })
+      this.toast({ kind: 'error', text: 'Those files could not be read. Use PDF, PNG, JPG, text or source code files.' })
       return null
     }
     const sub: Submission = {
@@ -694,7 +740,7 @@ export class AppController {
   /** Check a submission again (after an error, or when the learner disagrees with the grade). */
   async regradeWork(submissionId: string): Promise<void> {
     const sub = this.exam.get().submissions.find((x) => x.id === submissionId)
-    if (!sub || this.grading.has(sub.id)) return
+    if (!sub || this.grading.has(sub.id) || sub.source === 'reported') return
     const next: Submission = { ...sub, status: 'grading', error: null }
     await this.updatePrep(this.courseId, (p) => ({ ...p, submissions: p.submissions.map((x) => (x.id === sub.id ? next : x)) }))
     void this.gradeWork(next)
@@ -713,11 +759,13 @@ export class AppController {
     const course = this.course
     const graph = this.graph
     const materials = this.materials.get()
-    const m = materials.find((x) => x.id === sub.materialId)
+    const m = this.workMaterial(sub.materialId)
     if (!m) return
+    const online = onlineTask(this.exam.get(), m.id)
     const pagesOf = (x: typeof m): { label: string; text: string }[] => (this.script.materialText(x.id)?.pages ?? []).map((text, i) => ({ label: `${x.title}, page ${i + 1}`, text }))
     const sol = solutionFor(m, materials)
     const linked = (c: (typeof course.concepts)[number]): boolean =>
+      !!online?.conceptIds.includes(c.id) ||
       c.material === m.id || !!c.exercises?.some((e) => e.material === m.id) || !!c.sources?.some((e) => e.material === m.id) || (!!sol && !!c.exercises?.some((e) => e.material === sol.id))
     const concepts = [...course.concepts.filter(linked), ...course.concepts.filter((c) => !linked(c))].map((c) => ({ id: c.id, title: c.title }))
     const reqId = uid('work_')
@@ -726,7 +774,7 @@ export class AppController {
       id: reqId,
       kind: 'work',
       system: WORK_SYSTEM,
-      prompt: buildWorkPrompt({ course, material: m, problem: pagesOf(m), solution: sol ? pagesOf(sol) : [], concepts, fileCount: sub.files.length, text: sub.text, help: sub.help, examConditions: sub.examConditions, minutes: sub.minutes }),
+      prompt: buildWorkPrompt({ course, material: m, problem: pagesOf(m), solution: sol ? pagesOf(sol) : [], concepts, fileCount: sub.files.length, text: sub.text, help: sub.help, examConditions: sub.examConditions, minutes: sub.minutes, platform: online?.platform || (online ? 'an online platform' : null), statement: online?.statement ?? null }),
       schema: workSchema,
       effort: 'high',
       timeoutSec: 900,

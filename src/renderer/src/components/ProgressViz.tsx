@@ -91,7 +91,7 @@ export function ExamPace(): ReactElement {
   const now = useNow()
   const p = prepProgress(prep, materials, now)
   const goal = p.sets.total + p.mocks.goal
-  const { sets, mocks } = workItems(materials)
+  const { sets, mocks } = workItems(materials, prep)
   const doneTimes = [...sets, ...mocks]
     .map((m) => {
       const ws = workState(prep, m.id)

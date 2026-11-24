@@ -16,7 +16,14 @@ import {
   prepSummary,
   solutionFor,
   workEvidence,
+  cleanUrl,
+  newOnlineTask,
+  onlineMaterial,
+  practisedConcepts,
+  reportedSubmission,
+  REPORTED_WEIGHT,
   workFileName,
+  workItems,
   workState
 } from '../../src/shared/exam'
 import { resolveWorkFiles, saveWork } from '../../src/node/files'
@@ -177,18 +184,94 @@ describe('exam preparation', () => {
   })
 })
 
+describe('problem sets that live online (Code Expert, GitLab…)', () => {
+  const now = new Date('2026-11-24T20:00:00Z')
+
+  it('keeps online tasks in the exam file, defensively', () => {
+    const t = newOnlineTask({ kind: 'exercises', title: '  Exercise 7: Linked lists ', platform: 'Code Expert', url: 'expert.ethz.ch/x', conceptIds: ['lists', 'lists'] }, now)
+    expect(t?.id).toMatch(/^ot_/)
+    expect(t?.title).toBe('Exercise 7: Linked lists')
+    expect(t?.url).toBe('https://expert.ethz.ch/x')
+    expect(t?.conceptIds).toEqual(['lists'])
+    expect(newOnlineTask({ kind: 'exam', title: '  ' }, now)).toBeNull()
+    expect(cleanUrl('javascript:alert(1)')).toBeNull()
+    expect(cleanUrl('')).toBeNull()
+    const p = normalizePrep({ online: [t, { id: 'bad id', title: 'x' }, { id: 'ot_2', title: 'Mock', kind: 'exam', url: 'file:///etc' }, null] })
+    expect(p.online.map((x) => x.id)).toEqual([t?.id, 'ot_2'])
+    expect(p.online[1].url).toBeNull()
+    expect(normalizePrep({}).online).toEqual([])
+  })
+
+  it('counts online tasks towards the goal like PDFs', () => {
+    const t1 = newOnlineTask({ kind: 'exercises', title: 'Serie 2 (Code Expert)' }, now)!
+    const t2 = newOnlineTask({ kind: 'exam', title: 'Practice exam' }, now)!
+    const prep: ExamPrep = { ...emptyPrep(), problemSets: 4, online: [t1, t2], records: { [t1.id]: { status: 'done', doneAt: now.toISOString() } } }
+    const materials = [mat('s1', 'Serie1.pdf'), mat('s3', 'Serie3.pdf')]
+    const items = workItems(materials, prep)
+    expect(items.sets.map((m) => m.id)).toEqual(['s1', t1.id, 's3'])
+    expect(items.mocks.map((m) => m.id)).toEqual([t2.id])
+    expect(workItems(materials).sets).toHaveLength(2)
+    const p = prepProgress(prep, materials, now)
+    expect(p.sets).toEqual({ done: 1, added: 3, total: 4 })
+    expect(p.mocks.added).toBe(1)
+    expect(onlineMaterial(t1).numPages).toBe(0)
+  })
+
+  it('logs a result as evidence with less weight than a checked solution', () => {
+    const t = newOnlineTask({ kind: 'exercises', title: 'Exercise 7', conceptIds: ['lists', 'malloc'] }, now)!
+    const m = onlineMaterial(t)
+    const concepts = practisedConcepts(m, [], { online: [t] })
+    expect(concepts).toEqual(['lists', 'malloc'])
+    expect(reportedSubmission({ materialId: t.id, points: 9, max: 8, note: null, help: 'alone', minutes: null, examConditions: false }, concepts, now)).toBeNull()
+    expect(reportedSubmission({ materialId: t.id, points: 1, max: 0, note: null, help: 'alone', minutes: null, examConditions: false }, concepts, now)).toBeNull()
+    const s = reportedSubmission({ materialId: t.id, points: 6, max: 8, note: 'free() was tricky', help: 'alone', minutes: 50, examConditions: false }, concepts, now)!
+    expect(s.source).toBe('reported')
+    expect(s.score).toBe(0.75)
+    expect(s.tasks[0].verdict).toBe('partial')
+    expect(s.reported).toEqual({ points: 6, max: 8, note: 'free() was tricky' })
+    const ev = workEvidence(s, m)
+    expect(ev.map((e) => e.conceptId)).toEqual(['lists', 'malloc'])
+    expect(ev[0].weightScale).toBe(REPORTED_WEIGHT)
+    expect(ev[1].weightScale).toBeCloseTo(0.6 * REPORTED_WEIGHT)
+    const prep: ExamPrep = { ...emptyPrep(), online: [t], submissions: [s] }
+    expect(workState(prep, t.id).done).toBe(true)
+    expect(workState(prep, t.id).best).toBe(0.75)
+    const out = applyWork({ profile: [], concepts: {} }, s, m, [], (id) => id, now)
+    expect(out.learner.concepts.lists.evidence).toHaveLength(1)
+    expect(out.rewards[0].points).toBe(Math.round(20 * 0.75 * REPORTED_WEIGHT))
+    expect(out.rewards[0].reason).toContain('6/8')
+    // a PDF problem set practises the concepts the map links to it
+    const pdf = mat('s3', 'Serie3.pdf')
+    expect(practisedConcepts(pdf, [{ id: 'a', material: 's3' }, { id: 'b', exercises: [{ material: 's3' }] }, { id: 'c' }] as unknown as Course['concepts'], { online: [] })).toEqual(['a', 'b'])
+  })
+
+  it('asks the grader to read code against the pasted statement', () => {
+    const course = { title: 'SPCA', term: 'HS26', exam: { format: '', codeLanguage: 'C' } } as Course
+    const t = newOnlineTask({ kind: 'exercises', title: 'Exercise 7', platform: 'Code Expert' }, now)!
+    const base = { course, material: onlineMaterial(t), problem: [], solution: [], concepts: [], fileCount: 1, text: null, help: 'alone' as const, examConditions: false, minutes: null, platform: 'Code Expert' }
+    const withStatement = buildWorkPrompt({ ...base, statement: 'Implement list_reverse().' })
+    expect(withStatement).toContain('# Problem set: Exercise 7 (on Code Expert)')
+    expect(withStatement).toContain('<statement>\nImplement list_reverse().')
+    const without = buildWorkPrompt({ ...base, statement: null })
+    expect(without).toContain('The task statement is on Code Expert and was not given')
+  })
+})
+
 describe('solution files', () => {
   it('keeps only readable kinds under safe names', () => {
     expect(workFileName('Serie 3 (final).PDF', 0)).toBe('01-Serie_3_final.pdf')
     expect(workFileName('../../etc/passwd', 1)).toBeNull()
     expect(workFileName('photo.heic', 2)).toBeNull()
+    expect(workFileName('linked list.c', 3)).toBe('04-linked_list.c')
+    expect(workFileName('solve.py', 4)).toBe('05-solve.py')
+    expect(workFileName('a.out', 5)).toBeNull()
   })
 
   it('saves files in the data folder and resolves only those paths', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'anam-work-'))
     const saved = await saveWork(dir, 'spca', 'w_abc', [
       { name: 'page1.png', bytes: new Uint8Array([1, 2, 3]) },
-      { name: 'evil.sh', bytes: new Uint8Array([1]) }
+      { name: 'evil.exe', bytes: new Uint8Array([1]) }
     ])
     expect(saved).toEqual([{ name: '01-page1.png', size: 3 }])
     expect(await saveWork(dir, '../x', 'w', [{ name: 'a.png', bytes: new Uint8Array([1]) }])).toEqual([])

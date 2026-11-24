@@ -4730,6 +4730,46 @@ b {
 .work-body {
   padding: 0 0 14px 21px;
 }
+.work-title .work-platform {
+  flex: none;
+  font-size: 10.5px;
+  padding: 1px 7px;
+}
+.online-info {
+  padding: 4px 0 10px;
+  border-bottom: 1px dashed var(--line);
+  margin-bottom: 2px;
+}
+.concept-pick {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  max-height: 220px;
+  overflow: auto;
+}
+.concept-pick-item {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.concept-pick-item:last-child {
+  border-bottom: 0;
+}
+.concept-pick-item:hover,
+.concept-pick-item:focus-visible {
+  background: var(--accent-soft);
+  color: var(--text);
+  outline: none;
+}
+.textarea.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
 .submission {
   padding: 12px 0;
   border-top: 1px dashed var(--line);

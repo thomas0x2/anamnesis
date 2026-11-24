@@ -272,7 +272,7 @@ function ExamNotice(): ReactElement {
   const materials = useStore(app.materials)
   const now = useNow()
   const p = prepProgress(prep, materials, now)
-  const { sets } = workItems(materials)
+  const { sets } = workItems(materials, prep)
   const open = [...sets].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).find((m) => !workState(prep, m.id).done)
   const over = p.daysLeft !== null && p.daysLeft < 0
   return (

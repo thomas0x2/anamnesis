@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from './agentTypes'
+import type { CloudSttRequest } from './stt'
 // Domain types shared by the Electron main process, the renderer and the tests.
 
 // ---------------------------------------------------------------- course map
@@ -745,6 +746,8 @@ export interface Backend {
   setApiKey?(provider: KeyProvider, key: string | null): Promise<ApiKeyStatus>
   /** Models the provider offers (Gemini: listed with the saved key); empty when unknown. */
   listModels?(provider: Provider): Promise<string[]>
+  /** Desktop only: transcribe a recording with Gemini (Settings → Voice → Gemini), using the saved Google key. */
+  transcribeCloud?(req: CloudSttRequest): Promise<{ ok: true; text: string; model: string } | { ok: false; error: string }>
   /** Electron only: run `fn` (save everything) before the window closes. */
   onBeforeQuit?(fn: () => Promise<void>): void
 }

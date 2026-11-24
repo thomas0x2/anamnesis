@@ -3,11 +3,12 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
-import { MODEL_SUGGESTIONS, routeFor, type Route } from '../shared/models'
+import { GEMINI_DEFAULT_MODEL, MODEL_SUGGESTIONS, routeFor, type Route } from '../shared/models'
 import type { KeyProvider, LlmErrorKind, LlmEvent, LlmRequest, LlmResult, LlmTestResult, Provider, Settings } from '../shared/types'
 import { AgentHost } from './agent'
 import { cancelClaude, runClaude, testClaude, type CliConfig } from './claudeCli'
-import { cancelGemini, listGeminiModels, runGemini, testGemini, type GeminiConfig } from './gemini'
+import { cancelGemini, listGeminiModels, runGemini, testGemini, transcribeGemini, type GeminiConfig } from './gemini'
+import type { CloudSttRequest } from '../shared/stt'
 import { GeminiAgentHost } from './geminiAgent'
 
 export interface ProviderDeps {
@@ -60,6 +61,13 @@ export class Providers {
   test(s: Settings): Promise<LlmTestResult> {
     const route = routeFor('step', s)
     return route.provider === 'gemini' ? testGemini(this.geminiConfig(s, route)) : testClaude(this.cliConfig(s, route))
+  }
+
+  /** Speech to text on Gemini: the tutor's Gemini model when the tutor runs on Gemini, else the default one; low thinking for speed. */
+  transcribe(req: CloudSttRequest, s: Settings): Promise<{ ok: true; text: string; model: string } | { ok: false; error: string }> {
+    const tutor = routeFor('chat', s)
+    const model = tutor.provider === 'gemini' && tutor.model ? tutor.model : GEMINI_DEFAULT_MODEL
+    return transcribeGemini(req, { apiKey: this.deps.key('google'), model, effort: 'low', timeoutSec: s.cli.timeoutSec, fetch: this.deps.fetch })
   }
 
   async listModels(p: Provider): Promise<string[]> {

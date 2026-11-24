@@ -1,4 +1,4 @@
-// Microphone button (local Whisper transcription) and the read-aloud button.
+// Microphone button (local Whisper, or Gemini when chosen in Settings → Voice) and the read-aloud button.
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useApp } from "../engine/app";
 import { useStore } from "../engine/store";
@@ -9,11 +9,12 @@ import {
   stopSpeaking,
   transcriber,
 } from "../voice/voice";
+import { encodeWav, GEMINI_STT, LOCAL_STT_FALLBACK, sttContext, toBase64 } from "@shared/stt";
 import { Icon } from "./Icon";
 
 export type DictationPhase = "idle" | "recording" | "working";
 
-/** Local dictation: toggle() starts recording, the next toggle() stops and transcribes into onText. */
+/** Dictation: toggle() starts recording, the next toggle() stops and transcribes into onText. */
 export function useDictation(onText: (text: string) => void): {
   phase: DictationPhase;
   toggle: () => Promise<void>;
@@ -24,6 +25,9 @@ export function useDictation(onText: (text: string) => void): {
   const voice = useStore(app.settings, (s) => s.voice);
   const stt = useStore(transcriber.status, (s) => s);
   const [phase, setPhase] = useState<DictationPhase>("idle");
+  const cloud = voice.sttModel === GEMINI_STT && !!app.backend.transcribeCloud;
+  const [usingCloud, setUsingCloud] = useState(false);
+  const localModel = voice.sttModel === GEMINI_STT ? LOCAL_STT_FALLBACK : voice.sttModel;
   const rec = useRef<Recorder | null>(null);
   const cb = useRef(onText);
   cb.current = onText;
@@ -33,7 +37,7 @@ export function useDictation(onText: (text: string) => void): {
     if (phase === "working") return;
     if (phase === "idle") {
       try {
-        transcriber.preload(voice.sttModel);
+        if (!cloud) transcriber.preload(localModel);
         rec.current = new Recorder();
         await rec.current.start();
         setPhase("recording");
@@ -53,11 +57,36 @@ export function useDictation(onText: (text: string) => void): {
         setPhase("idle");
         return;
       }
-      const text = await transcriber.transcribe(
-        audio,
-        voice.sttModel,
-        voice.sttLanguage,
-      );
+      let text: string | null = null;
+      if (cloud) {
+        // Gemini: the recording goes to Google with the course's name and topics, so terms and math come out right
+        setUsingCloud(true);
+        const graph = app.graph;
+        const context = sttContext(
+          app.course,
+          [...graph.byId.values()].map((c) => c.title),
+        );
+        const r = await app.backend
+          .transcribeCloud!({
+            audio: toBase64(encodeWav(audio)),
+            context,
+            language: voice.sttLanguage,
+          })
+          .catch((e: unknown) => ({ ok: false as const, error: String((e as Error)?.message ?? e) }));
+        setUsingCloud(false);
+        if (r.ok) text = r.text;
+        else
+          app.toast({
+            kind: "info",
+            text: `Gemini could not transcribe (${r.error}), so this computer did instead.`,
+          });
+      }
+      if (text === null)
+        text = await transcriber.transcribe(
+          audio,
+          localModel,
+          voice.sttLanguage,
+        );
       if (text) cb.current(text);
       else
         app.toast({
@@ -75,7 +104,9 @@ export function useDictation(onText: (text: string) => void): {
   };
   const loading =
     phase === "working"
-      ? stt.state === "loading"
+      ? usingCloud
+        ? "Transcribing with Gemini…"
+        : stt.state === "loading"
         ? `Loading the speech model${stt.total ? ` ${Math.round((100 * stt.loaded) / stt.total)}%` : ""} (first time only)`
         : "Transcribing on this computer…"
       : null;
@@ -96,10 +127,15 @@ export function VoiceButton({
   text?: string;
 }): ReactElement {
   const { phase, toggle, loading } = useDictation(onText);
+  const app = useApp();
+  const voice = useStore(app.settings, (s) => s.voice);
   const label =
     phase === "recording"
       ? "Listening… click to stop"
-      : (loading ?? "Answer by voice (transcribed locally)");
+      : (loading ??
+        (voice.sttModel === GEMINI_STT
+          ? "Answer by voice (transcribed by Gemini)"
+          : "Answer by voice (transcribed locally)"));
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
       <button

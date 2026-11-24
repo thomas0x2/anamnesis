@@ -29,6 +29,7 @@ const api = {
   apiKeyStatus: (provider: string) => ipcRenderer.invoke('apikey:status', provider),
   setApiKey: (provider: string, key: string | null) => ipcRenderer.invoke('apikey:set', provider, key),
   listModels: (provider: string) => ipcRenderer.invoke('models:list', provider),
+  transcribeCloud: (req: unknown) => ipcRenderer.invoke('stt:cloud', req),
   testLlm: () => ipcRenderer.invoke('llm:test'),
   readJson: (name: string) => ipcRenderer.invoke('store:read', name),
   writeJson: (name: string, data: unknown) => ipcRenderer.invoke('store:write', name, data),

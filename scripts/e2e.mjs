@@ -442,6 +442,17 @@ async function flow(page) {
   step('guided session (classic mode)')
   await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('button', { name: 'Guided sessions' }).click()
+  if (electronMode) {
+    // speech to text can go to Gemini; the settings say plainly that the recording then leaves the computer
+    const sttSelect = page.getByLabel('Speech recognition model')
+    const before = await sttSelect.inputValue()
+    await sttSelect.selectOption('gemini')
+    await page.getByText('sent to Google').waitFor()
+    await page.getByText('Prepare the local fallback').waitFor()
+    await sttSelect.selectOption(before)
+    await page.getByText('audio never leaves your Mac').waitFor()
+    step('speech recognition can be switched to Gemini, with the privacy note')
+  }
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
   if (!((await runSession(page, 'practice')) > 0)) throw new Error('the practice session earned no points')

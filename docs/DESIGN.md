@@ -291,7 +291,7 @@ Settings → Data exports the learner model, answers and points as one JSON file
 
 ## Voice
 
-`src/renderer/src/voice/`. Speech to text runs Whisper through transformers.js in a web worker, on WebGPU when available and WASM otherwise. The model (tiny, base or small, English-only or multilingual) is downloaded once from Hugging Face and cached, and audio never leaves the computer. Speech output uses the system voices through the Web Speech API and reads each card's `speech` field: a short spoken version of the card with the maths said out loud.
+`src/renderer/src/voice/`. Speech to text runs Whisper through transformers.js in a web worker, on WebGPU when available and WASM otherwise. The model (tiny, base or small, English-only or multilingual) is downloaded once from Hugging Face and cached, and audio never leaves the computer. With **Gemini** chosen as the speech recognition model (`sttModel: 'gemini'`), the recording is encoded as 16 kHz WAV and sent from the main process to `generateContent` with the Google key, inline, together with a prompt holding the course name and concept titles: transcribe verbatim, never translate, write spoken math as LaTeX (`src/shared/stt.ts`, `transcribeGemini` in `src/node/gemini.ts`). It uses the tutor's Gemini model if the tutor runs on Gemini, else the default Gemini model, with low thinking. If it fails (no key, offline, an error) the local Whisper Base transcribes instead and a note says so. Speech output uses the system voices through the Web Speech API and reads each card's `speech` field: a short spoken version of the card with the maths said out loud.
 
 ## Visuals
 

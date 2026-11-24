@@ -10,6 +10,7 @@ import { fileInfo, readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '..
 import type { DeepPartial, KeyProvider, LlmRequest, Provider, Settings } from '../shared/types'
 import { looksLikeGoogleKey, routeFor } from '../shared/models'
 import { addUsage, looksLikeApiKey, normalizeUsage } from '../shared/usage'
+import type { CloudSttRequest } from '../shared/stt'
 import { ApiKeyVault } from './apiKey'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
@@ -171,6 +172,13 @@ function registerIpc(): void {
   })
   ipcMain.handle('apikey:status', (_e, p: unknown) => vaults[keyProvider(p)].status())
   ipcMain.handle('apikey:set', (_e, p: unknown, key: unknown) => vaults[keyProvider(p)].set(typeof key === 'string' ? key : null))
+  ipcMain.handle('stt:cloud', async (_e, req: unknown) => {
+    const r = (req ?? {}) as Partial<CloudSttRequest>
+    const settings = await loadSettings(store)
+    const out = await providers.transcribe({ audio: String(r.audio ?? ''), context: String(r.context ?? '').slice(0, 4000), language: String(r.language ?? 'english') }, settings)
+    if (out.ok) recordUsage('stt', null, settings, 'gemini')
+    return out
+  })
   ipcMain.handle('models:list', (_e, p: unknown) => providers.listModels(p === 'gemini' ? 'gemini' : 'claude'))
   ipcMain.handle('llm:cancel', (_e, id: string) => providers.cancel(id))
   ipcMain.handle('llm:test', async () => providers.test(await loadSettings(store)))

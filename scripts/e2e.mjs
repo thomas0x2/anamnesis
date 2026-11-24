@@ -432,19 +432,19 @@ async function flow(page) {
   await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor()
   step('Settings screen renders')
   // paying with API credits instead of the subscription (the scripted tutor still answers: ANAMNESIS_FAKE)
-  await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
+  await page.getByRole('button', { name: 'Claude or Gemini', exact: true }).click()
   await page.getByRole('button', { name: 'API credits' }).click()
   if (electronMode) {
-    const keyBox = page.getByLabel('Anthropic API key')
+    const keyBox = page.getByRole('textbox', { name: 'Anthropic API key' })
     await keyBox.fill('not-a-key')
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.getByRole('button', { name: 'Save the Anthropic API key' }).click()
     await page.getByText('does not look like an Anthropic API key').waitFor()
     const canStore = await page.getByText('No encrypted storage on this system').count()
     if (!canStore) {
       await keyBox.fill('sk-ant-api03-e2e-' + 'x'.repeat(40))
-      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await page.getByRole('button', { name: 'Save the Anthropic API key' }).click()
       await page.getByText('sk-ant-…xxxx').waitFor()
-      await page.getByRole('button', { name: 'Remove', exact: true }).click()
+      await page.getByRole('button', { name: 'Remove the Anthropic API key' }).click()
       await keyBox.waitFor()
     }
     step(`API credits: a malformed key is refused${canStore ? ' (no keychain here, so saving is refused too)' : ', a key is saved encrypted and removed'}`)
@@ -452,12 +452,27 @@ async function flow(page) {
     await page.getByText('ANTHROPIC_API_KEY').waitFor()
     step('API credits: the browser version points to ANTHROPIC_API_KEY')
   }
-  await page.getByRole('button', { name: 'Haiku' }).click()
   await page.getByText(/Today \$/).waitFor()
   await page.getByRole('button', { name: 'Claude subscription' }).click()
-  await page.getByRole('button', { name: 'Same as tutor' }).click()
+
+  // a model per task: course maps on Gemini asks for a Google key; the model and effort are saved
+  const mapProvider = page.getByRole('group', { name: 'Course maps: provider' })
+  await mapProvider.getByRole('button', { name: 'Gemini' }).click()
+  if (electronMode) await page.getByRole('textbox', { name: 'Google AI API key' }).waitFor()
+  else await page.getByText('GEMINI_API_KEY').waitFor()
+  const mapModel = page.getByLabel('Course maps: model')
+  await mapModel.fill('gemini-3.5-flash-lite')
+  await mapModel.press('Enter')
+  await page.getByRole('group', { name: 'Course maps: effort' }).getByRole('button', { name: 'Low' }).click()
+  // Gemini thinking stops at high
+  if (await page.getByRole('group', { name: 'Course maps: effort' }).getByRole('button', { name: 'Max' }).count()) throw new Error('Gemini offers a Max effort')
+  await page.waitForFunction(() => document.querySelector('[aria-label="Course maps: model"]')?.value === 'gemini-3.5-flash-lite')
+  await mapProvider.getByRole('button', { name: 'Claude' }).click()
+  await page.getByRole('row', { name: 'Google AI API key' }).or(page.getByText('Google AI API key', { exact: true })).waitFor({ state: 'detached', timeout: 5000 }).catch(() => {
+    throw new Error('the Google key row stays without a Gemini task')
+  })
   await page.getByRole('button', { name: 'Demo tutor', exact: true }).click()
-  step('map model and cost rows work')
+  step('a model per task: switching course maps to Gemini asks for a Google key, effort levels follow the provider')
   if (!electronMode) await coursesFlow(page)
   else {
     // a dialog opened from the top bar must sit outside its window-drag region: on macOS that region

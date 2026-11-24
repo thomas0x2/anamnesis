@@ -1,5 +1,6 @@
 // Settings: the tutor (Claude Code CLI), the lecture notes, voice, scheduling and your data.
-import type { ApiKeyStatus, AppInfo, Effort, LlmTestResult, Settings } from '@shared/types'
+import type { ApiKeyStatus, AppInfo, KeyProvider, LlmTestResult, Settings, TaskModel } from '@shared/types'
+import { clampEffort, EFFORTS, GEMINI_DEFAULT_MODEL, MODEL_SUGGESTIONS, PROVIDERS, TASKS } from '@shared/models'
 import { formatUsd, normalizeUsage, usageSummary, type UsageDay, type UsageSummary } from '@shared/usage'
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Icon } from '../components/Icon'
@@ -15,13 +16,6 @@ export const STT_MODELS: { id: string; label: string }[] = [
   { id: 'onnx-community/whisper-small', label: 'Small, English and German (best, ~250 MB)' }
 ]
 
-const EFFORTS: { id: Effort; label: string }[] = [
-  { id: 'low', label: 'Low' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'high', label: 'High' },
-  { id: 'xhigh', label: 'Extra' },
-  { id: 'max', label: 'Max' }
-]
 
 function Row({ name, desc, children }: { name: string; desc?: ReactNode; children: ReactNode }): ReactElement {
   return (
@@ -40,7 +34,7 @@ export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boo
 }
 
 /** A text input that saves when it loses focus or on Enter. */
-function TextSetting({ value, placeholder, onSave, width = 240 }: { value: string; placeholder?: string; onSave: (v: string) => void; width?: number }): ReactElement {
+function TextSetting({ value, placeholder, onSave, width = 240, list, label }: { value: string; placeholder?: string; onSave: (v: string) => void; width?: number; list?: string; label?: string }): ReactElement {
   const [v, setV] = useState(value)
   useEffect(() => setV(value), [value])
   return (
@@ -49,6 +43,8 @@ function TextSetting({ value, placeholder, onSave, width = 240 }: { value: strin
       style={{ width }}
       value={v}
       placeholder={placeholder}
+      list={list}
+      aria-label={label}
       onChange={(e) => setV(e.target.value)}
       onBlur={() => v !== value && onSave(v.trim())}
       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
@@ -56,50 +52,102 @@ function TextSetting({ value, placeholder, onSave, width = 240 }: { value: strin
   )
 }
 
-const MAP_MODELS: { id: string; label: string }[] = [
-  { id: '', label: 'Same as tutor' },
-  { id: 'sonnet', label: 'Sonnet' },
-  { id: 'haiku', label: 'Haiku' }
-]
-
 const CONSOLE_KEYS = 'https://console.anthropic.com/settings/keys'
 const CONSOLE_BILLING = 'https://console.anthropic.com/settings/billing'
+const AISTUDIO_KEYS = 'https://aistudio.google.com/apikey'
 
-/** Subscription or API credits, and the API key (saved encrypted by the desktop app). */
-function AccountRows({ s, save }: { s: Settings; save: (p: Parameters<ReturnType<typeof useApp>['saveSettings']>[0]) => void }): ReactElement {
+type Save = (p: Parameters<ReturnType<typeof useApp>['saveSettings']>[0]) => void
+
+function ExtLink({ url, children }: { url: string; children: ReactNode }): ReactElement {
   const app = useApp()
-  const desktop = !!app.backend.apiKeyStatus
+  return (
+    <a href={url} onClick={(e) => (e.preventDefault(), void app.backend.openExternal(url))}>
+      {children}
+    </a>
+  )
+}
+
+const KEY_INFO: Record<KeyProvider, { label: string; placeholder: string; prefix: string; env: string }> = {
+  anthropic: { label: 'Anthropic API key', placeholder: 'sk-ant-…', prefix: 'sk-ant-', env: 'ANTHROPIC_API_KEY' },
+  google: { label: 'Google AI API key', placeholder: 'AIza…', prefix: '', env: 'GEMINI_API_KEY' }
+}
+
+/** An API key, saved encrypted by the desktop app; the renderer only ever sees its last characters. */
+function KeyField({ provider, onSaved }: { provider: KeyProvider; onSaved?: () => void }): ReactElement {
+  const app = useApp()
+  const info = KEY_INFO[provider]
   const [key, setKey] = useState<ApiKeyStatus | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    void app.backend.apiKeyStatus?.().then(setKey)
-  }, [app])
+    void app.backend.apiKeyStatus?.(provider).then(setKey)
+  }, [app, provider])
+  if (!app.backend.apiKeyStatus) {
+    return (
+      <span className="small muted">
+        The browser version reads <code>{info.env}</code> from the dev server’s environment.
+      </span>
+    )
+  }
   const store = async (k: string | null): Promise<void> => {
     if (!app.backend.setApiKey) return
     setBusy(true)
     try {
-      const st = await app.backend.setApiKey(k)
+      const st = await app.backend.setApiKey(provider, k)
       setKey(st)
       if (!st.error) setDraft('')
-      if (!st.error && k && s.cli.auth !== 'api-key') save({ cli: { auth: 'api-key' } })
+      if (!st.error && k) onSaved?.()
     } finally {
       setBusy(false)
     }
   }
-  const link = (url: string, text: string): ReactElement => (
-    <a href={url} onClick={(e) => (e.preventDefault(), void app.backend.openExternal(url))}>
-      {text}
-    </a>
+  return (
+    <div className="stack" style={{ gap: 6, alignItems: 'flex-end' }}>
+      {key?.saved ? (
+        <span className="row" style={{ gap: 8 }}>
+          <span className="small mono">
+            {info.prefix}
+            {key.hint}
+          </span>
+          <button className="btn sm ghost" disabled={busy} onClick={() => void store(null)} aria-label={`Remove the ${info.label}`}>
+            Remove
+          </button>
+        </span>
+      ) : (
+        <span className="row" style={{ gap: 6 }}>
+          <input
+            className="input"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            style={{ width: 220 }}
+            placeholder={info.placeholder}
+            aria-label={info.label}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && draft.trim() && void store(draft)}
+          />
+          <button className="btn sm" disabled={busy || !draft.trim()} onClick={() => void store(draft)} aria-label={`Save the ${info.label}`}>
+            Save
+          </button>
+        </span>
+      )}
+      {key?.error && <span className="tiny" style={{ color: 'var(--bad)' }}>{key.error}</span>}
+      {key && !key.saved && !key.canStore && <span className="tiny" style={{ color: 'var(--bad)' }}>No encrypted storage on this system.</span>}
+    </div>
   )
+}
+
+/** Claude: subscription or API credits, and the Anthropic key. */
+function ClaudeAccountRows({ s, save }: { s: Settings; save: Save }): ReactElement {
   return (
     <>
       <Row
-        name="Account"
+        name="Claude account"
         desc={
           s.cli.auth === 'api-key'
-            ? 'Calls are billed to your Anthropic API key (pay as you go with API credits), not your Claude plan.'
-            : 'Calls count toward your Claude plan’s usage limits. Switch to API credits if you keep running out.'
+            ? 'Claude calls are billed to your Anthropic API key (pay as you go with API credits), not your Claude plan.'
+            : 'Claude calls count toward your Claude plan’s usage limits. Switch to API credits if you keep running out.'
         }
       >
         <span className="seg">
@@ -113,60 +161,97 @@ function AccountRows({ s, save }: { s: Settings; save: (p: Parameters<ReturnType
       </Row>
       {s.cli.auth === 'api-key' && (
         <Row
-          name="API key"
+          name="Anthropic API key"
           desc={
-            desktop ? (
-              <>
-                Create one in the {link(CONSOLE_KEYS, 'Anthropic Console')} and add credits under {link(CONSOLE_BILLING, 'Billing')}. It is stored encrypted with your system keychain, only on this computer.
-              </>
-            ) : (
-              <>The browser version uses <code>ANTHROPIC_API_KEY</code> from the environment of the dev server.</>
-            )
+            <>
+              Create one in the <ExtLink url={CONSOLE_KEYS}>Anthropic Console</ExtLink> and add credits under <ExtLink url={CONSOLE_BILLING}>Billing</ExtLink>. Stored encrypted with your system keychain, only on this computer.
+            </>
           }
         >
-          {desktop && (
-            <div className="stack" style={{ gap: 6, alignItems: 'flex-end' }}>
-              {key?.saved ? (
-                <span className="row" style={{ gap: 8 }}>
-                  <span className="small mono">sk-ant-{key.hint}</span>
-                  <button className="btn sm ghost" disabled={busy} onClick={() => void store(null)}>
-                    Remove
-                  </button>
-                </span>
-              ) : (
-                <span className="row" style={{ gap: 6 }}>
-                  <input
-                    className="input"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    style={{ width: 220 }}
-                    placeholder="sk-ant-…"
-                    aria-label="Anthropic API key"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && draft.trim() && void store(draft)}
-                  />
-                  <button className="btn sm" disabled={busy || !draft.trim()} onClick={() => void store(draft)}>
-                    Save
-                  </button>
-                </span>
-              )}
-              {key?.error && <span className="tiny" style={{ color: 'var(--bad)' }}>{key.error}</span>}
-              {key && !key.saved && !key.canStore && <span className="tiny" style={{ color: 'var(--bad)' }}>No encrypted storage on this system.</span>}
-            </div>
-          )}
+          <KeyField provider="anthropic" onSaved={() => s.cli.auth !== 'api-key' && save({ cli: { auth: 'api-key' } })} />
         </Row>
       )}
-      <Row name="Model for course maps" desc="Reading slides and scripts into the course map is bulk work. A smaller model costs a fraction and is usually good enough.">
-        <span className="seg">
-          {MAP_MODELS.map((m) => (
-            <button key={m.id} className={s.cli.mapModel === m.id ? 'on' : ''} onClick={() => save({ cli: { mapModel: m.id } })}>
-              {m.label}
+    </>
+  )
+}
+
+/** Provider, model and effort for one kind of work. */
+function TaskRow({ task, s, save, geminiModels }: { task: (typeof TASKS)[number]; s: Settings; save: Save; geminiModels: string[] }): ReactElement {
+  const t = s.tasks[task.id]
+  const set = (patch: Partial<TaskModel>): void => save({ tasks: { [task.id]: { ...t, ...patch } } })
+  const suggestions = t.provider === 'gemini' ? [...new Set([...MODEL_SUGGESTIONS.gemini.map((m) => m.id), ...geminiModels])] : MODEL_SUGGESTIONS.claude.map((m) => m.id)
+  const labels = new Map(MODEL_SUGGESTIONS[t.provider].map((m) => [m.id, m.label]))
+  const efforts = EFFORTS[t.provider]
+  return (
+    <Row name={task.label} desc={task.desc}>
+      <div className="stack task-model" style={{ gap: 6, alignItems: 'flex-end' }}>
+        <span className="seg" role="group" aria-label={`${task.label}: provider`}>
+          {PROVIDERS.map((p) => (
+            <button key={p.id} className={t.provider === p.id ? 'on' : ''} onClick={() => t.provider !== p.id && set({ provider: p.id, model: '', effort: t.effort === 'auto' ? 'auto' : clampEffort(p.id, t.effort) })}>
+              {p.label}
             </button>
           ))}
         </span>
-      </Row>
+        <span className="row" style={{ gap: 6 }}>
+          <TextSetting
+            value={t.model}
+            width={210}
+            placeholder={t.provider === 'gemini' ? `${GEMINI_DEFAULT_MODEL} (default)` : 'Claude Code default'}
+            onSave={(v) => set({ model: v })}
+            list={`models-${task.id}`}
+            label={`${task.label}: model`}
+          />
+          <datalist id={`models-${task.id}`}>
+            {suggestions.map((m) => (
+              <option key={m} value={m}>
+                {labels.get(m) ?? m}
+              </option>
+            ))}
+          </datalist>
+        </span>
+        <span className="seg" role="group" aria-label={`${task.label}: effort`}>
+          <button className={t.effort === 'auto' ? 'on' : ''} onClick={() => set({ effort: 'auto' })} title="What the app asks for per call">
+            Auto
+          </button>
+          {efforts.map((e) => (
+            <button key={e.id} className={t.effort === e.id ? 'on' : ''} onClick={() => set({ effort: e.id })}>
+              {e.label}
+            </button>
+          ))}
+        </span>
+      </div>
+    </Row>
+  )
+}
+
+/** Models per task, and the accounts they run on. */
+function ModelRows({ s, save }: { s: Settings; save: Save }): ReactElement {
+  const app = useApp()
+  const usesGemini = TASKS.some((t) => s.tasks[t.id].provider === 'gemini')
+  const usesClaude = TASKS.some((t) => s.tasks[t.id].provider === 'claude')
+  const [geminiModels, setGeminiModels] = useState<string[]>([])
+  const [keyTick, setKeyTick] = useState(0)
+  useEffect(() => {
+    if (usesGemini) void app.backend.listModels?.('gemini').then(setGeminiModels).catch(() => {})
+  }, [app, usesGemini, keyTick])
+  return (
+    <>
+      {TASKS.map((t) => (
+        <TaskRow key={t.id} task={t} s={s} save={save} geminiModels={geminiModels} />
+      ))}
+      {usesClaude && <ClaudeAccountRows s={s} save={save} />}
+      {usesGemini && (
+        <Row
+          name="Google AI API key"
+          desc={
+            <>
+              Create one in <ExtLink url={AISTUDIO_KEYS}>Google AI Studio</ExtLink> and turn on billing there for higher limits. Stored encrypted with your system keychain, only on this computer.
+            </>
+          }
+        >
+          <KeyField provider="google" onSaved={() => setKeyTick((n) => n + 1)} />
+        </Row>
+      )}
     </>
   )
 }
@@ -195,8 +280,8 @@ function UsageRow({ auth }: { auth: Settings['cli']['auth'] }): ReactElement {
       name="Cost"
       desc={
         auth === 'api-key'
-          ? 'Billed to your API key, as Claude Code reports it. The Console shows the exact amount.'
-          : 'What these calls would cost on API credits (your plan covers them), as Claude Code reports it.'
+          ? 'Claude calls billed to your API key, as Claude Code reports it (the Console shows the exact amount). Gemini usage is in Google AI Studio.'
+          : 'What the Claude calls would cost on API credits (your plan covers them), as Claude Code reports it. Gemini usage is in Google AI Studio.'
       }
     >
       {u ? (
@@ -297,39 +382,27 @@ export function SettingsView(): ReactElement {
         <div className="panel">
           <div className="panel-title">
             <h3>Tutor</h3>
-            <span className="hint">{s.cli.auth === 'api-key' ? 'Claude, on your API credits' : 'Claude, through your Claude Code login'}</span>
+            <span className="hint">Claude (through Claude Code) or Gemini (through the Gemini API), chosen per task</span>
           </div>
-          <Row name="Tutor" desc="The demo tutor is a scripted stand-in for trying the interface without Claude.">
+          <Row name="Tutor" desc="The demo tutor is a scripted stand-in for trying the interface without a model.">
             <span className="seg">
               <button className={s.provider === 'claude-cli' ? 'on' : ''} disabled={isDemo} onClick={() => save({ provider: 'claude-cli' })}>
-                Claude Code
+                Claude or Gemini
               </button>
               <button className={s.provider === 'demo' ? 'on' : ''} onClick={() => save({ provider: 'demo' })}>
                 Demo tutor
               </button>
             </span>
           </Row>
-          {s.provider === 'claude-cli' && <AccountRows s={s} save={save} />}
-          <Row name="Connection" desc="Runs a tiny request through the Claude Code CLI.">
+          {s.provider === 'claude-cli' && <ModelRows s={s} save={save} />}
+          <Row name="Connection" desc="Runs a tiny request on the tutor’s provider and model.">
             <CliTest />
           </Row>
-          <Row name="CLI path" desc="Leave empty to find claude on your PATH and in the usual install locations.">
+          <Row name="Claude Code path" desc="Leave empty to find claude on your PATH and in the usual install locations.">
             <TextSetting value={s.cli.path ?? ''} placeholder="auto-detect" onSave={(v) => save({ cli: { path: v || null } })} />
           </Row>
-          <Row name="Model" desc={<>Leave empty for your Claude Code default. Any name that <code>claude --model</code> accepts works.</>}>
-            <TextSetting value={s.cli.model} placeholder="Claude Code default" onSave={(v) => save({ cli: { model: v } })} />
-          </Row>
-          <Row name="Fallback model" desc="Used automatically when the main model is overloaded. Optional.">
+          <Row name="Claude fallback model" desc="Used automatically when the chosen Claude model is overloaded. Optional.">
             <TextSetting value={s.cli.fallbackModel ?? ''} placeholder="none" onSave={(v) => save({ cli: { fallbackModel: v || null } })} />
-          </Row>
-          <Row name="Effort" desc="How long the tutor thinks before writing a step. Higher is more careful but slower; grading always uses low.">
-            <span className="seg">
-              {EFFORTS.map((e) => (
-                <button key={e.id} className={s.cli.effort === e.id ? 'on' : ''} onClick={() => save({ cli: { effort: e.id } })}>
-                  {e.label}
-                </button>
-              ))}
-            </span>
           </Row>
           {s.provider === 'claude-cli' && <UsageRow auth={s.cli.auth} />}
           <Row name="Time limit per step" desc="A step that takes longer is stopped and can be retried.">

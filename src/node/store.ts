@@ -4,6 +4,7 @@ import { copyFile, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/p
 import { dirname, join, relative, resolve } from 'node:path'
 import { DEFAULT_SETTINGS, type DeepPartial, type Settings } from '../shared/types'
 import { deepMerge } from '../shared/util'
+import { migrateSettings, normalizeTask, TASKS } from '../shared/models'
 
 let seq = 0
 
@@ -64,8 +65,10 @@ export class JsonStore {
 }
 
 export async function loadSettings(store: JsonStore): Promise<Settings> {
-  const s = await store.read<DeepPartial<Settings>>('settings')
-  return deepMerge(DEFAULT_SETTINGS, s ?? {})
+  const s = migrateSettings(await store.read<Record<string, unknown>>('settings')) as DeepPartial<Settings> | null
+  const merged = deepMerge(DEFAULT_SETTINGS, s ?? {})
+  for (const t of TASKS) merged.tasks[t.id] = normalizeTask(merged.tasks[t.id], t.id)
+  return merged
 }
 
 export async function saveSettings(store: JsonStore, patch: DeepPartial<Settings>): Promise<Settings> {

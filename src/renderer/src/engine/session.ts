@@ -277,8 +277,9 @@ export class SessionController {
       system: this.systemPrompt(),
       prompt,
       schema,
-      model: settings.cli.model,
-      effort: kind === "step" ? settings.cli.effort : "low",
+      // the desktop app applies the model and effort set for the task (Settings → Models)
+      model: null,
+      effort: kind === "step" ? "medium" : "low",
       meta,
     };
     this.inflight.add(req.id);

@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { parsePartialJson } from '../shared/partialJson'
 import { geminiThinking, textGeminiModels } from '../shared/models'
+import { CODE_EXTENSIONS } from '../shared/exam'
 import { sttPrompt, type CloudSttRequest } from '../shared/stt'
 import type { Effort, LlmErrorKind, LlmEvent, LlmRequest, LlmResult, LlmTestResult } from '../shared/types'
 
@@ -86,7 +87,8 @@ const MIME: Record<string, string> = {
   '.gif': 'image/gif',
   '.heic': 'image/heic',
   '.txt': 'text/plain',
-  '.md': 'text/plain'
+  '.md': 'text/plain',
+  ...Object.fromEntries(CODE_EXTENSIONS.map((e) => [`.${e}`, 'text/plain']))
 }
 
 /** Inline request data is limited to about 20 MB per request. */

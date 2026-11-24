@@ -183,6 +183,26 @@ export interface Submission {
   gradedAt: string | null
   /** the learner model was updated from this grade */
   applied: boolean
+  /** "checked": graded by the tutor (default); "reported": a result the learner logged, e.g. tests passed on Code Expert */
+  source?: 'checked' | 'reported'
+  /** the logged result of a "reported" submission */
+  reported?: { points: number; max: number; note: string | null } | null
+}
+
+/** A problem set or mock exam that lives on a platform (Code Expert, GitLab, Moodle…) instead of a PDF in the course. */
+export interface OnlineTask {
+  /** "ot_…" (used like a material id in records and submissions) */
+  id: string
+  kind: 'exercises' | 'exam'
+  title: string
+  /** where it is: "Code Expert", "GitLab", … */
+  platform: string
+  url: string | null
+  /** the concepts it practises, picked by the learner (a logged result updates these) */
+  conceptIds: string[]
+  /** the task statement, pasted by the learner: the check of a solution grades against it */
+  statement: string | null
+  addedAt: string
 }
 
 export interface WorkRecord {
@@ -202,6 +222,8 @@ export interface ExamPrep {
   /** by material id */
   records: Record<string, WorkRecord>
   submissions: Submission[]
+  /** problem sets and mock exams without a PDF, e.g. coding tasks on Code Expert or GitLab */
+  online: OnlineTask[]
 }
 
 // ---------------------------------------------------------------- tutor output (LLM)

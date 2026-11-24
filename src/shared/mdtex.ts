@@ -15,6 +15,13 @@ export function normalizeMd(src: string): string {
   let s = fixTex(String(src ?? ''))
   // Dollar signs that look right but are not "$" to the parser: HTML entities, full-width and small dollar signs.
   s = s.replace(/&#0*36;|&#x0*24;|&dollar;/gi, '$').replace(/[＄﹩]/g, '$')
+  // Doubly escaped delimiters (\\$x\\$, \\(x\\), \\[x\\]) come from models that escape the backslash once
+  // too often (seen with Gemini tool arguments); Markdown turns \\ into one backslash and the math stays raw.
+  const texish0 = (x: string): boolean => /\\[a-zA-Z]|[\^_{}]/.test(x)
+  s = s.replace(/\\\\\$([^$\n]+?)\\\\\$/g, (_m, x: string) => `$${x}$`)
+  s = s.replace(/(^|[^\\$])\$([^$\n]+?)\\\\\$/g, (m, pre: string, x: string) => (texish0(x) ? `${pre}$${x}$` : m))
+  s = s.replace(/\\\\\[([\s\S]+?)\\\\\]/g, (_m, x: string) => `\n$$\n${x.trim()}\n$$\n`)
+  s = s.replace(/\\\\\(([\s\S]+?)\\\\\)/g, (_m, x: string) => `$${x.trim()}$`)
   // Markdown-escaped math delimiters (\$x\$) would render literally. A span closed by another \$ is math; a lone \$5 stays.
   s = s.replace(/\\\$([^$\n]+?)\\\$/g, (_m, x: string) => `$${x}$`)
   // Half-escaped spans (\$x^2$ or $x^2\$) render as literal text too. Repair them only when the inside is

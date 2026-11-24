@@ -695,6 +695,16 @@ kbd {
 .katex {
   font-size: 1.08em;
 }
+/* Inline fractions and exponents are taller than the text: give just those pieces room above and below,
+   so the line they sit on opens up instead of colliding with its neighbours (line breaks inside math stay). */
+.md .katex-html > :is(.base, .katex-base):has(.mfrac) {
+  display: inline-block;
+  margin: 0.3em 0 0.34em;
+}
+.md .katex-html > :is(.base, .katex-base):has(.msupsub):not(:has(.mfrac)) {
+  display: inline-block;
+  margin-top: 0.16em;
+}
 .katex-display {
   margin: 0.55em 0;
   overflow-x: auto;
@@ -2551,6 +2561,9 @@ kbd {
   border: 1px solid var(--line-2);
   box-shadow: var(--shadow);
   animation: slide-in 0.2s ease-out;
+  /* the panel overlaps the top bar, a window-drag region in the desktop app: without this its buttons
+     (the close button first) sit on that region and Electron swallows their clicks */
+  -webkit-app-region: no-drag;
 }
 .peek-head {
   display: flex;
@@ -2558,6 +2571,10 @@ kbd {
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
+  -webkit-app-region: no-drag;
+}
+.peek-head > .btn {
+  flex: none;
 }
 .peek .pdf-stage {
   flex: 1;

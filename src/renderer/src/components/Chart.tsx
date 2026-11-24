@@ -1,6 +1,7 @@
 // A small SVG chart for function plots and the demos: linear/log axes, lines, points, stems,
 // reference lines, draggable points, a crosshair tooltip and a legend.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { MathText } from './Markdown'
 import { autoRange, fmtNum, logTicks, niceTicks, sample } from '../lib/axes'
 
 export { autoRange, fmtNum, niceTicks, sample }
@@ -225,7 +226,7 @@ export function Chart(props: ChartProps): ReactElement {
   const legend = series.filter((x) => x.label && !x.noLegend)
   return (
     <div className="chart" ref={wrapRef}>
-      {title && <div className="chart-title">{title}</div>}
+      {title && <div className="chart-title"><MathText text={title} /></div>}
       {legend.length >= 2 && (
         <div className="legend">
           {series.map((ser, k) =>
@@ -235,7 +236,7 @@ export function Chart(props: ChartProps): ReactElement {
                   className={`legend-key ${ser.style === 'dashed' ? 'dashed' : ser.style === 'points' || ser.style === 'stem' ? 'dot' : ''}`}
                   style={{ background: ser.color ?? SERIES_COLORS[k % 4], borderColor: ser.color ?? SERIES_COLORS[k % 4] }}
                 />
-                {ser.label}
+                <MathText text={ser.label} />
               </span>
             ) : null
           )}

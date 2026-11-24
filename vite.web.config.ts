@@ -3,12 +3,13 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { copyOrtRuntime } from './electron.vite.config'
+import { buildId, copyOrtRuntime } from './electron.vite.config'
 
 export default defineConfig({
   root: resolve('src/renderer'),
   publicDir: resolve('src/renderer/public'),
   plugins: [react(), copyOrtRuntime()],
+  define: { __BUILD_ID__: JSON.stringify(buildId()) },
   resolve: { alias: { '@shared': resolve('src/shared'), '@courses': resolve('courses') } },
   worker: { format: 'es' },
   server: {

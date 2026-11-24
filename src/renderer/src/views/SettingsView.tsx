@@ -1,6 +1,6 @@
 // Settings: the tutor (Claude Code CLI), the lecture notes, voice, scheduling and your data.
 import type { ApiKeyStatus, AppInfo, KeyProvider, LlmTestResult, Settings, TaskModel } from '@shared/types'
-import { clampEffort, EFFORTS, GEMINI_DEFAULT_MODEL, MODEL_SUGGESTIONS, PROVIDERS, TASKS } from '@shared/models'
+import { clampEffort, EFFORTS, GEMINI_DEFAULT_MODEL, geminiHasXhigh, MODEL_SUGGESTIONS, PROVIDERS, TASKS } from '@shared/models'
 import { formatUsd, normalizeUsage, usageSummary, type UsageDay, type UsageSummary } from '@shared/usage'
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Icon } from '../components/Icon'
@@ -181,7 +181,9 @@ function TaskRow({ task, s, save, geminiModels }: { task: (typeof TASKS)[number]
   const set = (patch: Partial<TaskModel>): void => save({ tasks: { [task.id]: { ...t, ...patch } } })
   const suggestions = t.provider === 'gemini' ? [...new Set([...MODEL_SUGGESTIONS.gemini.map((m) => m.id), ...geminiModels])] : MODEL_SUGGESTIONS.claude.map((m) => m.id)
   const labels = new Map(MODEL_SUGGESTIONS[t.provider].map((m) => [m.id, m.label]))
-  const efforts = EFFORTS[t.provider]
+  // on Gemini, Extra is offered only for models with an xhigh thinking level
+  const efforts = t.provider === 'gemini' && !geminiHasXhigh(t.model || GEMINI_DEFAULT_MODEL) ? EFFORTS.gemini.filter((e) => e.id !== 'xhigh') : EFFORTS[t.provider]
+  const shownEffort = t.effort === 'auto' ? 'auto' : clampEffort(t.provider, t.effort, t.model)
   return (
     <Row name={task.label} desc={task.desc}>
       <div className="stack task-model" style={{ gap: 6, alignItems: 'flex-end' }}>
@@ -214,7 +216,7 @@ function TaskRow({ task, s, save, geminiModels }: { task: (typeof TASKS)[number]
             Auto
           </button>
           {efforts.map((e) => (
-            <button key={e.id} className={t.effort === e.id ? 'on' : ''} onClick={() => set({ effort: e.id })}>
+            <button key={e.id} className={shownEffort === e.id ? 'on' : ''} onClick={() => set({ effort: e.id })}>
               {e.label}
             </button>
           ))}

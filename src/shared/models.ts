@@ -20,7 +20,7 @@ export const PROVIDERS: { id: Provider; label: string }[] = [
   { id: 'gemini', label: 'Gemini' }
 ]
 
-/** Effort levels each provider understands (Gemini's thinking levels stop at high). */
+/** Effort levels each provider understands (on Gemini, Extra is only for models that have an xhigh level). */
 export const EFFORTS: Record<Provider, { id: Effort; label: string }[]> = {
   claude: [
     { id: 'low', label: 'Low' },
@@ -32,7 +32,8 @@ export const EFFORTS: Record<Provider, { id: Effort; label: string }[]> = {
   gemini: [
     { id: 'low', label: 'Low' },
     { id: 'medium', label: 'Medium' },
-    { id: 'high', label: 'High' }
+    { id: 'high', label: 'High' },
+    { id: 'xhigh', label: 'Extra' }
   ]
 }
 
@@ -44,14 +45,22 @@ export const MODEL_SUGGESTIONS: Record<Provider, { id: string; label: string }[]
     { id: 'haiku', label: 'Haiku (fastest, cheapest)' }
   ],
   gemini: [
-    { id: 'gemini-4-argon', label: 'Gemini 4 Argon (flagship)' },
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (fast)' },
+    { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen (fast, general purpose)' },
+    { id: 'gemini-4-neon', label: 'Gemini 4 Neon (frontier, balanced)' },
+    { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon (deepest reasoning)' },
+    { id: 'gemini-4-argon', label: 'Gemini 4 Argon (efficient reasoning)' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (previous generation)' },
     { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (cheapest)' }
   ]
 }
 
-/** The Gemini model used when a task names none. */
-export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
+/** The Gemini model used when a task names none (Google's general-purpose Gemini 4 model, with a free tier). */
+export const GEMINI_DEFAULT_MODEL = 'gemini-4-hydrogen'
+
+/** Gemini models with an xhigh thinking level (Gemini 4 Neon and Hydrogen); the others stop at high. */
+export function geminiHasXhigh(model: string): boolean {
+  return /^gemini-4-(neon|hydrogen)\b/.test(model.trim())
+}
 
 /** What a task runs with: model and effort filled in (an empty Claude model = Claude Code's default). */
 export interface Route {
@@ -66,12 +75,13 @@ export function routeFor(kind: LlmKind | 'chat', s: Pick<Settings, 'tasks'>, req
   const t = normalizeTask(s.tasks?.[task], task)
   const effort = t.effort === 'auto' ? (requested ?? null) : t.effort
   const model = t.model.trim() || (t.provider === 'gemini' ? GEMINI_DEFAULT_MODEL : '')
-  return { task, provider: t.provider, model, effort: effort ? clampEffort(t.provider, effort) : null }
+  return { task, provider: t.provider, model, effort: effort ? clampEffort(t.provider, effort, model) : null }
 }
 
-export function clampEffort(p: Provider, e: Effort): Effort {
-  if (p === 'gemini' && (e === 'xhigh' || e === 'max')) return 'high'
-  return e
+/** The nearest effort the provider (and, on Gemini, the model) supports. */
+export function clampEffort(p: Provider, e: Effort, model = ''): Effort {
+  if (p !== 'gemini' || (e !== 'xhigh' && e !== 'max')) return e
+  return geminiHasXhigh(model || GEMINI_DEFAULT_MODEL) ? 'xhigh' : 'high'
 }
 
 const EFFORT_IDS: (Effort | 'auto')[] = ['low', 'medium', 'high', 'xhigh', 'max', 'auto']
@@ -109,7 +119,7 @@ export function migrateSettings(raw: Record<string, unknown> | null): Record<str
 /** Gemini's thinking setting for an effort: a level for Gemini 3 and later, a token budget for 2.x. */
 export function geminiThinking(model: string, effort: Effort | null): { thinkingLevel: string } | { thinkingBudget: number } | null {
   if (!effort) return null
-  const e = clampEffort('gemini', effort)
+  const e = clampEffort('gemini', effort, model)
   if (/^gemini-[12](\.|-)/.test(model)) return { thinkingBudget: e === 'low' ? 1024 : e === 'medium' ? 8192 : 24576 }
   return { thinkingLevel: e }
 }
@@ -127,7 +137,10 @@ export function textGeminiModels(list: { name?: string; supportedGenerationMetho
   return [...out].sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))
 }
 
-/** A plausible Google AI Studio key (format check only; the test call proves it works). */
+/**
+ * Loose sanity check for a Google AI Studio key: Google has more than one key format, so this only
+ * refuses what cannot be a key (too short, spaces inside); Test the connection proves it works.
+ */
 export function looksLikeGoogleKey(key: string): boolean {
-  return /^[A-Za-z0-9_-]{30,}$/.test(key.trim())
+  return /^[\x21-\x7e]{20,512}$/.test(key.trim())
 }

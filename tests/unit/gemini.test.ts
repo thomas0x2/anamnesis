@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { fileParts, generateBody, geminiError, runGemini, sseJson } from '../../src/node/gemini'
 import { GeminiAgentHost, mergeParts, pushUser, settledHistory } from '../../src/node/geminiAgent'
-import { geminiThinking, migrateSettings, normalizeTask, routeFor, taskOf, textGeminiModels } from '../../src/shared/models'
+import { GEMINI_DEFAULT_MODEL, geminiHasXhigh, geminiThinking, looksLikeGoogleKey, migrateSettings, MODEL_SUGGESTIONS, normalizeTask, routeFor, taskOf, textGeminiModels } from '../../src/shared/models'
 import type { AgentEvent } from '../../src/shared/agentTypes'
 import { DEFAULT_SETTINGS, type LlmEvent, type Settings } from '../../src/shared/types'
 
@@ -31,7 +31,9 @@ describe('models per task', () => {
     expect(taskOf('step')).toBe('tutor')
     expect(taskOf('chat')).toBe('tutor')
     const s = { tasks: { ...DEFAULT_SETTINGS.tasks, map: { provider: 'gemini' as const, model: '', effort: 'max' as const } } }
-    expect(routeFor('map', s)).toEqual({ task: 'map', provider: 'gemini', model: 'gemini-3.8-flash', effort: 'high' })
+    expect(routeFor('map', s)).toEqual({ task: 'map', provider: 'gemini', model: 'gemini-4-hydrogen', effort: 'xhigh' })
+    const argon = { tasks: { ...s.tasks, map: { ...s.tasks.map, model: 'gemini-4-argon' } } }
+    expect(routeFor('map', argon).effort).toBe('high')
     // grading on auto keeps what the app asks for
     expect(routeFor('work', s, 'high').effort).toBe('high')
     expect(routeFor('grade', s, 'low').effort).toBe('low')
@@ -50,6 +52,12 @@ describe('models per task', () => {
 
   it('turns efforts into Gemini thinking settings', () => {
     expect(geminiThinking('gemini-4-argon', 'xhigh')).toEqual({ thinkingLevel: 'high' })
+    expect(geminiThinking('gemini-4-carbon', 'max')).toEqual({ thinkingLevel: 'high' })
+    expect(geminiThinking('gemini-4-neon', 'xhigh')).toEqual({ thinkingLevel: 'xhigh' })
+    expect(geminiThinking('gemini-4-hydrogen', 'max')).toEqual({ thinkingLevel: 'xhigh' })
+    expect(geminiThinking('gemini-3.8-flash', 'xhigh')).toEqual({ thinkingLevel: 'high' })
+    expect(geminiHasXhigh('gemini-4-neon')).toBe(true)
+    expect(geminiHasXhigh('gemini-4-neonx')).toBe(false)
     expect(geminiThinking('gemini-3.8-flash', 'low')).toEqual({ thinkingLevel: 'low' })
     expect(geminiThinking('gemini-2.5-pro', 'medium')).toEqual({ thinkingBudget: 8192 })
     expect(geminiThinking('gemini-3.8-flash', null)).toBeNull()
@@ -59,11 +67,23 @@ describe('models per task', () => {
     const list = textGeminiModels([
       { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
       { name: 'models/gemini-4-argon', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-4-neon', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+      { name: 'models/gemini-4-hydrogen', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-4-carbon', supportedGenerationMethods: ['generateContent'] },
       { name: 'models/gemini-3.8-flash-tts', supportedGenerationMethods: ['generateContent'] },
       { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
       { name: 'models/imagen-4', supportedGenerationMethods: ['predict'] }
     ])
-    expect(list).toEqual(['gemini-4-argon', 'gemini-3.8-flash'])
+    expect(list).toEqual(['gemini-4-neon', 'gemini-4-hydrogen', 'gemini-4-carbon', 'gemini-4-argon', 'gemini-3.8-flash'])
+    for (const m of ['gemini-4-neon', 'gemini-4-hydrogen', 'gemini-4-carbon', 'gemini-4-argon']) expect(MODEL_SUGGESTIONS.gemini.map((x) => x.id)).toContain(m)
+    expect(GEMINI_DEFAULT_MODEL).toBe('gemini-4-hydrogen')
+  })
+
+  it('accepts any plausible Google key and refuses only what cannot be one', () => {
+    expect(looksLikeGoogleKey('AIza' + 'x'.repeat(35))).toBe(true)
+    expect(looksLikeGoogleKey('  AQ.Ab8RN6' + 'y'.repeat(40) + '\n')).toBe(true)
+    expect(looksLikeGoogleKey('short')).toBe(false)
+    expect(looksLikeGoogleKey('AIza with spaces inside the key value')).toBe(false)
   })
 })
 

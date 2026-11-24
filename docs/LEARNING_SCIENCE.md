@@ -17,7 +17,7 @@ Anamnesis is built on a handful of well-replicated findings about how people lea
 | Calibration and hypercorrection | Confidence on every graded item, calibration stats, a bonus for fixing confident errors | `src/shared/stats.ts`, `src/shared/rewards.ts` |
 | Explaining in your own words | An explain-back of the whole chain at the end of every learn session | `prompts.ts` (WRAP) |
 | Rewards that inform | Points only for evidence of understanding, each with its reason | `rewards.ts` |
-| Words and pictures, small steps | 14 interactive demos, plots and diagrams; short cards | `src/renderer/src/demos/`, `prompts.ts` (rules 2 and 6) |
+| Words and pictures, small steps | interactive widgets built per idea, 14 ready-made demos, plots and diagrams; short cards | `src/renderer/src/widgets/`, `src/renderer/src/demos/`, `prompts.ts` (rules 2 and 6) |
 | Open learner model | The mind model is visible, explained and editable | `src/renderer/src/views/MindView.tsx` |
 
 ## 1. Retrieval practice

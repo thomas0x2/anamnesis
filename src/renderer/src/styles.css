@@ -5309,3 +5309,12 @@ svg.pace {
   align-items: stretch;
   gap: 4px;
 }
+
+/* ------------------------------------------------------------ tutor-built widgets (src/renderer/src/widgets) */
+.widget-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: dark;
+}

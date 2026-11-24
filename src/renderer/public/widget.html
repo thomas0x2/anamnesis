@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:" />
+    <title>widget</title>
+    <style>
+      html, body { margin: 0; background: transparent; color: #ececea; color-scheme: dark; }
+    </style>
+  </head>
+  <body>
+    <div id="k-root"></div>
+    <script>
+      // Runs one tutor-written widget in this opaque-origin sandbox, on top of the widget kit the app
+      // sends along (src/renderer/src/widgets). No network (CSP default-src 'none'), no access to the app.
+      var started = false
+      window.addEventListener('message', function (e) {
+        var d = e.data
+        if (started || e.source !== parent || !d || d.type !== 'widget' || typeof d.code !== 'string') return
+        started = true
+        var style = document.createElement('style')
+        style.textContent = String(d.css || '')
+        document.head.appendChild(style)
+        var run = function (src) {
+          var s = document.createElement('script')
+          s.textContent = src
+          document.body.appendChild(s)
+        }
+        run(String(d.kit || ''))
+        if (typeof d.html === 'string' && d.html) {
+          var root = document.getElementById('k-root')
+          root.innerHTML = d.html
+          Array.prototype.slice.call(root.querySelectorAll('script')).forEach(function (old) {
+            old.remove()
+            run(old.textContent)
+          })
+        }
+        run('try {\n' + d.code + '\n} catch (err) { window.K && K._report(err) }')
+      })
+      parent.postMessage({ type: 'widget-ready' }, '*')
+    </script>
+  </body>
+</html>

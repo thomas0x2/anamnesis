@@ -47,14 +47,15 @@ const plotSchema = obj(
 
 export const blockSchema = obj(
   {
-    type: { type: 'string', enum: [...BLOCK_TYPES] },
+    // 'sketch' (free-form HTML) is only read from old transcripts; new interactive content is a widget
+    type: { type: 'string', enum: BLOCK_TYPES.filter((t) => t !== 'sketch') },
     md: nstr,
     latex: nstr,
     tone: nenum(['info', 'insight', 'warning', 'example']),
     items: narr(str),
     plot: nullable(plotSchema),
     demo: nullable(obj({ id: { type: 'string', enum: [...DEMO_IDS] }, params: nstr, caption: nstr }, ['id'])),
-    html: nstr,
+    widget: nullable(obj({ title: nstr, code: { type: 'string', description: 'JavaScript calling K.demo({...}) from the widget kit' }, caption: nstr, height: nint }, ['code'])),
     height: nint,
     page: nint,
     label: nstr,

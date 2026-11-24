@@ -43,7 +43,7 @@ const CSP = [
   "base-uri 'none'"
 ].join('; ')
 
-// Sketch blocks run model-written HTML in a sandboxed, opaque-origin iframe: inline code only, no network.
+// Sketch and widget blocks run model-written code in a sandboxed, opaque-origin iframe: inline code only, no network.
 const SKETCH_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"
 
 const vaults: Record<KeyProvider, ApiKeyVault> = {
@@ -72,7 +72,7 @@ function serveApp(): void {
     if (!file.startsWith(rendererDir)) return new Response('forbidden', { status: 403 })
     const res = await net.fetch(pathToFileURL(file).toString())
     const headers = new Headers(res.headers)
-    if (file.endsWith('.html')) headers.set('Content-Security-Policy', file.endsWith('sketch.html') ? SKETCH_CSP : CSP)
+    if (file.endsWith('.html')) headers.set('Content-Security-Policy', file.endsWith('sketch.html') || file.endsWith('widget.html') ? SKETCH_CSP : CSP)
     if (file.endsWith('.wasm')) headers.set('Content-Type', 'application/wasm')
     if (file.endsWith('.mjs') || file.endsWith('.js')) headers.set('Content-Type', 'text/javascript')
     return new Response(res.body, { status: res.status, headers })

@@ -17,7 +17,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'explain',
     description:
-      'Show the learner a short content card (text, equations, plots, demos, diagrams, code, script references) with a Continue button. Waits until the learner has read it; the result says "read" or carries a question they typed instead. Keep it short: at most 3 blocks, prose under ~90 words.',
+      'Show the learner a short content card (text, equations, plots, interactive widgets, demos, diagrams, code, script references) with a Continue button. Waits until the learner has read it; the result says "read" or carries a question they typed instead. Keep it short: at most 3 blocks, prose under ~90 words.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -132,7 +132,7 @@ export interface AgentContext {
 
 const FLOW = String.raw`# How a session runs
 The learner works through a stream of cards, one at a time; you create every card with a tool, on the fly, from what their answers show. Your plain text appears as short tutor notes between the cards (Markdown with LaTeX, same rules as cards): one to three sentences (a transition, a reaction, an answer to their question). The learner can also write to you at any time. The tools:
-- explain: content (text, equations, plots, demos, mermaid, sketch, code, script references). Waits until read.
+- explain: content (text, equations, plots, widgets you build, built-in demos, mermaid, code, script references). Waits until read.
 - ask: one question the learner answers in the card (kind probe, predict, check, practice, review, reflect). Waits for the answer and returns the graded result.
 - show_plan: the dependency tree of reasoning steps toward the goal; the learner reviews it (marks steps as known or to be taught) and you get the result. update_plan: progress in the side panel.
 - read_script, course, learner: look things up. update_learner: record what you concluded. finish: the closing summary.

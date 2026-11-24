@@ -75,7 +75,8 @@ describe('agent system prompt', () => {
     const goal = course.concepts.find((c) => c.requires.length > 0)!
     const p = buildAgentSystemPrompt(course, graph, { profile: [], concepts: {} }, { mode: 'learn', goalConceptId: goal.id, scope: [goal.id] }, new Date())
     expect(p).toContain('# How you teach')
-    expect(p).toContain('# Demos')
+    expect(p).toContain('# Widget kit')
+    expect(p).toContain('# Built-in demos')
     expect(p).toContain(`Goal concept: ${goal.title} (id ${goal.id})`)
     expect(p).toContain('ask: one question')
     expect(p).not.toContain('Exactly one JSON object')

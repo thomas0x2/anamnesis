@@ -1,0 +1,300 @@
+/* Anamnesis widget kit: the look of every generated demo. Mirrors the app's Ma tokens
+   (src/renderer/src/styles.css) so a widget reads like a built-in demo. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0b;
+  --surface: #111111;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --text: #ececea;
+  --text-2: #c9c9c5;
+  --muted: #8a8a85;
+  --faint: #5c5c58;
+  --brand: #e5603b;
+  --brand-soft: rgba(229, 96, 59, 0.12);
+  --accent-soft: rgba(255, 255, 255, 0.05);
+  --grid: rgba(255, 255, 255, 0.06);
+  --axis: rgba(255, 255, 255, 0.14);
+  --bad: #ec9a8f;
+  --radius-sm: 8px;
+  --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: 14px/1.5 var(--font);
+  overflow: hidden;
+}
+#k-root {
+  padding: 2px 1px 4px;
+}
+button,
+input {
+  font: inherit;
+}
+
+.k-views {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.k-views-row {
+  flex-direction: row;
+  gap: 16px;
+}
+.k-views-row > .k-view {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.k-view-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+.k-svg {
+  display: block;
+  overflow: visible;
+  user-select: none;
+  touch-action: none;
+}
+.k-grid line {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+.k-base {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+.k-tick,
+.k-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.k-axis-label {
+  font-style: italic;
+}
+.k-label {
+  fill: var(--text-2);
+  font-size: 12px;
+}
+.k-note {
+  font-size: 11px;
+}
+.k-handle {
+  cursor: grab;
+}
+.k-handle:active {
+  cursor: grabbing;
+}
+
+.k-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.k-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.k-legend-key {
+  width: 14px;
+  height: 2px;
+  border-radius: 8px;
+}
+.k-legend-key.dashed {
+  border-top: 2px dashed;
+  height: 0;
+}
+.k-legend-key.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* controls: the same hairline sliders and segmented buttons as the built-in demos */
+.k-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.k-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.k-check {
+  cursor: pointer;
+}
+.k-check input {
+  accent-color: var(--text);
+  margin: 0;
+}
+.k-ctl input[type='range'] {
+  width: 130px;
+  accent-color: var(--text);
+}
+.k-val {
+  min-width: 2.5em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+}
+.k-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.k-seg button {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.k-seg button + button {
+  border-left: 1px solid var(--line-2);
+}
+.k-seg button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.k-btn {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.k-btn:hover {
+  background: var(--accent-soft);
+}
+.k-play {
+  min-width: 78px;
+}
+
+.k-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.k-readout b {
+  color: var(--text);
+  font-weight: 600;
+}
+.k-note-line {
+  flex-basis: 100%;
+  color: var(--muted);
+}
+.k-table {
+  flex-basis: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.k-table th,
+.k-table td {
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.k-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* panels: cells, bits and tags for memory layouts, arrays, registers and the like */
+.k-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.k-cells-title {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.k-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.k-cell {
+  min-width: 34px;
+  padding: 5px 6px 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.k-cell.on {
+  background: var(--brand-soft);
+}
+.k-bits {
+  gap: 2px;
+}
+.k-bits .k-cell {
+  min-width: 19px;
+  padding: 4px 2px 2px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.k-bits .k-cell.one {
+  color: var(--text);
+}
+.k-cell-i {
+  font-size: 10px;
+  color: var(--faint);
+  margin-top: 1px;
+}
+.k-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.k-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.k-text {
+  color: var(--text-2);
+}
+.k-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(236, 154, 143, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--bad);
+  font-size: 12.5px;
+}

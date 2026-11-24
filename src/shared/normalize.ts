@@ -52,6 +52,15 @@ function stripMathDelims(latex: string): string {
     .trim()
 }
 
+/** Widget code as the frame runs it: fences stripped, size bounded (a widget is a few dozen lines). */
+export function widgetCode(x: unknown): string | null {
+  if (typeof x !== 'string') return null
+  const code = x.trim()
+  if (!code) return null
+  const bare = code.replace(/^```[\w-]*\s*/, '').replace(/```\s*$/, '').trim()
+  return bare && bare.length <= 24_000 ? bare : null
+}
+
 export function normalizeBlock(raw: unknown): Block | null {
   raw = jsonish(raw)
   if (typeof raw === 'string') return raw.trim() ? { type: 'text', md: raw } : null
@@ -134,7 +143,19 @@ export function normalizeBlock(raw: unknown): Block | null {
       b.md = src.replace(/^```mermaid\s*/i, '').replace(/```\s*$/, '').trim()
       return b
     }
+    case 'widget': {
+      const wj = jsonish(raw.widget)
+      const w = isObj(wj) ? wj : raw
+      const code = widgetCode(w.code ?? raw.code)
+      if (!code) return md ? { type: 'text', md } : null
+      const h = num(w.height ?? raw.height)
+      b.widget = { title: ns(w.title) ?? ns(raw.title), code, caption: ns(w.caption) ?? md, height: h === null ? null : clamp(h, 120, 720) }
+      return b
+    }
     case 'sketch': {
+      // a sketch written against the widget kit is a widget
+      const kitCode = widgetCode(raw.code)
+      if (kitCode) return normalizeBlock({ ...raw, type: 'widget' })
       const html = ns(raw.html)
       if (!html) return null
       b.html = html

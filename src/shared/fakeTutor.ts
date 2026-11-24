@@ -136,6 +136,31 @@ export function teachStep(m: Meta) {
           { type: 'callout', tone: 'insight', md: 'The weights $\\lambda_j$ depend only on the nodes, so they are computed **once**.' },
           { type: 'demo', demo: { id: 'interpolation', params: '{"n":6,"nodes":"equispaced","showBasis":true}', caption: 'Toggle the basis: every curve vanishes at all nodes but one.' } },
           {
+            type: 'widget',
+            widget: {
+              title: 'One basis function',
+              caption: 'Pick $j$ and drag the middle node: $\\ell_j$ is $1$ at $x_j$ and $0$ at every other node.',
+              code: [
+                'K.demo({',
+                '  params: { n: K.slider({ label: "n", min: 2, max: 8, step: 1, value: 4 }), j: K.slider({ label: "j", min: 0, max: 8, step: 1, value: 1 }) },',
+                '  plot: { xMin: -0.1, xMax: 2.1, yMin: -1.5, yMax: 2, xLabel: "x" },',
+                '  draw(p, g, out) {',
+                '    const j = Math.min(p.j, p.n)',
+                '    const xs = K.linspace(0, 2, p.n + 1)',
+                '    const mid = Math.floor(p.n / 2)',
+                '    xs[mid] = g.handle("node", { x: xs[mid], y: 0, axis: "x", label: "drag" })[0]',
+                '    const ell = (k) => (x) => xs.reduce((acc, xi, i) => (i === k ? acc : (acc * (x - xi)) / (xs[k] - xi)), 1)',
+                '    for (let k = 0; k <= p.n; k++) if (k !== j) g.fn(ell(k), { color: "muted", width: 1, opacity: 0.5 })',
+                '    g.fn(ell(j), { color: "brand", label: "ℓ_" + j })',
+                '    g.points(xs.map((x, i) => [x, i === j ? 1 : 0]), { color: "text" })',
+                '    out("x_j", xs[j])',
+                '    out("max |ℓ_j|", Math.max(...K.linspace(0, 2, 400).map((x) => Math.abs(ell(j)(x)))))',
+                '  }',
+                '})'
+              ].join('\n')
+            }
+          },
+          {
             type: 'plot',
             plot: { title: 'Two basis functions', xMin: 0, xMax: 2, series: [{ label: 'ℓ₀', expr: '(x-1)*(x-2)/2' }, { label: 'ℓ₁', expr: '-x*(x-2)', style: 'dashed' }] }
           },

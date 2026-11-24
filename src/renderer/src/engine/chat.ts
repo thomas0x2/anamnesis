@@ -14,6 +14,7 @@ import { conceptModelLine, conceptPlaces, describeResponse, pageHeader } from '@
 import { dueConcepts } from '@shared/selection'
 import type { Card, CardResponse, PlanNodeState, PlanState, PracticeTarget, Session, SessionType } from '@shared/types'
 import { nowIso, truncate, uid } from '@shared/util'
+import { WIDGET_ERROR_EVENT, type WidgetErrorDetail } from '../widgets/events'
 import type { AppController } from './app'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
@@ -349,8 +350,18 @@ export class ChatController {
         const target = this.target(args.item)
         const step = this.cards.pushStep([card], card.nodeId, target)
         this.updateItem(item.id, (it) => ({ ...(it as ToolItem), step }))
-        const resp = await new Promise<CardResponse>((resolve) => this.waiters.set(step, resolve))
-        return { text: describeForAgent(card, resp) }
+        const widgetErrors: string[] = []
+        const onWidgetError = (e: Event): void => {
+          const d = (e as CustomEvent<WidgetErrorDetail>).detail
+          if (d && widgetErrors.length < 3) widgetErrors.push(`${d.title ? `"${d.title}": ` : ''}${d.message}`)
+        }
+        const watch = card.blocks.some((b) => b.type === 'widget') && typeof window !== 'undefined'
+        if (watch) window.addEventListener(WIDGET_ERROR_EVENT, onWidgetError)
+        const resp = await new Promise<CardResponse>((resolve) => this.waiters.set(step, resolve)).finally(() => {
+          if (watch) window.removeEventListener(WIDGET_ERROR_EVENT, onWidgetError)
+        })
+        const note = widgetErrors.length ? `\nThe widget on this card failed in the learner's view (${widgetErrors.join('; ')}). Fix the code if you show it again.` : ''
+        return { text: describeForAgent(card, resp) + note }
       }
       case 'show_plan': {
         const p = normalizePlan(args, this.ctx)

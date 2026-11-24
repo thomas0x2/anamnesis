@@ -697,11 +697,11 @@ kbd {
 }
 /* Inline fractions and exponents are taller than the text: give just those pieces room above and below,
    so the line they sit on opens up instead of colliding with its neighbours (line breaks inside math stay). */
-.md .katex-html > .base:has(.mfrac) {
+.md .katex-html > :is(.base, .katex-base):has(.mfrac) {
   display: inline-block;
   margin: 0.3em 0 0.34em;
 }
-.md .katex-html > .base:has(.msupsub):not(:has(.mfrac)) {
+.md .katex-html > :is(.base, .katex-base):has(.msupsub):not(:has(.mfrac)) {
   display: inline-block;
   margin-top: 0.16em;
 }

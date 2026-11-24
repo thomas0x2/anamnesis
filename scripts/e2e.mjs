@@ -273,6 +273,7 @@ async function runChat(page, label, { askMidway = false } = {}) {
  * dollar signs or TeX commands left in its visible text (code and KaTeX output excluded).
  */
 let mathChecks = 0
+let peekChecked = false
 async function assertMathRendered(page, where) {
   const raw = await page.evaluate(() => {
     const bad = []
@@ -290,6 +291,17 @@ async function assertMathRendered(page, where) {
 
 async function answerCard(page, card, label) {
   await assertMathRendered(page, label)
+  // once: a script reference opens the page viewer, and its close button (not only Esc) closes it
+  const peekOpen = card.locator('.btn', { hasText: /^\s*Open\s*$/ })
+  if (!peekChecked && (await peekOpen.count())) {
+    await peekOpen.first().click()
+    const peek = page.locator('.peek')
+    await peek.waitFor()
+    await peek.getByTitle('Close (Esc)').click()
+    await peek.waitFor({ state: 'detached', timeout: 5000 })
+    peekChecked = true
+    step('the script page viewer closes with its close button')
+  }
   {
     const kind = ((await card.locator('.kind').first().textContent().catch(() => '')) || '').trim()
     if (shotsDir && kind && !seenKinds.has(kind)) {

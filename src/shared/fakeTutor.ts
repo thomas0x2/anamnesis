@@ -35,7 +35,7 @@ export function probeStep(m: Meta) {
         kind: 'probe',
         title: 'Warm-up: cost',
         nodeId: null,
-        blocks: [{ type: 'text', md: 'You evaluate \\(p(x)=\\sum_j y_j\\ell_j(x)\\) directly at one point, with \\$n+1\\$ nodes.' }],
+        blocks: [{ type: 'text', md: 'You evaluate \\(p(x)=\\sum_j y_j\\ell_j(x)\\) directly at one point, with \\$n+1\\$ nodes. Each of the \\$n+1\\$ terms is a product of factors like $\\frac{x-x_0}{x_1-x_0}$, so with $n = 10^4$ nodes one evaluation takes about $(n+1)\\cdot n \\approx 10^{8}$ multiplications.' }],
         interaction: {
           type: 'mcq',
           prompt: 'What does one evaluation cost?',

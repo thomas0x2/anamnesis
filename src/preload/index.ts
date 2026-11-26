@@ -44,6 +44,10 @@ const api = {
   scanFolder: (path: string) => ipcRenderer.invoke('folder:scan', path),
   saveWork: (courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]) => ipcRenderer.invoke('work:save', courseId, submissionId, files),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open', url),
+  openPlatform: (url: string) => ipcRenderer.invoke('platform:open', url),
+  platformStatus: () => ipcRenderer.invoke('platform:status'),
+  capturePage: () => ipcRenderer.invoke('platform:capture'),
+  signOutPlatforms: () => ipcRenderer.invoke('platform:sign-out'),
   info: () => ipcRenderer.invoke('app:info'),
   onBeforeQuit(fn: () => Promise<void>) {
     ipcRenderer.removeAllListeners('app:before-quit')

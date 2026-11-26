@@ -4745,6 +4745,26 @@ b {
   font-size: 10.5px;
   padding: 1px 7px;
 }
+.platform-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin-top: 26px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.import-page {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+@media (max-width: 760px) {
+  .platform-bar {
+    grid-template-columns: 1fr;
+  }
+}
 .online-info {
   padding: 4px 0 10px;
   border-bottom: 1px dashed var(--line);

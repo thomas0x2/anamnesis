@@ -124,7 +124,9 @@ export function ToolView({ it }: { it: ToolItem }): ReactElement | null {
       ? Array.isArray(a.pages) && a.pages.length
         ? `Read the script, pages ${a.pages[0]}${a.pages[1] && a.pages[1] !== a.pages[0] ? `–${a.pages[1]}` : ''}`
         : `Searched the script${a.query ? ` for “${String(a.query)}”` : ''}`
-      : it.name === 'course'
+      : it.name === 'platform_page'
+        ? 'Read the page open in the platform window'
+        : it.name === 'course'
         ? 'Looked up the course map'
         : it.name === 'learner'
           ? 'Checked your mind model'

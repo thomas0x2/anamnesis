@@ -43,12 +43,22 @@
   --st-warn: #e0b25a;
   --st-serious: #e08a62;
   --st-critical: #d0645a;
-  /* mastery: ink getting brighter as it settles, from barely there to full white */
+  /* mastery: an ordered blue → teal → green → yellow ramp (viridis-like). Hue tells the levels
+     apart at a glance, and lightness rises with every step, so the order still reads in greyscale
+     and under red-green or blue-yellow colour-vision deficiency. Yellow stays clear of the vermilion point. */
   --m-unseen: #2a2a2a;
-  --m-introduced: #4a4a48;
-  --m-developing: #77776f;
-  --m-proficient: #b3b3ab;
-  --m-mastered: #f0efe9;
+  --m-introduced: #4a5bb0;
+  --m-developing: #2a9690;
+  --m-proficient: #7cc46a;
+  --m-mastered: #f5dc62;
+  /* neutral ink for meters that are not a mastery level */
+  --ink-fill: #77776f;
+  /* heat ramp (activity counts): one cool hue family, darker → lighter, separate from the mastery ramp */
+  --heat-0: var(--surface-3);
+  --heat-1: #1f3b5c;
+  --heat-2: #2c6a96;
+  --heat-3: #4fa3c7;
+  --heat-4: #b4e4ee;
   --radius: 14px;
   --radius-sm: 8px;
   --radius-pill: 999px;
@@ -590,7 +600,7 @@ kbd {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: var(--radius-sm);
-  background: var(--m-developing);
+  background: var(--ink-fill);
 }
 
 .toggle {
@@ -2318,7 +2328,7 @@ kbd {
   background: var(--m-mastered);
 }
 .mg-cell.selected {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 .mg-cell.misc {
@@ -2424,7 +2434,7 @@ kbd {
   max-width: 14px;
   min-width: 5px;
   border-radius: var(--radius-sm);
-  background: var(--m-developing);
+  background: var(--s1);
 }
 .note-box {
   padding: 11px 13px;
@@ -5230,7 +5240,7 @@ svg.pace {
   fill: none;
 }
 .pace .actual {
-  stroke: var(--text);
+  stroke: var(--s1);
   stroke-width: 1.6;
   fill: none;
   stroke-linejoin: round;
@@ -5287,7 +5297,7 @@ svg.pace {
 }
 .activity .fill {
   display: block;
-  background: var(--m-developing);
+  background: var(--s1);
   border-radius: 2px;
   max-height: calc(100% - 18px);
 }

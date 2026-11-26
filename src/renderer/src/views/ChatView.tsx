@@ -104,7 +104,7 @@ export function Composer({ value, onChange, onSend, placeholder, autoFocus }: { 
           }
         }}
       />
-      <VoiceButton onText={(t) => onChange(value ? `${value} ${t}` : t)} />
+      <VoiceButton compact priority={1} onText={(t) => onChange(value ? `${value} ${t}` : t)} />
       <button className="btn primary icon" onClick={onSend} disabled={!value.trim()} title="Send (Enter)" aria-label="Send">
         <Icon name="send" size={16} />
       </button>

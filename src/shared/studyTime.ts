@@ -68,7 +68,13 @@ export interface BreakClock {
   snoozedUntil: string | null
   /** the break running now */
   current: BreakRec | null
+  /** auto: counts while you work in a session, the materials or exam prep; running: the learner pressed
+   * Start and every minute counts for the open course, also away from the screen (paper, lectures);
+   * paused: the learner pressed Pause and nothing counts until Start */
+  mode: TimerMode
 }
+
+export type TimerMode = 'auto' | 'running' | 'paused'
 
 export interface StudyLog {
   version: 1
@@ -89,7 +95,7 @@ export const MAX_SESSIONS = 400
 export const MAX_BREAKS = 400
 
 export function emptyClock(): BreakClock {
-  return { workSec: 0, sinceLongSec: 0, lastActiveAt: null, snoozedUntil: null, current: null }
+  return { workSec: 0, sinceLongSec: 0, lastActiveAt: null, snoozedUntil: null, current: null, mode: 'auto' }
 }
 
 export function emptyStudyLog(): StudyLog {
@@ -155,7 +161,8 @@ export function normalizeStudyLog(raw: unknown): StudyLog {
     sinceLongSec: num(c.sinceLongSec),
     lastActiveAt: iso(c.lastActiveAt),
     snoozedUntil: iso(c.snoozedUntil),
-    current: c.current ? normalizeBreak(c.current) : null
+    current: c.current ? normalizeBreak(c.current) : null,
+    mode: c.mode === 'running' || c.mode === 'paused' ? c.mode : 'auto'
   }
   return { version: 1, days, sessions, breaks, clock }
 }
@@ -194,6 +201,22 @@ function applyGap(log: StudyLog, gapSec: number, s: BreakSettings, now: Date): S
   // only gaps within a study day are breaks worth listing; a night away just restarts the clock
   const listed = gapSec < 4 * 3600
   return { ...log, clock, breaks: listed ? [...log.breaks, rec].slice(-MAX_BREAKS) : log.breaks }
+}
+
+/** A started timer with no input in the window for this long was forgotten: it goes back to automatic. */
+export const RUNNING_IDLE_MS = 3 * 3600_000
+
+/** Whether this tick counts as study. Automatic: on a study screen, window visible, input in the last few
+ * minutes. Started: always (up to RUNNING_IDLE_MS without input). Paused or on a break: never. */
+export function countsNow(mode: TimerMode, x: { studyScreen: boolean; visible: boolean; idleMs: number; onBreak: boolean }): boolean {
+  if (x.onBreak || mode === 'paused') return false
+  if (mode === 'running') return x.idleMs < RUNNING_IDLE_MS
+  return x.studyScreen && x.visible && x.idleMs < IDLE_MS
+}
+
+/** Start, pause or go back to automatic counting. */
+export function setTimerMode(log: StudyLog, mode: TimerMode): StudyLog {
+  return log.clock.mode === mode ? log : { ...log, clock: { ...log.clock, mode } }
 }
 
 /** Credit `sec` seconds of study that ended at `now`. */

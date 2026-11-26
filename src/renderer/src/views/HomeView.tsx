@@ -1,372 +1,132 @@
-// Today: a glance row (due, started, exam, this week), what to continue or learn next,
-// review / practice / exam side by side, what is ready to learn, chapter readiness and recent sessions.
-import { prepProgress, workItems, workState } from '@shared/exam'
-import { statusRank, STATUS_ORDER } from '@shared/mastery'
-import { dueConcepts, nextDue } from '@shared/selection'
-import { fmtStudyShort, totalsSince } from '@shared/studyTime'
-import type { ConceptStatus } from '@shared/types'
+// Today: the overview across every course, the same whichever course is open. The day's study target and
+// the course to start with (from the plan), what is due soon (deadlines, exams, reviews), each course's
+// status in plan order, and study time over the last two weeks by course. Each course's own dashboard
+// is the Course screen (CourseView).
+import { dueSoon, overviewTotals, whenLabel, type DueItem } from '@shared/overview'
+import { fmtDuration, fmtParts, type CoursePlan, type StudyPlan } from '@shared/scheduler'
+import { daySeries, fmtStudy, fmtStudyShort, totalsSince } from '@shared/studyTime'
+import { dayKey } from '@shared/util'
 import { useMemo, type ReactElement } from 'react'
 import { Icon } from '../components/Icon'
-import { ActivityBars, CourseMasteryMap, ExamPace } from '../components/ProgressViz'
 import { Markdown } from '../components/Markdown'
 import { useApp } from '../engine/app'
-import { PlanNotice } from './PlanView'
 import { useStore } from '../engine/store'
-import { plural, relTime, STATUS_LABEL } from '../lib/format'
+import { plural } from '../lib/format'
 import { useNow } from '../lib/hooks'
+import { PACE, runStep, stepLabel, usePlanData } from './PlanView'
+
+/** One colour per course, in the order of the course menu. */
+export const COURSE_COLORS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)']
 
 export function HomeView(): ReactElement {
-  const app = useApp()
-  const state = useStore(app.state, (s) => s)
-  const sc = useStore(app.session, (s) => s)
+  const data = usePlanData()
   const now = useNow()
-  const learner = state.learner
-  const graph = app.graph
-
-  const due = useMemo(() => dueConcepts(learner, now).filter((id) => graph.get(id)), [learner, now, graph])
-  const frontier = useMemo(() => graph.frontier(learner).slice(0, 5), [learner, graph])
-  const learned = useMemo(() => app.course.concepts.filter((c) => statusRank(learner.concepts[c.id]?.status ?? 'unseen') >= 1).map((c) => c.id), [learner, app])
-  const here = (sc ? sc.view.get().session.goalConceptId : null) ?? frontier[0] ?? null
-  const upcoming = nextDue(learner)
-  const sessions = state.sessions.slice(-6).reverse()
+  const plan = data?.plan ?? null
   const hour = now.getHours()
   const greeting = hour < 5 ? 'Still up' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  const first = frontier[0] ? graph.get(frontier[0]) : undefined
-  const reviewFirst = due.length > 0
+  const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  const scheduled = plan?.courses.filter((c) => c.perDay !== null && c.pace !== 'done') ?? []
+  const first = scheduled.find((c) => c.todayLeft >= 5) ?? null
+  const totals = plan ? overviewTotals(plan.courses) : null
+  const due = useMemo(() => (data ? dueSoon(data.snaps, data.plan.courses, now) : []), [data, now])
 
-  const dateLabel = now.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long'
-  })
-  const summary = due.length ? `${due.length === 1 ? 'One idea is' : `${plural(due.length, 'idea')} are`} ready to be remembered.` : first ? 'Something new is ready to learn.' : 'Everything is underway.'
+  const summary = !plan
+    ? 'Working out the day…'
+    : first
+      ? `Start with ${first.short}: about ${fmtDuration(first.todayLeft)} today.`
+      : scheduled.length
+        ? 'Today’s share is done for every course.'
+        : totals?.due
+          ? `${plural(totals.due, 'review')} ${totals.due === 1 ? 'is' : 'are'} due.`
+          : 'Set your exam dates to get a daily plan.'
 
   return (
-    <div className="page">
+    <div className="page today-page">
       <div className="page-head today-head">
         <div>
-          <div className="sub">
-            {app.course.title} · {dateLabel}
-          </div>
+          <div className="sub">All courses · {dateLabel}</div>
           <h1 style={{ marginTop: 10 }}>
             {greeting}. <em>{summary}</em>
           </h1>
         </div>
-        <button className="btn ghost" onClick={() => app.go({ name: 'map' })}>
-          Pick any topic
-        </button>
       </div>
 
-      <Glance due={due.length} learned={learned.length} />
-
-      <CourseNotice />
+      {plan && totals && <OverviewGlance plan={plan} totals={totals} />}
 
       <div className="today-grid">
-        <PlanNotice />
+        <ActiveSession />
 
-        {sc ? (
-          <ActiveSessionBanner />
-        ) : (
-          <div className="today-block wide">
-            <div className="grow">
-              <div className="eyebrow">learn next</div>
-              <div className="title" style={{ marginTop: 8 }}>
-                {first ? <Markdown text={first.title} inline /> : 'Everything is underway'}
-              </div>
-              <div className="desc" style={{ marginTop: 4 }}>
-                {first ? <Markdown text={first.why} inline /> : 'Every concept has been started. Practice and review keep it alive.'}
-              </div>
+        {plan && <StartHere plan={plan} first={first} />}
+
+        <div className="today-block half due-block" aria-label="Due soon">
+          <div className="row between">
+            <div className="eyebrow">due soon</div>
+            <span className="eyebrow">deadlines · exams · reviews</span>
+          </div>
+          {!plan ? <div className="empty">…</div> : due.length ? <DueList items={due} /> : <div className="empty">Nothing is due in the next two weeks.</div>}
+        </div>
+
+        <div className="today-block half">
+          <div className="row between">
+            <div className="eyebrow">study time</div>
+            <span className="eyebrow">last two weeks · by course</span>
+          </div>
+          <StudyBars />
+        </div>
+
+        {plan && plan.courses.length > 0 && (
+          <section className="today-block wide course-cards-block" aria-label="Your courses">
+            <div className="row between">
+              <div className="eyebrow">your courses</div>
+              <span className="eyebrow">in the plan’s order · open one for its dashboard</span>
             </div>
-            <button className={`btn go ${!reviewFirst && first ? 'primary' : ''}`} disabled={!first} onClick={() => first && void app.startLearn(first.id)}>
-              Start with a probe <Icon name="chev-right" size={14} />
-            </button>
-          </div>
-        )}
-
-        <div className="today-block third">
-          <div className="eyebrow">review</div>
-          {due.length ? (
-            <div className="row" style={{ alignItems: 'baseline', gap: 10 }}>
-              <span className="big">{due.length}</span>
-              <span className="muted small">due · about {Math.max(3, Math.round(Math.min(due.length, 10) * 1.5))} min</span>
-            </div>
-          ) : (
-            <div className="title">All caught up</div>
-          )}
-          <div className="desc">
-            {due.length
-              ? 'Recall what is starting to fade, just before you would forget it.'
-              : upcoming
-                ? `Your next review is ${relTime(upcoming, now)}. Spacing works best when you wait for it.`
-                : 'Reviews appear here after your first session.'}
-          </div>
-          <button className={`btn go ${reviewFirst ? 'primary' : ''}`} disabled={!due.length} onClick={() => void app.startReview()}>
-            Start review
-          </button>
-        </div>
-
-        <div className="today-block third">
-          <div className="eyebrow">practice</div>
-          <div className="title">{learned.length ? plural(learned.length, 'concept') : 'Nothing yet'}</div>
-          <div className="desc">Mixed problems that get harder as you succeed: composed demands, unfamiliar cues, exam-style surfaces.</div>
-          <button className="btn go" disabled={!learned.length} onClick={() => void app.startPractice(learned)}>
-            Practice a mix
-          </button>
-        </div>
-
-        <ExamNotice />
-
-        <div className="today-block wide progress-block">
-          <div className="row between">
-            <div className="eyebrow">where you are</div>
-            <span className="eyebrow">one square per concept · brighter is further along</span>
-          </div>
-          <CourseMasteryMap here={here} />
-        </div>
-
-        <div className="today-block half">
-          <div className="row between">
-            <div className="eyebrow">exam pace</div>
-            <span className="eyebrow">sets and mocks done</span>
-          </div>
-          <ExamPace />
-        </div>
-
-        <div className="today-block half">
-          <div className="row between">
-            <div className="eyebrow">last two weeks</div>
-            <span className="eyebrow">insight points per day</span>
-          </div>
-          <ActivityBars />
-        </div>
-
-        <div className="today-block half">
-          <div className="row between">
-            <div className="eyebrow">ready to learn</div>
-            <span className="eyebrow">prerequisites in place</span>
-          </div>
-          {frontier.length ? (
-            <div className="next-list" style={{ gap: 0 }}>
-              {frontier.map((id) => {
-                const c = graph.get(id)!
-                return (
-                  <div className="next-item" key={id}>
-                    <div className="body">
-                      <div className="t">
-                        <Markdown text={c.title} inline />
-                      </div>
-                      <div className="s">
-                        {c.chapter ? `Ch ${c.chapter} · ` : 'Refresher · '}
-                        <Markdown text={c.summary} inline />
-                      </div>
-                    </div>
-                    <button className="btn sm ghost icon" title="Show on the map" onClick={() => app.go({ name: 'map', conceptId: id })}>
-                      <Icon name="map" size={15} />
-                    </button>
-                    <button className="btn sm" onClick={() => void app.startLearn(id)}>
-                      Learn
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="empty">Nothing is waiting: everything has been started.</div>
-          )}
-        </div>
-
-        <div className="today-block half">
-          <div className="row between">
-            <div className="eyebrow">recent sessions</div>
-            <button className="btn sm ghost" onClick={() => app.go({ name: 'stats' })}>
-              All stats <Icon name="chev-right" size={14} />
-            </button>
-          </div>
-          {sessions.length ? (
-            <div className="session-list">
-              {sessions.map((s) => (
-                <div className="session-row" key={s.id}>
-                  <span className="row" style={{ minWidth: 0 }}>
-                    <span className="chip">{s.type}</span>
-                    <span
-                      style={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      <Markdown text={s.title} inline />
-                    </span>
-                  </span>
-                  <span className="muted small">{s.items ? `${s.correct} of ${plural(s.items, 'item')} right` : 'no graded items'}</span>
-                  <span className="small muted">+{s.points}</span>
-                  <span className="muted small">{relTime(s.endedAt ?? s.startedAt, now)}</span>
-                </div>
+            <div className="course-cards">
+              {[...scheduled, ...plan.courses.filter((c) => !scheduled.includes(c))].map((c) => (
+                <CourseCard key={c.id} c={c} rank={scheduled.indexOf(c) + 1 || null} />
               ))}
             </div>
-          ) : (
-            <div className="empty">Your sessions will be listed here.</div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
     </div>
   )
 }
 
-function ActiveSessionBanner(): ReactElement | null {
+/** The day across courses in one row: what is left today, reviews due, the next exam, study time. */
+function OverviewGlance({ plan, totals }: { plan: StudyPlan; totals: ReturnType<typeof overviewTotals> }): ReactElement {
   const app = useApp()
-  const sc = useStore(app.session, (s) => s)
-  if (!sc) return null
-  const s = sc.view.get().session
-  const title = s.type === 'learn' ? app.graph.title(s.goalConceptId ?? '') : s.type === 'review' ? 'Review' : 'Practice'
-  return (
-    <div className="today-block wide">
-      <div className="grow">
-        <div className="eyebrow" style={{ color: 'var(--brand)' }}>
-          continue
-        </div>
-        <div className="title" style={{ marginTop: 8 }}>
-          <Markdown text={title} inline />
-        </div>
-        <div className="desc" style={{ marginTop: 4 }}>
-          Saved as you go. Pick it up where you left off.
-        </div>
-      </div>
-      <button className="btn ghost go" onClick={() => app.closeSession()}>
-        Close it
-      </button>
-      <button className="btn primary go" onClick={() => app.go({ name: 'session' })}>
-        Continue <Icon name="chev-right" size={14} />
-      </button>
-    </div>
-  )
-}
-
-export function SegBar({ counts }: { counts: Record<ConceptStatus, number> }): ReactElement {
-  const total = STATUS_ORDER.reduce((s, k) => s + counts[k], 0) || 1
-  return (
-    <span className="seg-bar" aria-hidden>
-      {[...STATUS_ORDER]
-        .reverse()
-        .filter((k) => counts[k] > 0)
-        .map((k) => (
-          <span key={k} style={{ flex: counts[k] / total, background: `var(--m-${k})` }} />
-        ))}
-    </span>
-  )
-}
-
-export function StatusLegend(): ReactElement {
-  return (
-    <div className="legend-row" style={{ marginTop: 14 }}>
-      {[...STATUS_ORDER].reverse().map((s) => (
-        <span key={s}>
-          <span className={`status-dot ${s}`} /> {STATUS_LABEL[s]}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-/** What the course's materials are doing: an empty course, files waiting in the folder, a PDF being mapped, concepts new this week. */
-/** The exam goal at a glance: days left, problem sets and mock exams done, and the newest set still open. */
-function ExamNotice(): ReactElement {
-  const app = useApp()
-  const prep = useStore(app.exam)
-  const materials = useStore(app.materials)
+  const log = useStore(app.study.log)
   const now = useNow()
-  const p = prepProgress(prep, materials, now)
-  const { sets } = workItems(materials, prep)
-  const open = [...sets].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).find((m) => !workState(prep, m.id).done)
-  const over = p.daysLeft !== null && p.daysLeft < 0
-  return (
-    <div className="today-block third exam-notice">
-      <div className="eyebrow">exam prep</div>
-      <div className="title">{p.daysLeft === null || over ? 'No exam date yet' : p.daysLeft === 0 ? 'The exam is today' : `Exam in ${plural(p.daysLeft, 'day')}`}</div>
-      <div className="meters">
-        <Meter label="problem sets" done={p.sets.done} total={p.sets.total} />
-        <Meter label="mock exams" done={p.mocks.done} total={p.mocks.goal} />
-      </div>
-      <div className="desc">
-        {open
-          ? `Next: ${open.title}.`
-          : p.daysLeft === null || over
-            ? 'Set the date to pace problem sets and mock exams.'
-            : p.perWeek !== null
-              ? `About ${p.perWeek < 1 ? p.perWeek.toFixed(1) : Math.ceil(p.perWeek * 10) / 10} a week to finish in time.`
-              : 'Every problem set that is out is done.'}
-      </div>
-      <button className="btn go" onClick={() => app.go({ name: 'exam', materialId: open?.id })}>
-        {p.daysLeft === null || over ? 'Set the exam date' : 'Exam prep'}
-      </button>
-    </div>
-  )
-}
-
-function Meter({ label, done, total }: { label: string; done: number; total: number }): ReactElement {
-  return (
-    <div className="meter">
-      <span className="k">{label}</span>
-      <span className="bar">
-        <span
-          style={{
-            width: total ? `${Math.min(100, (done / total) * 100)}%` : 0
-          }}
-        />
-      </span>
-      <span className="v">
-        {done}/{total || '–'}
-      </span>
-    </div>
-  )
-}
-
-/** The whole picture in one row: what is due, how much is learned, the exam, and this week. */
-function Glance({ due, learned }: { due: number; learned: number }): ReactElement {
-  const app = useApp()
-  const state = useStore(app.state, (s) => s)
-  const prep = useStore(app.exam)
-  const materials = useStore(app.materials)
-  const now = useNow()
-  const total = app.course.concepts.length
-  const p = prepProgress(prep, materials, now)
-  const weekAgo = now.getTime() - 7 * 86_400_000
-  const weekPts = state.rewards.events.filter((e) => Date.parse(e.at) >= weekAgo).reduce((s, e) => s + e.points, 0)
-  const weekSessions = state.sessions.filter((s) => Date.parse(s.startedAt) >= weekAgo).length
-  const studyLog = useStore(app.study.log)
-  const studiedToday = totalsSince(studyLog, now, 1).sec
-  const studiedWeek = totalsSince(studyLog, now, 7).sec
-  const exam = p.daysLeft === null || p.daysLeft < 0 ? '–' : String(p.daysLeft)
-  const cells: {
-    k: string
-    v: string
-    s: string
-    hot?: boolean
-    go: () => void
-  }[] = [
+  const week = totalsSince(log, now, 7).sec
+  const today = totalsSince(log, now, 1).sec
+  const hasPlan = plan.courses.some((c) => c.perDay !== null)
+  const cells: { k: string; v: string; s: string; hot?: boolean; go: () => void }[] = [
+    {
+      k: 'left today',
+      v: !hasPlan ? '–' : plan.todayLeft >= 5 ? fmtDuration(plan.todayLeft) : 'done',
+      s: hasPlan ? `of about ${fmtDuration(plan.perDay)} a day${fmtParts(plan.perDayParts) ? ` · ${fmtParts(plan.perDayParts)}` : ''}` : 'set exam dates for a daily target',
+      go: () => app.go({ name: 'plan' })
+    },
     {
       k: 'due for review',
-      v: String(due),
-      s: due ? 'fading, worth recalling now' : 'all caught up',
-      hot: due > 0,
-      go: () => (due ? void app.startReview() : app.go({ name: 'mind' }))
+      v: String(totals.due),
+      s: totals.due ? `across ${plural(plan.courses.filter((c) => c.due > 0).length, 'course')}` : 'all caught up',
+      hot: totals.due > 0,
+      go: () => {
+        const c = [...plan.courses].sort((a, b) => b.due - a.due)[0]
+        if (c && c.due > 0) void app.openIn(c.id, { name: 'course' })
+      }
     },
     {
-      k: 'concepts started',
-      v: `${learned}`,
-      s: `of ${total} in ${app.course.short}`,
-      go: () => app.go({ name: 'map' })
-    },
-    {
-      k: 'days to the exam',
-      v: exam,
-      s: p.sets.total || p.mocks.goal ? `${p.sets.done + p.mocks.done} of ${p.sets.total + p.mocks.goal} sets and mocks done` : 'no date set',
-      go: () => app.go({ name: 'exam' })
+      k: 'next exam',
+      v: totals.nextExam ? String(totals.nextExam.days) : '–',
+      s: totals.nextExam ? `days · ${totals.nextExam.short}` : 'no exam date set',
+      go: () => (totals.nextExam ? void app.openIn(totals.nextExam.id, { name: 'exam' }) : app.go({ name: 'plan' }))
     },
     {
       k: 'studied today',
-      v: fmtStudyShort(studiedToday),
-      s: `${fmtStudyShort(studiedWeek)} this week · ${plural(weekSessions, 'session')} · +${weekPts}`,
+      v: fmtStudyShort(today),
+      s: `${fmtStudyShort(week)} this week${totals.behind.length ? ` · behind in ${totals.behind.join(', ')}` : ''}`,
       go: () => app.go({ name: 'stats' })
     }
   ]
@@ -383,71 +143,212 @@ function Glance({ due, learned }: { due: number; learned: number }): ReactElemen
   )
 }
 
-function CourseNotice(): ReactElement | null {
+/** The course to start with and its first step, straight from the plan. */
+function StartHere({ plan, first }: { plan: StudyPlan; first: CoursePlan | null }): ReactElement | null {
   const app = useApp()
-  const { course } = useStore(app.courseView)
-  const pending = useStore(app.pending)
-  const job = useStore(app.job)
-  const fresh = course.concepts.filter((c) => c.addedAt && Date.now() - Date.parse(c.addedAt) < 7 * 86_400_000)
-  if (!course.concepts.length)
-    return (
-      <div className="today-block wide course-notice">
-        <div className="grow">
-          <div className="eyebrow">{job ? 'building the map' : 'a new course'}</div>
-          <div className="title" style={{ marginTop: 8 }}>
-            {job ? `${job.label}…` : `${course.short} has no concepts yet`}
-          </div>
-          <div className="desc" style={{ marginTop: 4 }}>
-            {job
-              ? 'Concepts appear on the map as each part is read. You can start learning as soon as the first ones are there.'
-              : 'Add the script, this week’s slides or a problem set. Each PDF is read on this computer and turned into concepts with their prerequisites.'}
-          </div>
+  const open = plan.courses.filter((c) => c.perDay !== null && c.pace !== 'done')
+  if (!open.length) return null
+  const then = open.filter((c) => c.todayLeft >= 5 && c !== first).slice(0, 2)
+  const step = first?.steps[0]
+  return (
+    <div className="today-block wide plan-notice">
+      <div className="grow">
+        <div className="eyebrow" style={{ color: first ? 'var(--brand)' : undefined }}>
+          start here
         </div>
-        {!job && (
-          <button className="btn primary go" onClick={() => app.go({ name: 'materials' })}>
-            Add materials <Icon name="chev-right" size={14} />
+        <div className="title" style={{ marginTop: 8 }}>
+          {first ? (
+            step ? (
+              <>
+                {first.short}: <Markdown text={step.title} inline />
+              </>
+            ) : (
+              `${first.short}: about ${fmtDuration(first.todayLeft)} today`
+            )
+          ) : (
+            'Today’s share is done for every course'
+          )}
+        </div>
+        <div className="desc" style={{ marginTop: 4 }}>
+          {step ? <Markdown text={step.why} inline /> : null}
+          {then.length ? ` Then ${then.map((c) => `${c.short} (${fmtDuration(c.todayLeft)})`).join(', ')}.` : ''}
+        </div>
+      </div>
+      <button className="btn ghost go" onClick={() => app.go({ name: 'plan' })}>
+        See the plan
+      </button>
+      {first && step && (
+        <button className="btn primary go" onClick={() => void runStep(app, first.id, step)}>
+          {stepLabel(step)} <Icon name="chev-right" size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function ActiveSession(): ReactElement | null {
+  const app = useApp()
+  const sc = useStore(app.session, (s) => s)
+  if (!sc) return null
+  const s = sc.view.get().session
+  const title = s.type === 'learn' ? app.graph.title(s.goalConceptId ?? '') : s.type === 'review' ? 'Review' : 'Practice'
+  return (
+    <div className="today-block wide">
+      <div className="grow">
+        <div className="eyebrow" style={{ color: 'var(--brand)' }}>
+          continue · {app.course.short}
+        </div>
+        <div className="title" style={{ marginTop: 8 }}>
+          <Markdown text={title} inline />
+        </div>
+        <div className="desc" style={{ marginTop: 4 }}>
+          Saved as you go. Pick it up where you left off.
+        </div>
+      </div>
+      <button className="btn primary go" onClick={() => app.go({ name: 'session' })}>
+        Continue <Icon name="chev-right" size={14} />
+      </button>
+    </div>
+  )
+}
+
+const DUE_LABEL: Record<DueItem['kind'], string> = { deadline: 'due', exam: 'exam', review: 'review' }
+
+function DueList({ items }: { items: DueItem[] }): ReactElement {
+  const app = useApp()
+  const go = (d: DueItem): void => {
+    if (d.kind === 'deadline') void app.openIn(d.courseId, { name: 'exam', materialId: d.materialId })
+    else if (d.kind === 'exam') void app.openIn(d.courseId, { name: 'exam' })
+    else
+      void app.openIn(d.courseId, { name: 'course' }).then(() => void app.startReview())
+  }
+  return (
+    <div className="due-list">
+      {items.slice(0, 8).map((d, i) => (
+        <div className={`due-row ${d.kind} ${d.days < 0 ? 'late' : ''}`} key={`${d.kind}-${d.courseId}-${d.materialId ?? i}`}>
+          <span className={`plan-kind ${d.kind}`}>{DUE_LABEL[d.kind]}</span>
+          <span className="due-title">
+            <span className="chip outline">{d.short}</span> {d.kind === 'review' ? `${plural(d.count ?? 0, 'concept')} fading` : d.title}
+          </span>
+          <span className={`due-when ${d.days <= 1 ? 'soon' : ''}`}>{d.kind === 'review' ? 'now' : whenLabel(d.days)}</span>
+          <button className="btn sm" onClick={() => go(d)}>
+            {d.kind === 'review' ? 'Review' : 'Open'}
+          </button>
+        </div>
+      ))}
+      {items.length > 8 && <div className="tiny muted">+{items.length - 8} more in the plan</div>}
+    </div>
+  )
+}
+
+/** Minutes per day for the last 14 days, stacked by course in each course's colour. */
+function StudyBars(): ReactElement {
+  const app = useApp()
+  const log = useStore(app.study.log)
+  const courses = useStore(app.courses)
+  const now = useNow()
+  const days = useMemo(() => daySeries(log, now, 14), [log, now])
+  const color = (id: string): string => COURSE_COLORS[Math.max(0, courses.findIndex((c) => c.id === id)) % COURSE_COLORS.length]
+  const name = (id: string): string => courses.find((c) => c.id === id)?.short ?? id
+  const max = Math.max(30 * 60, ...days.map((d) => d.sec))
+  const seen = courses.filter((c) => days.some((d) => (d.byCourse[c.id] ?? 0) > 0))
+  const total = days.reduce((s, d) => s + d.sec, 0)
+  const active = days.filter((d) => d.sec >= 60).length
+  return (
+    <div className="activity study-bars">
+      <div className="bars" role="img" aria-label={`Study time per day over the last 14 days: ${fmtStudy(total)} in all, on ${active} days`}>
+        {days.map((d) => (
+          <span
+            key={d.key}
+            className={`day ${d.key === dayKey(now) ? 'today' : ''}`}
+            title={`${d.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}: ${fmtStudy(d.sec)}${
+              Object.keys(d.byCourse).length ? ` (${Object.entries(d.byCourse).map(([c, s]) => `${name(c)} ${fmtStudyShort(s)}`).join(', ')})` : ''
+            }`}
+          >
+            <span className="stack" style={{ height: `${d.sec ? Math.max(4, (d.sec / max) * 100) : 2}%` }}>
+              {d.sec ? (
+                Object.entries(d.byCourse)
+                  .filter(([, s]) => s > 0)
+                  .map(([c, s]) => <span key={c} style={{ flex: s, background: color(c) }} />)
+              ) : (
+                <span style={{ flex: 1, background: 'var(--surface-3)' }} />
+              )}
+            </span>
+            <span className="dl">{d.date.toLocaleDateString('en-GB', { weekday: 'narrow' })}</span>
+          </span>
+        ))}
+      </div>
+      <div className="pace-note">
+        <b>{fmtStudy(total)}</b> in two weeks · {active} of 14 days
+        {seen.length > 0 && (
+          <span className="course-legend">
+            {seen.map((c) => (
+              <span key={c.id}>
+                <i style={{ background: color(c.id) }} /> {c.short}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CourseCard({ c, rank }: { c: CoursePlan; rank: number | null }): ReactElement {
+  const app = useApp()
+  const courses = useStore(app.courses)
+  const pace = PACE[c.pace]
+  const color = COURSE_COLORS[Math.max(0, courses.findIndex((x) => x.id === c.id)) % COURSE_COLORS.length]
+  const exam = c.daysLeft === null ? 'no exam date' : c.daysLeft < 0 ? 'exam passed' : c.daysLeft === 0 ? 'exam today' : `exam in ${plural(c.daysLeft, 'day')}`
+  const scheduled = c.perDay !== null && c.pace !== 'done'
+  return (
+    <div className={`course-card ${rank === 1 ? 'first' : ''} ${c.id === app.courseId ? 'open' : ''}`}>
+      <div className="cc-head">
+        <i className="cc-dot" style={{ background: color }} />
+        <button className="cc-title" onClick={() => void app.openIn(c.id, { name: 'course' })} title={`Open the ${c.short} dashboard`}>
+          <span className="t">{c.short}</span>
+          <span className="s">{c.title}</span>
+        </button>
+        {c.pace !== 'no-date' && (
+          <span className={`chip ${pace.tone}`} title={pace.help}>
+            {pace.label}
+          </span>
+        )}
+      </div>
+      <div className="cc-facts">
+        <span>{exam}</span>
+        {scheduled && <span>{c.todayLeft >= 5 ? `${fmtDuration(c.todayLeft)} left today` : 'today’s share done'}</span>}
+        {c.due > 0 && <span className="hot">{plural(c.due, 'review')} due</span>}
+      </div>
+      <div className="meters">
+        <CardMeter label="concepts" done={c.concepts.covered} total={c.concepts.total} />
+        <CardMeter label="problem sets" done={c.sets.done} total={c.sets.total} />
+        <CardMeter label="mock exams" done={c.mocks.done} total={c.mocks.goal} />
+      </div>
+      <div className="cc-foot">
+        <button className="btn sm ghost" onClick={() => void app.openIn(c.id, { name: 'course' })}>
+          Dashboard <Icon name="chev-right" size={13} />
+        </button>
+        {c.steps[0] && (
+          <button className="btn sm" title={c.steps[0].why} onClick={() => void runStep(app, c.id, c.steps[0])}>
+            {stepLabel(c.steps[0])}
           </button>
         )}
       </div>
-    )
-  if (!pending.length && !job && !fresh.length) return null
+    </div>
+  )
+}
+
+function CardMeter({ label, done, total }: { label: string; done: number; total: number }): ReactElement {
   return (
-    <div className="today-block wide course-notice">
-      <div className="grow">
-        <div className="eyebrow">{pending.length ? 'new in the course folder' : job ? 'reading new material' : 'new this week'}</div>
-        <div className="title" style={{ marginTop: 8 }}>
-          {pending.length ? plural(pending.length, 'new PDF') : job ? `${job.label}…` : `${plural(fresh.length, 'new concept')} on the map`}
-        </div>
-        <div className="desc" style={{ marginTop: 4 }}>
-          {pending.length
-            ? pending
-                .slice(0, 3)
-                .map((f) => f.name)
-                .join(', ') + (pending.length > 3 ? ', …' : '')
-            : job
-              ? 'The course map grows as it is read.'
-              : fresh
-                  .slice(0, 4)
-                  .map((c) => c.title)
-                  .join(' · ')}
-        </div>
-      </div>
-      {pending.length > 0 ? (
-        <>
-          <button className="btn ghost go" onClick={() => app.go({ name: 'materials' })}>
-            Review
-          </button>
-          <button className="btn primary go" onClick={() => void app.addFiles(pending)}>
-            Add {pending.length === 1 ? 'it' : 'all'}
-          </button>
-        </>
-      ) : (
-        !job && (
-          <button className="btn ghost go" onClick={() => app.go({ name: 'map', conceptId: fresh[0]?.id })}>
-            Show on the map <Icon name="chev-right" size={14} />
-          </button>
-        )
-      )}
+    <div className="meter">
+      <span className="k">{label}</span>
+      <span className="bar">
+        <span style={{ width: total ? `${Math.min(100, (done / total) * 100)}%` : 0 }} />
+      </span>
+      <span className="v">
+        {done}/{total || '–'}
+      </span>
     </div>
   )
 }

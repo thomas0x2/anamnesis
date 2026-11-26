@@ -37,6 +37,7 @@
   --s2: #e6c56f;
   --s3: #d98fb8;
   --s4: #8fd1a8;
+  --s5: #b9a6ef;
   --grid: rgba(255, 255, 255, 0.06);
   --axis: rgba(255, 255, 255, 0.14);
   --st-good: #6fbf85;
@@ -4950,7 +4951,9 @@ b {
 .resume-card {
   max-width: 260px;
 }
-@media (max-width: 1240px) {
+/* narrower windows: icons only (the open screen keeps its label), then the brand name, the points and the
+   resume card go, and finally even the open screen's label */
+@media (max-width: 1520px) {
   .topnav .nav-label {
     display: none;
   }
@@ -4959,6 +4962,34 @@ b {
   }
   .topnav .nav-item.active .nav-label {
     display: inline;
+  }
+}
+@media (max-width: 1100px) {
+  .topbar {
+    gap: 12px;
+  }
+  .brand-name,
+  .topbar-end .points,
+  .topbar .resume-card {
+    display: none;
+  }
+  .course-btn {
+    margin-left: 0;
+  }
+}
+@media (max-width: 900px) {
+  .topnav .nav-item.active .nav-label {
+    display: none;
+  }
+  .topnav .nav-item {
+    padding: 7px 8px;
+  }
+  .nav-group + .nav-group {
+    margin-left: 3px;
+    padding-left: 3px;
+  }
+  .study-timer .study-pill .study-due {
+    display: none;
   }
 }
 
@@ -5776,6 +5807,7 @@ svg.pace {
 }
 .ce-task .bad {
   color: var(--bad);
+}
 
 /* ------------------------------------------------------------ study time and breaks */
 .study-pill {
@@ -5954,4 +5986,189 @@ svg.pace {
   border: 0;
   background: transparent;
   color-scheme: dark;
+}
+
+/* ------------------------------------------------------------ Today across courses */
+.plan-kind.deadline {
+  color: var(--s4);
+}
+.plan-kind.exam {
+  color: var(--brand);
+}
+.due-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.due-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.due-row:first-child {
+  border-top: 0;
+}
+.due-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+.due-title .chip {
+  margin-right: 6px;
+}
+.due-when {
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.due-when.soon,
+.due-row.late .due-when {
+  color: var(--brand);
+}
+.study-bars .stack {
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 2px;
+  overflow: hidden;
+  max-height: calc(100% - 18px);
+}
+.study-bars .stack > span {
+  display: block;
+  min-height: 1px;
+}
+.study-bars .day.today .dl {
+  color: var(--brand);
+}
+.course-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-left: 12px;
+}
+.course-legend i,
+.cc-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: 0;
+}
+.course-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.course-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.course-card.first {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+}
+.cc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-dot {
+  flex: none;
+  margin-right: 0;
+}
+.cc-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cc-title .t {
+  font-size: 17px;
+}
+.cc-title .s {
+  font-size: 12px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-title:hover .t {
+  color: var(--brand);
+}
+.cc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--muted);
+}
+.cc-facts .hot {
+  color: var(--brand);
+}
+.cc-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.course-card .meters {
+  margin: 0;
+}
+.today-block.wide.course-cards-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* the study timer in the top bar: the time today, then Start / Pause */
+.study-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.study-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.study-toggle:hover {
+  color: var(--text);
+  border-color: var(--line-2);
+}
+.study-toggle.on {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+.study-timer.running .study-pill {
+  color: var(--text);
+  border-color: var(--brand);
+}
+.study-timer.paused .study-pill {
+  color: var(--faint);
+  border-style: dashed;
 }

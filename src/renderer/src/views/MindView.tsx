@@ -11,7 +11,7 @@ import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { LEVEL_LABEL, pct, plural, relTime, STATUS_HELP, STATUS_LABEL } from '../lib/format'
 import { useNow } from '../lib/hooks'
-import { StatusLegend } from './HomeView'
+import { StatusLegend } from './CourseView'
 
 type Filter = 'started' | 'all' | 'misc'
 

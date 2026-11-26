@@ -6,9 +6,11 @@ import {
   backFromBreakNote,
   breakNote,
   breakStatus,
+  countsNow,
+  RUNNING_IDLE_MS,
+  setTimerMode,
   emptyStudyLog,
   endBreak,
-  IDLE_MS,
   normalizeBreakSettings,
   normalizeStudyLog,
   REMIND_EVERY_MIN,
@@ -20,7 +22,8 @@ import {
   type BreakSource,
   type BreakStatus,
   type StudyContext,
-  type StudyLog
+  type StudyLog,
+  type TimerMode
 } from '@shared/studyTime'
 import type { BreakSettings, Session } from '@shared/types'
 import type { AppController, Route } from './app'
@@ -135,9 +138,15 @@ export class StudyClock {
     this.lastTick = t
     if (!this.loaded) return
     const visible = typeof document === 'undefined' || document.visibilityState === 'visible'
-    const ctx = this.context()
+    const clock = this.log.get().clock
+    const auto = this.context()
+    // a started timer counts for the open course wherever you are in the app
+    const ctx = clock.mode === 'running' ? (auto ?? { courseId: this.app.courseId, session: null }) : auto
     const now = new Date(t)
-    if (ctx && visible && t - this.lastInput < IDLE_MS && !this.log.get().clock.current) {
+    const idleMs = t - this.lastInput
+    // a timer started and then forgotten (hours without touching the app) goes back to automatic
+    if (clock.mode === 'running' && idleMs >= RUNNING_IDLE_MS) this.commit((l) => setTimerMode(l, 'auto'))
+    if (ctx && countsNow(clock.mode, { studyScreen: !!auto, visible, idleMs, onBreak: !!clock.current })) {
       this.log.set((l) => accrue(l, ctx, dt / 1000, now, this.settings))
       this.dirty = true
       this.scheduleSave()
@@ -166,6 +175,23 @@ export class StudyClock {
     this.dirty = true
     void this.save()
     this.tick.set((n) => n + 1)
+  }
+
+  // ------------------------------------------------------------ start / pause
+  get mode(): TimerMode {
+    return this.log.get().clock.mode
+  }
+
+  /** Start: count every minute for the open course until Pause, also off the screen. */
+  startTimer(): void {
+    this.lastInput = Date.now()
+    this.lastTick = Date.now()
+    this.commit((l) => setTimerMode(l, 'running'))
+  }
+
+  /** Pause: nothing counts until Start. */
+  pauseTimer(): void {
+    this.commit((l) => setTimerMode(l, 'paused'))
   }
 
   // ------------------------------------------------------------ breaks

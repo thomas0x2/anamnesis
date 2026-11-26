@@ -50,7 +50,10 @@ import { createStore, type Store } from './store'
 import { StudyClock } from './studyClock'
 
 export type Route =
+  /** Today: the overview across every course, whichever course is open */
   | { name: 'home' }
+  /** the open course's own dashboard */
+  | { name: 'course' }
   | { name: 'map'; conceptId?: string }
   | { name: 'session' }
   | { name: 'chat' }
@@ -61,6 +64,22 @@ export type Route =
   | { name: 'exam'; materialId?: string }
   | { name: 'plan' }
   | { name: 'settings' }
+
+/** Where to land after switching course: the same screen of the new course (Today stays Today); a session or a
+ * concept, page or problem set of the old course does not carry over. */
+export function routeAfterSwitch(r: Route): Route {
+  switch (r.name) {
+    case 'session':
+      return { name: 'course' }
+    case 'map':
+    case 'mind':
+    case 'exam':
+    case 'script':
+      return { name: r.name }
+    default:
+      return r
+  }
+}
 
 export interface Toast {
   id: string
@@ -356,7 +375,7 @@ export class AppController {
     if (this.mapRequest) void this.backend.cancel(this.mapRequest)
     await this.saveSettings({ activeCourse: id })
     await this.openCourse(id)
-    this.go({ name: 'home' })
+    this.go(routeAfterSwitch(this.ui.get().route))
   }
 
   async createCourse(input: Partial<CourseMeta> & { title: string }): Promise<string> {
@@ -386,6 +405,8 @@ export class AppController {
     await this.backend.writeJson('courses-index', this.metas)
     this.refreshCourseList()
     await this.switchCourse(id)
+    // a new course has nothing in it yet: its dashboard says what to add
+    this.go({ name: 'course' })
     return id
   }
 
@@ -1375,7 +1396,7 @@ export class AppController {
     void this.leaveCurrent()
     this.session.set(null)
     this.updateState((st) => ({ ...st, activeSessionId: null }))
-    this.go({ name: 'home' })
+    this.go({ name: 'course' })
   }
 
   async resetAll(): Promise<void> {

@@ -47,16 +47,39 @@ export function StudyPill(): ReactElement | null {
     )
   }
   const due = st.due && !st.snoozed
+  const mode = log.clock.mode
   const tip = [
     `Studied today: ${fmtStudy(today)}`,
+    mode === 'running'
+      ? 'Timer started: every minute counts for the open course until you pause it'
+      : mode === 'paused'
+        ? 'Paused: nothing counts until you press Start'
+        : 'Counting by itself while you work in a session, the materials or exam prep',
     st.enabled ? `${fmtStudy(st.workMin * 60)} since your last break${st.due ? '' : `; next break in about ${mins(st.dueInMin)}`}` : 'Break suggestions are off (Settings → Learning)',
     'Click to take a break now'
   ].join('\n')
   return (
-    <button className={`study-pill ${due ? 'due' : ''}`} onClick={() => app.study.openOffer()} title={tip} aria-label={`Study time today ${fmtStudy(today)}${due ? ', a break is due' : ''}`}>
-      <Icon name="clock" size={13} /> {fmtStudyShort(today)}
-      {due && <span className="study-due">break</span>}
-    </button>
+    <span className={`study-timer ${mode}`}>
+      <button className={`study-pill ${due ? 'due' : ''}`} onClick={() => app.study.openOffer()} title={tip} aria-label={`Study time today ${fmtStudy(today)}${mode === 'paused' ? ', paused' : mode === 'running' ? ', timer running' : ''}${due ? ', a break is due' : ''}`}>
+        <Icon name="clock" size={13} /> {fmtStudyShort(today)}
+        {mode === 'paused' ? <span className="study-due">paused</span> : due ? <span className="study-due">break</span> : null}
+      </button>
+      {mode === 'running' || mode === 'auto' ? (
+        <button
+          className={`study-toggle ${mode === 'running' ? 'on' : ''}`}
+          onClick={() => app.study.pauseTimer()}
+          title={mode === 'running' ? 'Pause the timer' : 'Pause: stop counting study time until you press Start'}
+          aria-label="Pause the study timer"
+        >
+          <Icon name="pause" size={12} />
+        </button>
+      ) : null}
+      {mode !== 'running' && (
+        <button className="study-toggle" onClick={() => app.study.startTimer()} title="Start: count every minute for the open course until you pause, also away from the screen (paper, lectures)" aria-label="Start the study timer">
+          <Icon name="play" size={12} />
+        </button>
+      )}
+    </span>
   )
 }
 

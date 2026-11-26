@@ -38,8 +38,8 @@ export function SessionScreen(): ReactElement {
       <div className="page page-narrow">
         <div className="empty">
           No session is running.{' '}
-          <button className="btn sm" onClick={() => app.go({ name: 'home' })}>
-            Back to Today
+          <button className="btn sm" onClick={() => app.go({ name: 'course' })}>
+            Back to the course
           </button>
         </div>
       </div>
@@ -201,7 +201,7 @@ function SessionHeader({ sc, v, cc, onChat }: { sc: SessionController; v: View; 
   const items = s.steps.filter((r) => r.target).length
   return (
     <div className="session-head">
-      <button className="btn icon ghost" onClick={() => app.go({ name: 'home' })} title="Leave (the session stays open)">
+      <button className="btn icon ghost" onClick={() => app.go({ name: 'course' })} title="Leave (the session stays open)">
         <Icon name="back" />
       </button>
       <div className="session-title">
@@ -765,7 +765,7 @@ function DoneScreen({ sc }: { sc: SessionController }): ReactElement {
         )}
         <span className="spacer" />
         <button className="btn ghost" onClick={() => app.closeSession()}>
-          Back to Today
+          Back to the course
         </button>
       </div>
       <p className="tiny muted">

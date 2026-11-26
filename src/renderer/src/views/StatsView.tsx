@@ -8,6 +8,7 @@ import { BarChart } from '../components/Bars'
 import { Chart } from '../components/Chart'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
+import { StudyTimePanel } from '../components/StudyTime'
 import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { LEVEL_LABEL, pct, plural, relTime, STATUS_LABEL } from '../lib/format'
@@ -35,8 +36,8 @@ function ChartPanel({ title, hint, children, table, footer }: { title: string; h
   )
 }
 
-// one hue, brighter = more answers (the light end clears the chart surface at 2.8:1)
-const ACTIVITY_RAMP = ['var(--surface-3)', '#3d3d3d', '#6a6a6a', '#a8a8a8', '#ececec']
+// one cool hue family, lighter = more answers (tokens in styles.css; every step stays apart under colour-vision deficiency)
+const ACTIVITY_RAMP = ['var(--heat-0)', 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)', 'var(--heat-4)']
 const ACTIVITY_BINS = [0, 1, 6, 12, 24]
 const binOf = (n: number): number => (n >= 24 ? 4 : n >= 12 ? 3 : n >= 6 ? 2 : n >= 1 ? 1 : 0)
 
@@ -94,7 +95,7 @@ export function StatsView(): ReactElement {
       <div className="page-head">
         <div>
           <h1>Stats</h1>
-          <div className="sub">Measured on retrieval: answers you produced, scored after hints. Time spent does not count.</div>
+          <div className="sub">Measured on retrieval: answers you produced, scored after hints. Study time is shown, but it never counts toward mastery or points.</div>
         </div>
       </div>
 
@@ -126,6 +127,10 @@ export function StatsView(): ReactElement {
             {ov.brier !== null ? ` · Brier ${ov.brier.toFixed(2)}` : ''}
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <StudyTimePanel />
       </div>
 
       <div style={{ marginTop: 16 }}>

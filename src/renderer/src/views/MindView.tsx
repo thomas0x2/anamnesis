@@ -290,7 +290,7 @@ function ConceptDetail({ id }: { id: string }): ReactElement {
           <span>
             <span className="row" style={{ gap: 8 }}>
               <span className="bar" style={{ flex: 1, position: 'relative' }}>
-                <span style={{ left: pct(lo), width: pct(hi - lo), background: 'rgba(163,65,232,0.35)' }} />
+                <span style={{ left: pct(lo), width: pct(hi - lo), background: 'rgba(143,179,224,0.3)' }} />
                 <span style={{ width: pct(mastery ?? 0) }} />
               </span>
               {pct(mastery)}
@@ -395,7 +395,7 @@ function ConceptDetail({ id }: { id: string }): ReactElement {
                 onMouseEnter={() => setHover(e)}
                 style={{
                   height: `${Math.max(8, e.score * 100)}%`,
-                  background: e.kind === 'predict' || e.kind === 'probe' ? 'var(--m-introduced)' : 'var(--m-developing)',
+                  background: e.kind === 'predict' || e.kind === 'probe' ? 'var(--s2)' : 'var(--s1)',
                   outline: shown?.id === e.id ? '2px solid var(--text-2)' : undefined,
                   outlineOffset: 1
                 }}
@@ -415,10 +415,10 @@ function ConceptDetail({ id }: { id: string }): ReactElement {
           )}
           <div className="legend-row" style={{ marginTop: 8 }}>
             <span>
-              <span className="status-dot developing" /> graded answer
+              <span className="status-dot" style={{ background: 'var(--s1)' }} /> graded answer
             </span>
             <span>
-              <span className="status-dot introduced" /> probe or prediction (weighs less)
+              <span className="status-dot" style={{ background: 'var(--s2)' }} /> probe or prediction (weighs less)
             </span>
           </div>
         </div>

@@ -1,5 +1,7 @@
 // Backend over HTTP to scripts/dev-server.ts (lets the UI run in a normal browser for development and tests).
 import type { AgentEvent } from '@shared/agentTypes'
+import type { PageCapture, PlatformStatus } from '@shared/platform'
+import type { CeResult } from '@shared/codeExpert'
 import type { AppInfo, Backend, FolderFile, DeepPartial, LlmEvent, LlmRequest, LlmResult, LlmTestResult, Settings } from '@shared/types'
 
 export function createHttpBackend(base: string): Backend {
@@ -116,6 +118,18 @@ export function createHttpBackend(base: string): Backend {
     },
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
+    },
+    // the dev server has no platform window: in fake mode it plays one (for the end-to-end run), otherwise a tab opens
+    async openPlatform(url) {
+      const r = (await (await post('/api/platform/open', { url })).json()) as { ok: boolean }
+      if (!r.ok) window.open(url, '_blank', 'noopener')
+      return r.ok
+    },
+    platformStatus: () => j<PlatformStatus>('/api/platform/status'),
+    capturePage: async () => ((await j<{ page: PageCapture | null }>('/api/platform/capture')).page),
+    codeExpert: async (op) => (await (await post('/api/codeexpert', op)).json()) as CeResult<unknown>,
+    signOutPlatforms: async () => {
+      await post('/api/platform/sign-out', {})
     },
     info: () => j<AppInfo>('/api/info')
   }

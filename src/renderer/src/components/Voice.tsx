@@ -119,60 +119,150 @@ export function useDictation(onText: (text: string) => void): {
   return { phase, toggle, cancel, loading };
 }
 
+// ------------------------------------------------------------ one shortcut for whichever dictation is in front
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+/** ⌘D on macOS, Ctrl+D elsewhere: starts dictation in the answer in front, and stops it again. */
+export const DICTATION_HOTKEY = isMac ? "⌘D" : "Ctrl+D";
+
+type HotkeyTarget = {
+  id: number;
+  priority: number;
+  busy: () => boolean;
+  toggle: () => void;
+};
+const targets: HotkeyTarget[] = [];
+let nextTargetId = 1;
+
+function onHotkey(e: KeyboardEvent): void {
+  if (e.key.toLowerCase() !== "d" || e.shiftKey || e.altKey) return;
+  if (isMac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) return;
+  if (e.repeat) return;
+  // a dialog on top owns the keyboard
+  if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+  // the one that is listening stops first; otherwise the most important (answer card over chat), newest first
+  const pick =
+    targets.find((t) => t.busy()) ??
+    [...targets].sort((a, b) => b.priority - a.priority || b.id - a.id)[0];
+  if (!pick) return;
+  e.preventDefault();
+  pick.toggle();
+}
+
+/**
+ * Lets the dictation shortcut reach this control while it is mounted and enabled. Priority 2 is an
+ * answer on a card, 1 the chat composer: with both on screen the shortcut goes to the answer.
+ */
+export function useDictationHotkey(
+  enabled: boolean,
+  priority: number,
+  toggle: () => void,
+  busy: boolean,
+): void {
+  const t = useRef(toggle);
+  t.current = toggle;
+  const b = useRef(busy);
+  b.current = busy;
+  useEffect(() => {
+    if (!enabled) return;
+    const target: HotkeyTarget = {
+      id: nextTargetId++,
+      priority,
+      busy: () => b.current,
+      toggle: () => t.current(),
+    };
+    if (!targets.length) window.addEventListener("keydown", onHotkey);
+    targets.push(target);
+    return () => {
+      targets.splice(targets.indexOf(target), 1);
+      if (!targets.length) window.removeEventListener("keydown", onHotkey);
+    };
+  }, [enabled, priority]);
+}
+
+/**
+ * The big dictation button: a vermilion point with the mic, what it will do, and the shortcut.
+ * `compact` is the round version that sits next to the chat's send button.
+ */
+export function TalkButton({
+  phase,
+  loading,
+  idleLabel,
+  onClick,
+  disabled,
+  compact,
+  className,
+}: {
+  phase: DictationPhase;
+  loading: string | null;
+  idleLabel: string;
+  onClick: () => void;
+  disabled?: boolean;
+  compact?: boolean;
+  className?: string;
+}): ReactElement {
+  const label =
+    phase === "recording"
+      ? "Listening… click when done"
+      : phase === "working"
+        ? (loading ?? "Transcribing…")
+        : idleLabel;
+  const title = `${phase === "recording" ? "Stop and transcribe" : phase === "working" ? label : idleLabel} (${DICTATION_HOTKEY})`;
+  return (
+    <button
+      type="button"
+      className={`talk ${phase} ${compact ? "compact" : ""} ${className ?? ""}`}
+      onClick={onClick}
+      disabled={disabled || phase === "working"}
+      title={title}
+      aria-label={compact ? title : undefined}
+    >
+      <span className="talk-point" aria-hidden>
+        {phase === "recording" ? (
+          <span className="talk-bars">
+            <i />
+            <i />
+            <i />
+          </span>
+        ) : (
+          <Icon name={phase === "working" ? "clock" : "mic"} size={compact ? 17 : 18} />
+        )}
+      </span>
+      {!compact && <span className="talk-label">{label}</span>}
+      {!compact && phase !== "working" && <kbd>{DICTATION_HOTKEY}</kbd>}
+    </button>
+  );
+}
+
+/** Dictation into a text field: the big talk button (or the round one in the chat), with the shortcut. */
 export function VoiceButton({
   onText,
-  text,
+  compact,
+  priority = 2,
+  idleLabel = "Say it",
 }: {
   onText: (text: string) => void;
-  text?: string;
+  compact?: boolean;
+  priority?: number;
+  idleLabel?: string;
 }): ReactElement {
   const { phase, toggle, loading } = useDictation(onText);
   const app = useApp();
   const voice = useStore(app.settings, (s) => s.voice);
-  const label =
-    phase === "recording"
-      ? "Listening… click to stop"
-      : (loading ??
-        (voice.sttModel === GEMINI_STT
-          ? "Answer by voice (transcribed by Gemini)"
-          : "Answer by voice (transcribed locally)"));
+  useDictationHotkey(true, priority, () => void toggle(), phase !== "idle");
+  const where = voice.sttModel === GEMINI_STT ? "transcribed by Gemini" : "transcribed locally";
+  const status =
+    phase === "recording" ? "Listening… click when done" : loading;
   return (
-    <span style={{ position: "relative", display: "inline-flex" }}>
-      <button
-        type="button"
-        className={`btn ${text ? "" : "icon"} sm mic ${phase === "recording" ? "rec" : ""}`}
+    <span className={`talk-wrap ${compact ? "compact" : ""}`}>
+      <TalkButton
+        phase={phase}
+        loading={loading}
+        idleLabel={compact ? `Answer by voice (${where})` : idleLabel}
         onClick={() => void toggle()}
-        title={label}
-        aria-label={text ? undefined : label}
-        disabled={phase === "working"}
-      >
-        <Icon
-          name={
-            phase === "working"
-              ? "clock"
-              : phase === "recording" && text
-                ? "stop"
-                : "mic"
-          }
-          size={16}
-        />
-        {text && (
-          <span>{phase === "recording" ? "Stop and transcribe" : text}</span>
-        )}
-      </button>
-      {phase !== "idle" && (
-        <span
-          className="voice-status"
-          style={{
-            position: "absolute",
-            [text ? "left" : "right"]: 0,
-            top: 34,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {label}
-        </span>
-      )}
+        compact={compact}
+      />
+      {compact && status && <span className="voice-status talk-status">{status}</span>}
     </span>
   );
 }

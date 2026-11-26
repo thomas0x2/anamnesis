@@ -186,7 +186,7 @@ async function coursesFlow(page) {
   await nav(page, 'Exam prep').click()
   await page.getByRole('button', { name: 'Online task' }).click()
   await page.getByLabel('Title').fill('Exercise 4: Lists')
-  await page.getByLabel('Link').fill('expert.ethz.ch/ex4')
+  await page.getByLabel('Link', { exact: true }).fill('expert.ethz.ch/ex4')
   await page.getByLabel('Search concepts').fill('e')
   await page.locator('.concept-pick-item').first().click()
   await page.locator('.modal').getByRole('button', { name: 'Add' }).click()
@@ -207,6 +207,52 @@ async function coursesFlow(page) {
   await online.locator('.work-task').first().waitFor({ timeout: 60_000 })
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-exam-online.png`) })
   step('code for the online task was uploaded and checked per task')
+
+  // correct a logged result afterwards
+  await online.locator('.submission', { hasText: 'logged result' }).getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Points or tests passed').fill('5')
+  await page.locator('.modal').getByRole('button', { name: 'Save' }).click()
+  await online.locator('.submission .big', { hasText: '5/8' }).waitFor()
+  step('a logged result was edited afterwards')
+
+  // the platform window (played by the dev server in fake mode): open a page, import a task and its code from it
+  await page.getByLabel('Platform link').fill('https://expert.ethz.ch/ide/ex5')
+  await page.locator('.platform-bar').getByRole('button', { name: 'Open in app' }).click()
+  await page.getByRole('button', { name: 'Online task' }).click()
+  await page.getByRole('button', { name: 'Fill from the open page' }).click()
+  await page.waitForFunction(() => document.querySelector('input[aria-label="Title"]')?.value === 'Exercise 4: Lists', null, { timeout: 5000 }).catch(() => {
+    throw new Error('the task title was not taken from the page')
+  })
+  await page.getByLabel('Title').fill('Exercise 5: Reverse')
+  await page.locator('.modal').getByRole('button', { name: 'Add' }).click()
+  const imported = page.locator('.work-row', { hasText: 'Exercise 5: Reverse' })
+  await imported.getByText('statement pasted').waitFor()
+  await imported.getByRole('button', { name: 'Import from page' }).click()
+  await page.locator('.import-page', { hasText: 'result 7/8' }).waitFor()
+  await page.locator('.modal').getByRole('button', { name: 'Import' }).click()
+  await imported.locator('.submission .big', { hasText: '7/8' }).waitFor()
+  await imported.locator('.work-task').first().waitFor({ timeout: 60_000 })
+  step('a task, the test result and the code were imported from the platform page and checked')
+
+  // Code Expert: link the course once, every series comes in with its points; check a whole series' code in one click
+  await page.getByRole('button', { name: 'Connect Code Expert' }).click()
+  await page.getByLabel('Code Expert course').selectOption({ label: 'Fixture Systems (AS26)' })
+  await page.getByRole('button', { name: 'Link and sync' }).click()
+  const serie1 = page.locator('.work-row', { hasText: 'Serie 1: Basics' })
+  await serie1.locator('.work-status', { hasText: '75%' }).waitFor()
+  await page.locator('.work-row', { hasText: 'Serie 2: Lists' }).locator('.work-status', { hasText: 'started' }).waitFor()
+  await page.locator('.work-row', { hasText: 'Serie 3: Trees' }).locator('.work-status', { hasText: 'to do' }).waitFor()
+  await page.locator('.ce-panel', { hasText: 'Linked to Fixture Systems' }).waitFor()
+  await page.getByRole('button', { name: 'Sync now' }).click()
+  await page.getByText('Code Expert: 3 series, nothing new.').waitFor()
+  await serie1.locator('.work-title').click()
+  await serie1.locator('.submission .big', { hasText: '3/4' }).waitFor()
+  if ((await serie1.locator('.submission').count()) !== 1) throw new Error('a second sync logged the result twice')
+  await serie1.getByRole('button', { name: 'Check my code' }).click()
+  await serie1.locator('.work-task').first().waitFor({ timeout: 60_000 })
+  await serie1.locator('.ce-task', { hasText: 'Recursion' }).waitFor()
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-exam-code-expert.png`) })
+  step('a Code Expert course was linked and synced, and a series checked from its submitted code')
 
   await nav(page, 'Today').click()
   await page.locator('.exam-notice', { hasText: 'Exam in 60 days' }).waitFor()
@@ -289,6 +335,15 @@ async function runChat(page, label, { askMidway = false } = {}) {
       if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-asked.png`) })
       continue
     }
+    // a cheat sheet suggestion in the stream: add it to the sheet
+    const addCheat = page.locator('.cheat-suggest').getByRole('button', { name: 'Add', exact: true })
+    if (await addCheat.count()) {
+      if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-cheat-suggestion.png`) })
+      await addCheat.first().click()
+      await page.locator('.cheat-suggest .chip.good').first().waitFor()
+      cheatAdded = true
+      step(`${label}: the tutor suggested a cheat sheet entry and it was added`)
+    }
     if (!(await open.count())) continue
     // the agent can add cards while we act: a card that vanished mid-answer is not an error
     await answerCard(page, open.last(), label).catch((e) => {
@@ -303,6 +358,7 @@ async function runChat(page, label, { askMidway = false } = {}) {
  * dollar signs or TeX commands left in its visible text (code and KaTeX output excluded).
  */
 let mathChecks = 0
+let cheatAdded = false
 let peekChecked = false
 async function assertMathRendered(page, where) {
   const raw = await page.evaluate(() => {
@@ -378,6 +434,14 @@ async function answerCard(page, card, label) {
         step('practice: one click on "Explain your reasoning" starts listening')
         await card.getByRole('button', { name: 'Answer without reasoning' }).click()
         await card.locator('.reasoning-box').waitFor({ state: 'detached' })
+        // the dictation shortcut does the same from anywhere on the card (the answer wins over the chat composer)
+        await page.locator('body').click({ position: { x: 5, y: 300 } })
+        await page.keyboard.press(electronMode && process.platform === 'darwin' ? 'Meta+D' : 'Control+D')
+        await rec.waitFor({ timeout: 3_000 })
+        if (await page.locator('.composer .talk.recording').count()) throw new Error('the shortcut started the chat dictation instead of the answer')
+        step('practice: the dictation shortcut starts talking through the reasoning')
+        await card.getByRole('button', { name: 'Answer without reasoning' }).click()
+        await card.locator('.reasoning-box').waitFor({ state: 'detached' })
       }
       // no microphone: the panel opens for typing
       await page.evaluate(() => (window.__micOk = false))
@@ -442,12 +506,56 @@ async function flow(page) {
   await welcome.waitFor({ state: 'detached' })
 
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today.png`) })
+  // the exam allows a cheat sheet: the tutor gets suggest_cheatsheet and proposes entries while teaching
+  await nav(page, 'Exam prep').click()
+  await page.getByRole('group', { name: 'Cheat sheet allowed' }).getByRole('button', { name: 'Allowed', exact: true }).click()
+  await page.getByLabel('Page sides allowed').fill('2')
+  await page.getByLabel('Page sides allowed').press('Enter')
+  await page.locator('.cheat-group .eyebrow', { hasText: 'on the sheet · 0 of about 44' }).waitFor()
+  step('exam prep: the cheat sheet is allowed (2 page sides)')
+  await nav(page, 'Today').click()
+
   step('learn session (tutor agent with tools)')
   await page.getByRole('button', { name: 'Start with a probe' }).click()
   await page.locator('.session .phases').waitFor()
   if (!((await runChat(page, 'learn', { askMidway: true })) > 0)) throw new Error('the learn session earned no points')
   if (!(await page.locator('.session-side .plan-node').count())) throw new Error('the plan panel is missing')
   step('learn session: plan panel shows the dependency tree')
+  // the learner asks for a break: the tutor's break card, the break screen, back early (does not count)
+  {
+    const composer = page.getByRole('textbox', { name: 'Message to the tutor' })
+    await composer.fill('Can I take a break?')
+    await composer.press('Enter')
+    const card = page.locator('.break-suggest')
+    await card.waitFor({ timeout: 15_000 })
+    if (shotsDir) await card.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-break-suggestion.png`) })
+    await card.getByRole('button', { name: 'Start 10-min break' }).click()
+    const screen = page.getByRole('dialog', { name: 'Break' })
+    await screen.waitFor()
+    await screen.locator('.break-timer').waitFor()
+    if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-break-screen.png`) })
+    await screen.getByRole('button', { name: "I'm back early" }).click()
+    await screen.waitFor({ state: 'detached' })
+    await card.getByText('Back early: not counted as a break.').waitFor()
+    step('break: the tutor suggests one on request, the break screen runs, coming back early does not count')
+    // the top bar clock opens the break dialog
+    await page.locator('.study-pill').click()
+    const dlg = page.getByRole('dialog', { name: 'Take a break' })
+    await dlg.waitFor()
+    await dlg.getByRole('button', { name: /Cancel|Not now/ }).click()
+    await dlg.waitFor({ state: 'detached' })
+  }
+  if (!cheatAdded) throw new Error('the tutor suggested no cheat sheet entry')
+  await nav(page, 'Exam prep').click()
+  await page.locator('.cheat-group .eyebrow', { hasText: 'on the sheet · 1 of about 44' }).waitFor()
+  await page.locator('.cheat-row.accepted', { hasText: 'Barycentric weights' }).locator('.katex').first().waitFor()
+  await assertMathRendered(page, 'cheat sheet')
+  step('the suggested entry is on the cheat sheet in Exam prep')
+  if (shotsDir) {
+    await page.locator('section[aria-label="Cheat sheet"]').scrollIntoViewIfNeeded()
+    await page.locator('section[aria-label="Cheat sheet"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-cheatsheet.png`) })
+  }
+  await nav(page, 'Today').click()
 
   step('practice session (agent)')
   await nav(page, 'Today').click()
@@ -483,6 +591,21 @@ async function flow(page) {
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
   if (!((await runSession(page, 'practice')) > 0)) throw new Error('the practice session earned no points')
+
+  // study time: the Stats panel lists the tutor sessions with their active time
+  await nav(page, 'Stats').click()
+  await page.getByRole('heading', { name: 'Study time', level: 3 }).waitFor()
+  if (!(await page.locator('.study-sessions .session-row').count())) throw new Error('study time: no tutor session was timed')
+  if (shotsDir) await page.locator('[aria-label="Study time"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-study-time.png`) })
+  step('Stats: study time per day and per tutor session')
+  // the break rhythm is adjustable
+  await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
+  await page.getByRole('group', { name: 'Break rhythm' }).getByRole('button', { name: '25 / 5' }).click()
+  await page.getByText('Pomodoro: 25 minutes of work').waitFor()
+  if ((await page.getByLabel('Study before a break').inputValue()) !== '25') throw new Error('the break rhythm did not change')
+  if (shotsDir) await page.locator('.panel', { hasText: 'Study time and breaks' }).screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-break-settings.png`) })
+  await page.getByRole('group', { name: 'Break rhythm' }).getByRole('button', { name: '50 / 10' }).click()
+  step('Settings: the break rhythm can be changed')
 
   for (const [name, heading] of [
     ['Course map', 'Course map'],

@@ -4,7 +4,9 @@
 import numcsJson from '@courses/numcs/course.json'
 import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
 import { generateWithRetry } from '@shared/retry'
-import { applyWork, buildWorkPrompt, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
+import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
+import { guessConcepts, normalizeCourses, normalizeSync, planSync, seriesCode, SYNC_NOTE, type CeCourse, type CeFile } from '@shared/codeExpert'
+import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
 import { milestoneReward, rewardsForResponse } from '@shared/rewards'
@@ -18,6 +20,7 @@ import type {
   CourseExtension,
   CourseMeta,
   DeepPartial,
+  CodeExpertLink,
   ExamPrep,
   FolderFile,
   Material,
@@ -43,6 +46,7 @@ import { ChatController, chatSession, newChatRecord, type ChatIndexEntry, type C
 import { MaterialLibrary } from './script'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
+import { StudyClock } from './studyClock'
 
 export type Route =
   | { name: 'home' }
@@ -116,6 +120,15 @@ export interface CourseEntry {
   builtin: boolean
 }
 
+export interface SyncSummary {
+  ok: boolean
+  signedIn: boolean
+  added: number
+  updated: number
+  logged: number
+  error: string | null
+}
+
 export interface WorkInput {
   materialId: string
   files: { name: string; bytes: Uint8Array }[]
@@ -152,6 +165,10 @@ export class AppController {
   readonly job: Store<MaterialJob | null> = createStore<MaterialJob | null>(null)
   /** the exam date, goals, and the problem sets and mock exams done (with the learner's checked solutions) */
   readonly exam: Store<ExamPrep> = createStore<ExamPrep>(emptyPrep())
+  /** whether the exam allows a cheat sheet, and what the learner put on it (the tutor suggests entries) */
+  readonly cheatsheet: Store<Cheatsheet> = createStore<Cheatsheet>(emptyCheatsheet())
+  /** study time per session, day and course, and breaks (one log for all courses) */
+  readonly study: StudyClock = new StudyClock(this)
   /** submissions being graded right now (any course): submission id → model request id */
   private grading = new Map<string, string>()
   script: MaterialLibrary
@@ -208,6 +225,8 @@ export class AppController {
 
   async init(): Promise<void> {
     this.settings.set(await this.backend.getSettings())
+    await this.study.init().catch(() => {})
+    this.study.start()
     this.metas = ((await this.backend.readJson<CourseMeta[]>('courses-index')) ?? []).filter((m) => m && typeof m.id === 'string')
     this.refreshCourseList()
     if (!this.settings.get().onboarded) this.ui.set((u) => ({ ...u, onboarding: true }))
@@ -245,6 +264,7 @@ export class AppController {
     const stale = prep.submissions.some((x) => x.status === 'grading' && !this.grading.has(x.id))
     this.exam.set(stale ? { ...prep, submissions: prep.submissions.map((x) => (x.status === 'grading' && !this.grading.has(x.id) ? { ...x, status: 'error' as const, error: 'The check was interrupted (the app was closed). Check it again.' } : x)) } : prep)
     if (stale) await this.saveExam()
+    this.cheatsheet.set(normalizeCheatsheet(await this.backend.readJson<Cheatsheet>(`courses/${id}/cheatsheet`)))
     // materials
     const file = await this.backend.readJson<MaterialsFile>(`courses/${id}/materials`)
     let items = file?.items ?? []
@@ -638,6 +658,8 @@ export class AppController {
   }
 
   /** Change the exam preparation of a course; another course's file is read and written directly. */
+  private ceSyncing = false
+
   private async updatePrep(courseId: string, fn: (p: ExamPrep) => ExamPrep): Promise<void> {
     if (courseId === this.courseId) {
       this.exam.set(fn(this.exam.get()))
@@ -650,6 +672,51 @@ export class AppController {
 
   async setExamGoals(patch: Partial<Pick<ExamPrep, 'examDate' | 'problemSets' | 'mockExams'>>): Promise<void> {
     await this.updatePrep(this.courseId, (p) => ({ ...p, ...patch }))
+  }
+
+  // ------------------------------------------------------------ cheat sheet
+  async setCheatsheet(sheet: Cheatsheet): Promise<void> {
+    this.cheatsheet.set(sheet)
+    await this.backend.writeJson(`courses/${this.courseId}/cheatsheet`, sheet)
+  }
+
+  async setCheatRules(patch: Partial<CheatRules>): Promise<void> {
+    const cur = this.cheatsheet.get()
+    await this.setCheatsheet({ ...cur, rules: normalizeRules({ ...cur.rules, ...patch }) })
+  }
+
+  /** Change one entry: decide on a suggestion (add it, drop it), edit its text or kind. */
+  async updateCheatItem(id: string, patch: Partial<Pick<CheatItem, 'status' | 'text' | 'kind' | 'why'>>): Promise<void> {
+    const cur = this.cheatsheet.get()
+    const items = cur.items.map((x) => (x.id === id ? (normalizeCheatItem({ ...x, ...patch }) ?? x) : x))
+    await this.setCheatsheet({ ...cur, items })
+  }
+
+  /** An entry the learner writes themselves goes straight onto the sheet. */
+  async addCheatItem(input: { kind: CheatItem['kind']; text: string }): Promise<void> {
+    const item = normalizeCheatItem({ ...input, status: 'accepted', source: 'learner', at: nowIso() })
+    if (!item) return
+    const cur = this.cheatsheet.get()
+    await this.setCheatsheet({ ...cur, items: [...cur.items, item] })
+  }
+
+  async removeCheatItem(id: string): Promise<void> {
+    const cur = this.cheatsheet.get()
+    await this.setCheatsheet({ ...cur, items: cur.items.filter((x) => x.id !== id) })
+  }
+
+  /** Move an entry on the sheet one place up or down among the entries of its kind. */
+  async moveCheatItem(id: string, dir: -1 | 1): Promise<void> {
+    const cur = this.cheatsheet.get()
+    const it = cur.items.find((x) => x.id === id)
+    if (!it) return
+    const peers = cur.items.map((x, i) => ({ x, i })).filter(({ x }) => x.kind === it.kind && x.status === 'accepted')
+    const k = peers.findIndex(({ x }) => x.id === id)
+    const other = peers[k + dir]
+    if (!other) return
+    const items = [...cur.items]
+    ;[items[peers[k].i], items[other.i]] = [items[other.i], items[peers[k].i]]
+    await this.setCheatsheet({ ...cur, items })
   }
 
   /** A problem set or mock exam: a material, or a task added as living online (Code Expert, GitLab…). */
@@ -683,7 +750,7 @@ export class AppController {
   }
 
   /** Log a result without files (e.g. tests passed on Code Expert, points on Moodle): marks it done and updates the concepts it practises, with less weight than a checked solution. */
-  async reportWork(input: ReportInput): Promise<boolean> {
+  async reportWork(input: ReportInput, quiet = false): Promise<boolean> {
     const m = this.workMaterial(input.materialId)
     if (!m) return false
     const prep = this.exam.get()
@@ -693,8 +760,91 @@ export class AppController {
     const courseId = this.courseId
     await this.applyWorkToLearner(courseId, sub, m, [], (id) => this.graph.title(id))
     await this.updatePrep(courseId, (p) => ({ ...p, submissions: [...p.submissions, { ...sub, applied: true }] }))
-    this.toast({ kind: 'info', text: concepts.length ? `${m.title}: logged. The mind model was updated.` : `${m.title}: logged.` }, 5000)
+    if (!quiet) this.toast({ kind: 'info', text: concepts.length ? `${m.title}: logged. The mind model was updated.` : `${m.title}: logged.` }, 5000)
     return true
+  }
+
+  /** Correct a logged result afterwards. The record changes; the mind model keeps the evidence of the first entry (it cannot be taken back). */
+  async editReport(submissionId: string, input: Omit<ReportInput, 'materialId'>): Promise<boolean> {
+    const sub = this.exam.get().submissions.find((x) => x.id === submissionId)
+    const next = sub ? editReported(sub, input, new Date()) : null
+    if (!next) return false
+    await this.updatePrep(this.courseId, (p) => ({ ...p, submissions: p.submissions.map((x) => (x.id === submissionId ? next : x)) }))
+    return true
+  }
+
+  // ------------------------------------------------------------ Code Expert
+  /** The learner's Code Expert courses (signs in through the platform window when needed). */
+  async codeExpertCourses(): Promise<{ courses: CeCourse[]; error: string | null; signedIn: boolean }> {
+    const r = await this.backend.codeExpert({ op: 'courses' })
+    if (!r.ok) return { courses: [], error: r.error, signedIn: r.signedIn }
+    return { courses: normalizeCourses(r.data), error: null, signedIn: true }
+  }
+
+  /** Link this course to a Code Expert course (null unlinks; its synced tasks stay) and sync it. */
+  async linkCodeExpert(c: CeCourse | null): Promise<SyncSummary | null> {
+    const link: CodeExpertLink | null = c ? { courseId: c.id, semester: c.semester, name: c.name, slug: c.slug, syncedAt: null } : null
+    await this.updatePrep(this.courseId, (p) => ({ ...p, codeExpert: link }))
+    return link ? this.syncCodeExpert() : null
+  }
+
+  /**
+   * Bring in every series of the linked Code Expert course: one problem set each, with its statement and the
+   * learner's points there. Fully submitted series are logged (a later sync corrects the logged result).
+   */
+  async syncCodeExpert(): Promise<SyncSummary | null> {
+    const courseId = this.courseId
+    const link = this.exam.get().codeExpert
+    if (!link || this.ceSyncing) return null
+    this.ceSyncing = true
+    try {
+      const r = await this.backend.codeExpert({ op: 'sync', courseId: link.courseId, semester: link.semester })
+      if (courseId !== this.courseId) return null
+      if (!r.ok) {
+        this.toast({ kind: 'error', text: r.signedIn ? `Code Expert sync failed: ${r.error.slice(0, 160)}` : 'Sign in to Code Expert in the window that opened, then sync again.' }, 8000)
+        return { ok: false, signedIn: r.signedIn, added: 0, updated: 0, logged: 0, error: r.error }
+      }
+      const series = normalizeSync(r.data)
+      const plan = planSync(this.exam.get(), series, link, new Date())
+      const concepts = this.course.concepts.filter((c) => !!this.graph.get(c.id))
+      const online = plan.online.map((t) => (plan.added.includes(t.id) && t.statement ? { ...t, conceptIds: guessConcepts(`${t.title}\n${t.statement}`, concepts) } : t))
+      await this.updatePrep(courseId, (p) => ({ ...p, online, codeExpert: { ...link, syncedAt: nowIso() } }))
+      let logged = 0
+      for (const res of plan.results) {
+        const prev = this.exam.get().submissions.find((x) => x.materialId === res.taskId && x.source === 'reported' && (x.reported?.note ?? '').startsWith(SYNC_NOTE))
+        const input = { points: res.points, max: res.max, note: res.note, help: 'alone' as const, minutes: null, examConditions: false }
+        if (!prev) {
+          if (await this.reportWork({ ...input, materialId: res.taskId }, true)) logged++
+        } else if (prev.reported?.points !== res.points || prev.reported?.max !== res.max || prev.reported?.note !== res.note) {
+          if (await this.editReport(prev.id, { ...input, help: prev.help })) logged++
+        }
+      }
+      const records = this.exam.get().records
+      for (const id of plan.done) if (records[id]?.status !== 'done') await this.setWorkStatus(id, 'done')
+      for (const id of plan.started) if (!records[id] || records[id].status === 'todo') await this.setWorkStatus(id, 'started')
+      const parts = [plan.added.length ? `${plan.added.length} new` : '', plan.updated ? `${plan.updated} updated` : '', logged ? `${logged} result${logged === 1 ? '' : 's'} logged` : ''].filter(Boolean)
+      this.toast({ kind: 'info', text: `Code Expert: ${series.length} series${parts.length ? `, ${parts.join(', ')}` : ', nothing new'}.` }, 6000)
+      return { ok: true, signedIn: true, added: plan.added.length, updated: plan.updated, logged, error: null }
+    } finally {
+      this.ceSyncing = false
+    }
+  }
+
+  /** Fetch the code the learner submitted for a synced series and have it checked, all tasks at once. */
+  async checkSeriesCode(taskId: string): Promise<string | null> {
+    const t = onlineTask(this.exam.get(), taskId)
+    const projectIds = [...new Set((t?.codeExpert?.tasks ?? []).map((x) => x.projectId).filter((x): x is string => !!x))]
+    if (!t || !projectIds.length) {
+      this.toast({ kind: 'error', text: 'Nothing submitted on Code Expert for this series yet.' })
+      return null
+    }
+    const r = await this.backend.codeExpert({ op: 'code', projectIds })
+    if (!r.ok) {
+      this.toast({ kind: 'error', text: r.signedIn ? `Could not read the code: ${r.error.slice(0, 160)}` : 'Sign in to Code Expert in the window that opened, then try again.' }, 8000)
+      return null
+    }
+    const text = seriesCode(t, (r.data ?? {}) as Record<string, CeFile[]>)
+    return this.submitWork({ materialId: t.id, files: [], text, help: 'alone', examConditions: false, minutes: null })
   }
 
   /** Mark a problem set or mock exam as started or done by hand (without a checked solution). */
@@ -834,6 +984,7 @@ export class AppController {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
     const st = this.state.get()
+    await this.study.save()
     await this.backend.writeJson(stateName(this.courseId), st)
     const profile = JSON.stringify(st.learner.profile)
     if (profile !== this.savedProfile) {

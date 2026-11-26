@@ -3,9 +3,12 @@
 // SessionController in agent mode (the same screen, grading and evidence as guided sessions), a plan
 // goes to the plan review and the side panel, look-ups read the course graph, the learner model and
 // the lecture notes. The phase in the header follows the tools the agent uses.
-import { AGENT_TOOLS, buildAgentSystemPrompt, type AgentMode } from '@shared/agentTools'
+import { agentTools, buildAgentSystemPrompt, type AgentMode } from '@shared/agentTools'
 import type { AgentEvent, AgentToolResult } from '@shared/agentTypes'
+import { addSuggestions, cheatsheetPrompt, suggestResultText, type SuggestInput } from '@shared/cheatsheet'
 import { prepSummary } from '@shared/exam'
+import { BREAK_IDEAS, BREAK_TOOL_NAME, breaksPrompt } from '@shared/studyTime'
+import { captureForTutor } from '@shared/platform'
 import { sanitizePlan } from '@shared/graph'
 import { getConcept } from '@shared/mastery'
 import { normalizeCard, normalizeModelUpdate, normalizePlan, type NormalizeContext } from '@shared/normalize'
@@ -204,9 +207,17 @@ export class ChatController {
     if (this.running) return true
     this.setAgent('starting', { error: null })
     const c = this.chat
-    const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue, examPrep: prepSummary(this.app.exam.get(), this.app.materials.get(), new Date()) }, new Date())
+    const cheatsheet = cheatsheetPrompt(this.app.cheatsheet.get())
+    const breaks = breaksPrompt(this.app.study.settings)
+    const system = buildAgentSystemPrompt(
+      this.app.course,
+      this.app.graph,
+      this.app.state.get().learner,
+      { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue, examPrep: prepSummary(this.app.exam.get(), this.app.materials.get(), new Date()), cheatsheet, breaks },
+      new Date()
+    )
     const r = await this.app.backend.agentStart(
-      { chatId: c.id, system, tools: AGENT_TOOLS, resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId },
+      { chatId: c.id, system, tools: agentTools({ cheatsheet: !!cheatsheet, breaks: !!breaks }), resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId },
       (e) => this.onEvent(e)
     )
     if (!r.ok) {
@@ -251,6 +262,16 @@ export class ChatController {
       this.running = false
       if (await this.ensureAgent()) await this.app.backend.agentSend(this.chat.id, text)
     }
+  }
+
+  /** The agent is running and waits for nothing: a note can go to it as a message now. */
+  idleForNote(): boolean {
+    return this.running && !this.hasWaiting() && (this.view.get().agent === 'idle' || this.view.get().agent === 'waiting')
+  }
+
+  /** A note from the app (back from a break) as a message to the agent. */
+  async note(text: string): Promise<void> {
+    await this.message(text)
   }
 
   async stop(): Promise<void> {
@@ -360,8 +381,11 @@ export class ChatController {
         const resp = await new Promise<CardResponse>((resolve) => this.waiters.set(step, resolve)).finally(() => {
           if (watch) window.removeEventListener(WIDGET_ERROR_EVENT, onWidgetError)
         })
-        const note = widgetErrors.length ? `\nThe widget on this card failed in the learner's view (${widgetErrors.join('; ')}). Fix the code if you show it again.` : ''
-        return { text: describeForAgent(card, resp) + note }
+        const notes = [describeForAgent(card, resp)]
+        if (widgetErrors.length) notes.push(`The widget on this card failed in the learner's view (${widgetErrors.join('; ')}). Fix the code if you show it again.`)
+        const study = this.app.study.agentNote()
+        if (study) notes.push(study)
+        return { text: notes.join('\n') }
       }
       case 'show_plan': {
         const p = normalizePlan(args, this.ctx)
@@ -386,6 +410,11 @@ export class ChatController {
       }
       case 'read_script':
         return this.readScript(args)
+      case 'platform_page': {
+        const page = await this.app.backend.capturePage().catch(() => null)
+        if (!page) return { text: 'No platform page is open. Ask the learner to open the task in the app: Exam prep → the task → "Open in app" (they sign in there once).' }
+        return { text: captureForTutor(page) }
+      }
       case 'course':
         return this.course(args)
       case 'learner':
@@ -395,6 +424,30 @@ export class ChatController {
         if (!u) return { text: 'Nothing to update.', isError: true }
         this.app.applyModelUpdate(u)
         return { text: `Recorded ${u.notes.length} note(s), ${u.misconceptions.length} misconception(s), ${u.profile.length} profile line(s).` }
+      }
+      case 'suggest_cheatsheet': {
+        const sheet = this.app.cheatsheet.get()
+        if (sheet.rules.allowed !== 'yes') return { text: 'The exam does not allow a cheat sheet (the learner changed it). Do not suggest entries.', isError: true }
+        const input = (Array.isArray(args.suggestions) ? args.suggestions : []) as SuggestInput[]
+        const o = addSuggestions(sheet, input, new Set(this.app.course.concepts.map((x) => x.id)), new Date())
+        if (!o.added.length && !o.skipped.length) return { text: 'No entries: each suggestion needs a text.', isError: true }
+        await this.app.setCheatsheet(o.sheet)
+        // the card in the stream shows these entries (by id), so the learner decides there
+        this.updateItem(item.id, (it) => ({ ...(it as ToolItem), args: { ...args, itemIds: o.added.map((x) => x.id) } }))
+        return { text: suggestResultText(o, o.sheet) }
+      }
+      case BREAK_TOOL_NAME: {
+        const set = this.app.study.settings
+        if (!set.enabled) return { text: 'Break suggestions are off (the learner turned them off). Do not suggest breaks.', isError: true }
+        const st = this.app.study.status()
+        if (st.current) return { text: 'The learner is on a break right now.' }
+        const kind = args.kind === 'long' || args.kind === 'short' ? args.kind : st.kind
+        const asked = Number(args.minutes)
+        const minutes = Number.isFinite(asked) && asked > 0 ? Math.min(45, Math.max(3, Math.round(asked))) : kind === 'long' ? set.longMin : set.shortMin
+        const idea = BREAK_IDEAS.some((x) => x.id === args.idea) ? String(args.idea) : null
+        this.updateItem(item.id, (it) => ({ ...(it as ToolItem), args: { ...args, kind, minutes, idea } }))
+        this.app.study.noteSuggested()
+        return { text: `The break card is shown (${minutes} minutes). End your turn now without a new card; the app tells you when the learner is back or skipped it.` }
       }
       case 'finish': {
         const takeaways = (Array.isArray(args.takeaways) ? args.takeaways : []).map(String).filter(Boolean)

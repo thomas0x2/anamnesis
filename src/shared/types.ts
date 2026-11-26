@@ -1,3 +1,5 @@
+import type { CeOp, CeResult } from './codeExpert'
+import type { PageCapture, PlatformStatus } from './platform'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from './agentTypes'
 import type { CloudSttRequest } from './stt'
 // Domain types shared by the Electron main process, the renderer and the tests.
@@ -203,6 +205,23 @@ export interface OnlineTask {
   /** the task statement, pasted by the learner: the check of a solution grades against it */
   statement: string | null
   addedAt: string
+  /** a series synced from Code Expert: its tasks and their scores there */
+  codeExpert?: CodeExpertSeries
+}
+
+export interface CodeExpertSeries {
+  seriesId: string
+  due: string | null
+  tasks: { id: string; name: string; maxPoints: number; result: number | null; submitted: boolean; feedback: string | null; projectId: string | null }[]
+}
+
+/** The Code Expert course a course of the app is linked to (its series sync into the online tasks). */
+export interface CodeExpertLink {
+  courseId: string
+  semester: string
+  name: string
+  slug: string
+  syncedAt: string | null
 }
 
 export interface WorkRecord {
@@ -224,6 +243,8 @@ export interface ExamPrep {
   submissions: Submission[]
   /** problem sets and mock exams without a PDF, e.g. coding tasks on Code Expert or GitLab */
   online: OnlineTask[]
+  /** the linked Code Expert course, if any */
+  codeExpert?: CodeExpertLink | null
 }
 
 // ---------------------------------------------------------------- tutor output (LLM)
@@ -667,8 +688,25 @@ export interface Settings {
     autoSpeak: boolean
   }
   learning: { desiredRetention: number; practiceItems: number; tutorMode: 'agent' | 'guided' }
+  /** study time and breaks: the tutor suggests a break after workMin minutes of study (see studyTime.ts) */
+  breaks: BreakSettings
   onboarded: boolean
 }
+
+export interface BreakSettings {
+  /** the tutor (or, in guided sessions, the app) suggests breaks */
+  enabled: boolean
+  /** minutes of study before a short break is due */
+  workMin: number
+  /** length of a short break */
+  shortMin: number
+  /** a long break after about this many minutes of study since the last long one; 0 = no long breaks */
+  longEveryMin: number
+  /** length of a long break */
+  longMin: number
+}
+
+export const DEFAULT_BREAKS: BreakSettings = { enabled: true, workMin: 50, shortMin: 10, longEveryMin: 150, longMin: 25 }
 
 export const DEFAULT_SETTINGS: Settings = {
   activeCourse: 'numcs',
@@ -689,6 +727,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autoSpeak: false
   },
   learning: { desiredRetention: 0.9, practiceItems: 8, tutorMode: 'agent' },
+  breaks: DEFAULT_BREAKS,
   onboarded: false
 }
 
@@ -768,6 +807,15 @@ export interface Backend {
   /** Save the learner's solution files (PDF, images, text) in the data folder; returns what was stored. */
   saveWork(courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]): Promise<{ name: string; size: number }[]>
   openExternal(url: string): Promise<void>
+  /** Open a platform page (Code Expert, GitLab…) in the app's own window, where the learner signs in; false where there is none (the browser version opens a tab). */
+  openPlatform(url: string): Promise<boolean>
+  platformStatus(): Promise<PlatformStatus>
+  /** Read the page open in the platform window: its text and the code in its editors. */
+  capturePage(): Promise<PageCapture | null>
+  /** Forget the sign-ins made in the platform window. */
+  signOutPlatforms(): Promise<void>
+  /** Ask Code Expert (expert.ethz.ch) for the learner's courses, a course's series with scores, or submitted code, with their sign-in in the platform window. */
+  codeExpert(op: CeOp): Promise<CeResult<unknown>>
   info(): Promise<AppInfo>
   /** Start the tutor agent for a chat; events stream until it exits. */
   agentStart(req: AgentStartRequest, onEvent: (e: AgentEvent) => void): Promise<{ ok: boolean; error?: string; errorKind?: LlmErrorKind }>

@@ -3,9 +3,12 @@
 // solution updates the mind model like answered practice items do. Problem sets without a PDF (coding
 // tasks on Code Expert or GitLab, quizzes on Moodle) are added here as online tasks: they can be marked
 // done, have a result logged (tests passed, points), or have the code itself checked.
+import { guessCourse, type CeCourse } from '@shared/codeExpert'
+import { captureCode, findScore, guessPlatform, testLines, type PageCapture } from '@shared/platform'
 import { cleanUrl, HELP_LABEL, MAX_WORK_FILE_BYTES, onlineTask, PLATFORMS, prepProgress, solutionFor, WORK_EXTENSIONS, workItems, workState, type WorkState } from '@shared/exam'
 import type { Material, OnlineTask, Submission, WorkHelp, WorkTask } from '@shared/types'
-import { useMemo, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { CheatsheetSection } from '../components/Cheatsheet'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
 import { Modal } from '../components/Modal'
@@ -57,6 +60,10 @@ export function ExamView({ materialId }: { materialId?: string }): ReactElement 
       </div>
 
       <GoalsPanel />
+
+      <CodeExpertPanel />
+
+      <PlatformBar />
 
       <div className="exam-progress">
         <div className="exam-goal">
@@ -133,6 +140,7 @@ export function ExamView({ materialId }: { materialId?: string }): ReactElement 
           <EmptyHint text="No mock exams yet. Add old exams or practice exams as PDFs; write them timed and without notes, then upload your answers." />
         )}
       </section>
+      <CheatsheetSection />
       {adding && (
         <OnlineTaskDialog
           kind={adding}
@@ -210,11 +218,15 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
   const [submitting, setSubmitting] = useState(false)
   const [reporting, setReporting] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [importing, setImporting] = useState(false)
   const online = onlineTask(prep, m.id)
   const span = app.script.span(m)
   const sol = online ? null : solutionFor(m, materials)
   const graded = ws.submissions.find((s) => s.status === 'graded')
   const checked = ws.submissions.find((s) => s.status === 'graded' && s.source !== 'reported')
+  const ce = online?.codeExpert ?? null
+  const ceSubmitted = !!ce?.tasks.some((t) => t.projectId)
+  const [fetching, setFetching] = useState(false)
   return (
     <div className={`work-row ${open ? 'open' : ''}`}>
       <div className="work-head">
@@ -235,8 +247,8 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
             </button>
           )}
           {online?.url && (
-            <button className="btn sm ghost" onClick={() => void app.backend.openExternal(online.url ?? '')} title={`Open on ${online.platform || 'the web'}`}>
-              <Icon name="external" size={14} /> Open
+            <button className="btn sm ghost" onClick={() => void app.backend.openPlatform(online.url ?? '')} title={`Open on ${online.platform || 'the web'} in the app's platform window (sign in there once)`}>
+              <Icon name="external" size={14} /> Open in app
             </button>
           )}
           {ws.status !== 'done' && ws.status !== 'grading' && (
@@ -252,17 +264,36 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           <button className="btn sm ghost" onClick={() => setReporting(true)} title="Log a result without uploading anything: tests passed, points on the platform">
             <Icon name="list" size={14} /> Log result
           </button>
-          <button className={`btn sm ${graded ? '' : 'primary'}`} disabled={ws.status === 'grading'} onClick={() => setSubmitting(true)} title={online ? 'Upload or paste your code or answers to have them checked' : undefined}>
-            <Icon name="check" size={14} /> {checked ? 'Check again' : online ? 'Check my work' : 'Check my solution'}
-          </button>
+          {ce ? (
+            <button
+              className={`btn sm ${checked ? '' : 'primary'}`}
+              disabled={ws.status === 'grading' || fetching || !ceSubmitted}
+              title={ceSubmitted ? 'Fetch the code you submitted on Code Expert for every task of this series and have it checked' : 'Submit on Code Expert first, then sync'}
+              onClick={() => {
+                setFetching(true)
+                void app.checkSeriesCode(m.id).then((id) => {
+                  setFetching(false)
+                  if (id && !open) onToggle()
+                })
+              }}
+            >
+              <Icon name="check" size={14} /> {fetching ? 'Fetching code…' : checked ? 'Check code again' : 'Check my code'}
+            </button>
+          ) : (
+            <button className={`btn sm ${graded ? '' : 'primary'}`} disabled={ws.status === 'grading'} onClick={() => setSubmitting(true)} title={online ? 'Upload or paste your code or answers to have them checked' : undefined}>
+              <Icon name="check" size={14} /> {checked ? 'Check again' : online ? 'Check my work' : 'Check my solution'}
+            </button>
+          )}
         </div>
       </div>
       {open && (
         <div className="work-body">
-          {online && <OnlineInfo t={online} onEdit={() => setEditing(true)} />}
+          {online && <OnlineInfo t={online} onEdit={() => setEditing(true)} onImport={() => setImporting(true)} />}
           {ws.submissions.length === 0 ? (
             <div className="small muted" style={{ padding: '6px 0 4px' }}>
-              {online
+              {ce
+                ? 'Synced from Code Expert. Submit there; the next sync logs your points, and “Check my code” has the tutor go through what you submitted, task by task.'
+                : online
                 ? `Work on it on ${online.platform || 'the platform'}. Then log your result (e.g. tests passed or points), or upload or paste your code to have each task checked. Either updates ${online.conceptIds.length ? 'the concepts it practises' : 'your mind model'}; a checked solution counts more than a logged result.`
                 : m.kind === 'exam'
                 ? 'Write it timed and without notes, then upload a scan or photos of your answers. Each task is graded and the concepts it tests are updated in your mind model.'
@@ -280,6 +311,17 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           onClose={() => setReporting(false)}
           onSent={() => {
             setReporting(false)
+            if (!open) onToggle()
+          }}
+        />
+      )}
+      {importing && online && (
+        <ImportDialog
+          m={m}
+          t={online}
+          onClose={() => setImporting(false)}
+          onDone={() => {
+            setImporting(false)
             if (!open) onToggle()
           }}
         />
@@ -304,6 +346,7 @@ function SubmissionView({ s, m }: { s: Submission; m: Material }): ReactElement 
   const app = useApp()
   const now = useNow()
   const [confirm, setConfirm] = useState(false)
+  const [editing, setEditing] = useState(false)
   const reported = s.source === 'reported'
   const weak = useMemo(() => [...new Set(s.tasks.filter((t) => t.verdict !== 'missing' && t.score < 0.7).flatMap((t) => t.conceptIds.slice(0, 1)))].filter((id) => app.graph.get(id)), [app, s])
   const meta = [
@@ -320,6 +363,11 @@ function SubmissionView({ s, m }: { s: Submission; m: Material }): ReactElement 
       <div className="row between" style={{ gap: 10 }}>
         <div className="tiny muted">{meta.join(' · ')}</div>
         <div className="row" style={{ gap: 6 }}>
+          {reported && (
+            <button className="btn sm ghost" onClick={() => setEditing(true)} title="Correct the score, the note or how you worked">
+              <Icon name="edit" size={13} /> Edit
+            </button>
+          )}
           {s.status !== 'grading' && !reported && (
             <button className="btn sm ghost" onClick={() => void app.regradeWork(s.id)} title="Have the same files checked again">
               <Icon name="refresh" size={13} /> Re-check
@@ -368,6 +416,7 @@ function SubmissionView({ s, m }: { s: Submission; m: Material }): ReactElement 
           )}
         </div>
       )}
+      {editing && <ReportDialog m={m} online={onlineTask(app.exam.get(), m.id)} sub={s} onClose={() => setEditing(false)} onSent={() => setEditing(false)} />}
       {s.status === 'graded' && !reported && (
         <>
           <div className="row" style={{ gap: 12, alignItems: 'baseline', marginTop: 10 }}>
@@ -588,7 +637,7 @@ function SubmitDialog({ m, online, onClose, onSent }: { m: Material; online: Onl
 }
 
 /** Where an online task lives, the concepts it practises, and its statement. */
-function OnlineInfo({ t, onEdit }: { t: OnlineTask; onEdit: () => void }): ReactElement {
+function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void; onImport: () => void }): ReactElement {
   const app = useApp()
   const [confirm, setConfirm] = useState(false)
   return (
@@ -597,9 +646,14 @@ function OnlineInfo({ t, onEdit }: { t: OnlineTask; onEdit: () => void }): React
         <span className="tiny muted" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t.platform || 'Online'}
           {t.url ? ` · ${t.url.replace(/^https?:\/\//, '')}` : ''}
-          {t.statement ? ' · statement pasted' : ''}
+          {t.codeExpert ? (t.codeExpert.due ? ` · due ${new Date(t.codeExpert.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '') : t.statement ? ' · statement pasted' : ''}
         </span>
         <span className="row" style={{ gap: 6 }}>
+          {!t.codeExpert && (
+            <button className="btn sm ghost" onClick={onImport} title="Read the task, your code and the test results from the page open in the platform window">
+              <Icon name="copy" size={13} /> Import from page
+            </button>
+          )}
           <button className="btn sm ghost" onClick={onEdit}>
             <Icon name="edit" size={13} /> Edit
           </button>
@@ -614,6 +668,18 @@ function OnlineInfo({ t, onEdit }: { t: OnlineTask; onEdit: () => void }): React
           )}
         </span>
       </div>
+      {t.codeExpert && (
+        <div className="ce-tasks" aria-label="Tasks on Code Expert">
+          {t.codeExpert.tasks.map((x) => (
+            <span key={x.id} className="ce-task" title={x.feedback ? `TA: ${x.feedback}` : undefined}>
+              <span>{x.name}</span>
+              <span className={`tiny ${x.result === null ? 'muted' : x.result >= 0.85 ? 'good' : x.result >= 0.3 ? 'warn' : 'bad'}`}>
+                {x.result !== null ? `${Math.round(x.result * x.maxPoints * 100) / 100}/${x.maxPoints}` : x.submitted ? 'submitted' : `– /${x.maxPoints}`}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
         {t.conceptIds.length ? (
           t.conceptIds.map((id) => (
@@ -640,7 +706,18 @@ function OnlineTaskDialog({ kind, task, onClose, onSaved }: { kind: OnlineTask['
   const [statement, setStatement] = useState(task?.statement ?? '')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
+  const [noPage, setNoPage] = useState(false)
   const exam = kind === 'exam'
+  const fill = async (): Promise<void> => {
+    const page = await app.backend.capturePage().catch(() => null)
+    setNoPage(!page)
+    if (!page) return
+    const name = guessPlatform(page.url)
+    if (!title.trim()) setTitle(page.title.replace(/\s*[·|]\s*[^·|]*$/, '').trim() || page.title)
+    setUrl(page.url)
+    if (name) setPlatform(name)
+    if (page.text.trim()) setStatement(page.text)
+  }
   const badUrl = url.trim() !== '' && !cleanUrl(url)
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -680,6 +757,12 @@ function OnlineTaskDialog({ kind, task, onClose, onSaved }: { kind: OnlineTask['
         <p className="small muted" style={{ margin: 0 }}>
           For {exam ? 'a mock exam' : 'a problem set'} that has no PDF here, like a coding exercise on Code Expert or GitLab. It counts towards your exam goal like the others.
         </p>
+        <div className="row" style={{ gap: 10 }}>
+          <button type="button" className="btn sm" onClick={() => void fill()} title="Take the title, link and statement from the page open in the platform window">
+            <Icon name="copy" size={13} /> Fill from the open page
+          </button>
+          {noPage && <span className="tiny muted">No page open: use “Open in app” above, go to the exercise, then try again.</span>}
+        </div>
         <label className="stack" style={{ gap: 4 }}>
           <span className="small">Title</span>
           <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={exam ? 'e.g. Practice exam HS25' : 'e.g. Exercise 7: Linked lists'} autoFocus aria-label="Title" />
@@ -752,15 +835,15 @@ function OnlineTaskDialog({ kind, task, onClose, onSaved }: { kind: OnlineTask['
 }
 
 /** Log a result without uploading anything: tests passed or points on the platform. */
-function ReportDialog({ m, online, onClose, onSent }: { m: Material; online: OnlineTask | null; onClose: () => void; onSent: () => void }): ReactElement {
+function ReportDialog({ m, online, sub, onClose, onSent }: { m: Material; online: OnlineTask | null; sub?: Submission; onClose: () => void; onSent: () => void }): ReactElement {
   const app = useApp()
   const exam = m.kind === 'exam'
-  const [points, setPoints] = useState('')
-  const [max, setMax] = useState('')
-  const [note, setNote] = useState('')
-  const [help, setHelp] = useState<WorkHelp>('alone')
-  const [conditions, setConditions] = useState(exam)
-  const [minutes, setMinutes] = useState('')
+  const [points, setPoints] = useState(sub?.reported ? String(sub.reported.points) : '')
+  const [max, setMax] = useState(sub?.reported ? String(sub.reported.max) : '')
+  const [note, setNote] = useState(sub?.reported?.note ?? '')
+  const [help, setHelp] = useState<WorkHelp>(sub?.help ?? 'alone')
+  const [conditions, setConditions] = useState(sub ? sub.examConditions : exam)
+  const [minutes, setMinutes] = useState(sub?.minutes ? String(sub.minutes) : '')
   const [busy, setBusy] = useState(false)
   const num = (v: string): number => (v.trim() === '' ? NaN : Number(v.replace(',', '.')))
   const p = num(points)
@@ -769,7 +852,8 @@ function ReportDialog({ m, online, onClose, onSent }: { m: Material; online: Onl
   const send = async (): Promise<void> => {
     if (!valid) return
     setBusy(true)
-    const ok = await app.reportWork({ materialId: m.id, points: p, max: mx, note: note.trim() || null, help, minutes: Number(minutes) || null, examConditions: conditions })
+    const input = { points: p, max: mx, note: note.trim() || null, help, minutes: Number(minutes) || null, examConditions: exam && conditions }
+    const ok = sub ? await app.editReport(sub.id, input) : await app.reportWork({ ...input, materialId: m.id })
     setBusy(false)
     if (ok) onSent()
   }
@@ -790,7 +874,9 @@ function ReportDialog({ m, online, onClose, onSent }: { m: Material; online: Onl
           </button>
         </div>
         <p className="small muted" style={{ margin: 0 }}>
-          Log how it went{online?.platform ? ` on ${online.platform}` : ''}: tests passed, points, or tasks solved. It marks the {exam ? 'exam written' : 'set done'} and updates the concepts it practises, with half the weight of a checked solution, since nobody looked at the work.
+          {sub
+            ? 'Correct the result you logged. This changes the record here; the mind model keeps what it learned from the first entry.'
+            : `Log how it went${online?.platform ? ` on ${online.platform}` : ''}: tests passed, points, or tasks solved. It marks the ${exam ? 'exam written' : 'set done'} and updates the concepts it practises, with half the weight of a checked solution, since nobody looked at the work.`}
         </p>
         <div className="row" style={{ gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <label className="stack" style={{ gap: 4 }}>
@@ -844,11 +930,287 @@ function ReportDialog({ m, online, onClose, onSent }: { m: Material; online: Onl
               Cancel
             </button>
             <button type="submit" className="btn primary" disabled={busy || !valid}>
-              Log result
+              {sub ? 'Save' : 'Log result'}
             </button>
           </div>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+const PLATFORM_LINKS = ['https://expert.ethz.ch', 'https://gitlab.ethz.ch', 'https://github.com', 'https://moodle-app2.let.ethz.ch']
+
+/** Open a platform (Code Expert, GitLab…) in the app's own window, where the learner signs in once. */
+/** Link the course to Code Expert once; every series then comes in as a problem set with the points earned there. */
+function CodeExpertPanel(): ReactElement {
+  const app = useApp()
+  const prep = useStore(app.exam)
+  const { course } = useStore(app.courseView)
+  const now = useNow()
+  const link = prep.codeExpert ?? null
+  const [courses, setCourses] = useState<CeCourse[] | null>(null)
+  const [pick, setPick] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const connect = async (): Promise<void> => {
+    setBusy('Asking Code Expert…')
+    setNote(null)
+    const r = await app.codeExpertCourses()
+    setBusy(null)
+    if (!r.signedIn) return setNote('Sign in to Code Expert in the window that opened (ETH login), then press Connect again.')
+    if (r.error) return setNote(`Code Expert did not answer: ${r.error}`)
+    if (!r.courses.length) return setNote('No courses found on Code Expert for this account.')
+    setCourses(r.courses)
+    const g = guessCourse(r.courses, `${course.title} ${course.short}`)
+    setPick(g ? `${g.id}/${g.semester}` : '')
+  }
+  const chosen = courses?.find((c) => `${c.id}/${c.semester}` === pick) ?? null
+  return (
+    <div className="platform-bar ce-panel">
+      <div className="small" style={{ minWidth: 0 }}>
+        <span style={{ fontWeight: 550 }}>Code Expert</span>
+        {link ? (
+          <span className="muted">
+            {' '}· Linked to {link.name} ({link.semester}). Every series is a problem set here with your points on Code Expert · synced {relTime(link.syncedAt, now)}.
+          </span>
+        ) : (
+          <span className="muted"> · Link this course once and every series comes in by itself: statements, your points per task, what you submitted. No picking task by task.</span>
+        )}
+        {note && <div className="tiny warn-text" style={{ marginTop: 4 }}>{note}</div>}
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        {link ? (
+          <>
+            <button
+              className="btn sm primary"
+              disabled={!!busy}
+              onClick={() => {
+                setBusy('Syncing…')
+                setNote(null)
+                void app.syncCodeExpert().then((r) => {
+                  setBusy(null)
+                  if (r && !r.signedIn) setNote('Sign in to Code Expert in the window that opened, then sync again.')
+                })
+              }}
+            >
+              <Icon name="refresh" size={13} /> {busy ?? 'Sync now'}
+            </button>
+            <button className="btn sm ghost" disabled={!!busy} onClick={() => void app.linkCodeExpert(null)} title="Unlink (the synced problem sets and results stay)">
+              Unlink
+            </button>
+          </>
+        ) : courses ? (
+          <>
+            <select className="select" style={{ width: 240 }} value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Code Expert course">
+              <option value="">Pick the course…</option>
+              {courses.map((c) => (
+                <option key={`${c.id}/${c.semester}`} value={`${c.id}/${c.semester}`}>
+                  {c.name} ({c.semester})
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn sm primary"
+              disabled={!chosen || !!busy}
+              onClick={() => {
+                if (!chosen) return
+                setBusy('Syncing…')
+                void app.linkCodeExpert(chosen).then((r) => {
+                  setBusy(null)
+                  setCourses(null)
+                  if (r && !r.signedIn) setNote('Sign in to Code Expert in the window that opened, then sync again.')
+                })
+              }}
+            >
+              {busy ?? 'Link and sync'}
+            </button>
+          </>
+        ) : (
+          <button className="btn sm" disabled={!!busy} onClick={() => void connect()}>
+            <Icon name="external" size={13} /> {busy ?? 'Connect Code Expert'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PlatformBar(): ReactElement {
+  const app = useApp()
+  const [url, setUrl] = useState('')
+  const [signedOut, setSignedOut] = useState(false)
+  const link = cleanUrl(url)
+  const desktop = app.backend.kind === 'electron'
+  return (
+    <div className="platform-bar">
+      <div className="small" style={{ minWidth: 0 }}>
+        <span style={{ fontWeight: 550 }}>Other platforms</span>
+        <span className="muted"> · Open GitLab, Moodle or any page inside the app and sign in there as usual. Then “Import from page” on a task reads the statement, your code and the test results, and the tutor can read the page too.</span>
+      </div>
+      <form
+        className="row"
+        style={{ gap: 6 }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (link) void app.backend.openPlatform(link)
+        }}
+      >
+        <input className="input" list="platform-links" style={{ width: 230 }} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://expert.ethz.ch" aria-label="Platform link" />
+        <datalist id="platform-links">
+          {PLATFORM_LINKS.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
+        <button className="btn sm" type="submit" disabled={!link}>
+          <Icon name="external" size={13} /> Open in app
+        </button>
+        {desktop && (
+          <button
+            className="btn sm ghost"
+            type="button"
+            title="Forget the sign-ins made in the platform window"
+            onClick={() => {
+              void app.backend.signOutPlatforms().then(() => setSignedOut(true))
+            }}
+          >
+            {signedOut ? 'Signed out' : 'Sign out'}
+          </button>
+        )}
+      </form>
+    </div>
+  )
+}
+
+/** Read an online task from the page open in the platform window: its statement, the learner's code, the test result. */
+function ImportDialog({ m, t, onClose, onDone }: { m: Material; t: OnlineTask; onClose: () => void; onDone: () => void }): ReactElement {
+  const app = useApp()
+  const [page, setPage] = useState<PageCapture | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saveStatement, setSaveStatement] = useState(!t.statement)
+  const [logScore, setLogScore] = useState(true)
+  const [check, setCheck] = useState(true)
+  const [help, setHelp] = useState<WorkHelp>('alone')
+  const [busy, setBusy] = useState(false)
+  const read = async (): Promise<void> => {
+    setLoading(true)
+    setPage(await app.backend.capturePage().catch(() => null))
+    setLoading(false)
+  }
+  useEffect(() => {
+    void read()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const score = page ? findScore(page.text) : null
+  const tests = page ? testLines(page.text) : []
+  const doStatement = !!page && saveStatement && !!page.text.trim()
+  const doScore = !!score && logScore
+  const doCheck = !!page && page.code.length > 0 && check
+  const go = async (): Promise<void> => {
+    if (!page) return
+    setBusy(true)
+    if (doStatement || !t.url) await app.updateOnlineTask(t.id, { ...(doStatement ? { statement: page.text } : {}), ...(!t.url ? { url: page.url } : {}), ...(!t.platform ? { platform: guessPlatform(page.url) } : {}) })
+    if (doScore && score) await app.reportWork({ materialId: m.id, points: score.points, max: score.max, note: tests.length ? tests.slice(0, 6).join('\n') : 'Read from the page', help, minutes: null, examConditions: false })
+    if (doCheck) {
+      const text = [captureCode(page), tests.length ? `Test results shown on ${t.platform || 'the platform'}:\n${tests.join('\n')}` : ''].filter(Boolean).join('\n\n')
+      await app.submitWork({ materialId: m.id, files: [], text, help, examConditions: false, minutes: null })
+    }
+    setBusy(false)
+    onDone()
+  }
+  return (
+    <Modal onClose={onClose} width={640} label={`Import from page: ${m.title}`}>
+      <div className="stack" style={{ gap: 14 }}>
+        <div className="row between">
+          <h2>Import from page</h2>
+          <button type="button" className="btn icon sm ghost" onClick={onClose} title="Close (Esc)">
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+        {loading ? (
+          <div className="small muted">Reading the page…</div>
+        ) : !page ? (
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="small" style={{ margin: 0 }}>
+              {app.backend.kind === 'electron'
+                ? 'No page is open in the platform window. Open the task, sign in if asked, go to the exercise (with your code and the test results showing), then read the page.'
+                : 'Reading pages works in the desktop app, which opens platforms in its own window. In the browser, paste the statement into the task and your code into “Check my work”.'}
+            </p>
+            <div className="row" style={{ gap: 8 }}>
+              {t.url && (
+                <button className="btn sm" onClick={() => void app.backend.openPlatform(t.url ?? '')}>
+                  <Icon name="external" size={13} /> Open in app
+                </button>
+              )}
+              <button className="btn sm primary" onClick={() => void read()}>
+                <Icon name="refresh" size={13} /> Read the page
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="import-page">
+              <div className="small" style={{ fontWeight: 550 }}>
+                {page.title || 'Untitled page'}
+              </div>
+              <div className="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {page.url}
+              </div>
+              <div className="tiny muted" style={{ marginTop: 6 }}>
+                {plural(page.text.split(/\s+/).filter(Boolean).length, 'word')} of text
+                {page.code.length ? ` · code: ${page.code.map((c) => `${c.name} (${plural(c.value.split('\n').length, 'line')})`).join(', ')}` : ' · no code editor found'}
+                {score ? ` · result ${score.points}/${score.max}` : ''}
+              </div>
+              <button className="btn sm ghost" style={{ marginTop: 6 }} onClick={() => void read()}>
+                <Icon name="refresh" size={13} /> Read again
+              </button>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              <label className="row" style={{ gap: 10 }}>
+                <Toggle on={saveStatement} onChange={setSaveStatement} label="Save the page text as the statement" />
+                <span className="small">Save the page text as the task statement{t.statement ? ' (replaces the one saved)' : ''}</span>
+              </label>
+              {score && (
+                <label className="row" style={{ gap: 10 }}>
+                  <Toggle on={logScore} onChange={setLogScore} label="Log the result" />
+                  <span className="small">
+                    Log the result {score.points}/{score.max}
+                  </span>
+                </label>
+              )}
+              {page.code.length > 0 && (
+                <label className="row" style={{ gap: 10 }}>
+                  <Toggle on={check} onChange={setCheck} label="Check this code" />
+                  <span className="small">Check this code{tests.length ? ' with the test results' : ''} (each task graded, counts more than a logged result)</span>
+                </label>
+              )}
+            </div>
+            {(doScore || doCheck) && (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="small">How did you work?</span>
+                <span className="seg">
+                  {(Object.keys(HELP_LABEL) as WorkHelp[]).map((h) => (
+                    <button type="button" key={h} className={help === h ? 'on' : ''} onClick={() => setHelp(h)}>
+                      {HELP_LABEL[h]}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            )}
+            <div className="row between" style={{ marginTop: 4 }}>
+              <span className="tiny muted">The page is read once, now. Nothing is sent anywhere until you import.</span>
+              <div className="row" style={{ gap: 8 }}>
+                <button type="button" className="btn ghost" onClick={onClose}>
+                  Cancel
+                </button>
+                <button className="btn primary" disabled={busy || !(doStatement || doScore || doCheck)} onClick={() => void go()}>
+                  Import
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   )
 }

@@ -17,11 +17,14 @@ import { JsonStore, loadSettings, saveSettings } from '../src/node/store'
 import { readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../src/node/files'
 import { fakeGenerate } from '../src/shared/fakeTutor'
 import type { LlmRequest, LlmResult } from '../src/shared/types'
+import { fakeCapture } from '../src/shared/platform'
+import { checkCeOp, fakeCodeExpert } from '../src/shared/codeExpert'
 
 const port = Number(process.env.PORT ?? 5318)
 const dataDir = resolve(process.env.ANAMNESIS_DATA_DIR ?? join(tmpdir(), 'anamnesis-dev'))
 const scriptPath = process.env.ANAMNESIS_SCRIPT ? resolve(process.env.ANAMNESIS_SCRIPT) : null
 const fake = process.env.ANAMNESIS_FAKE === '1'
+let platformUrl: string | null = null
 const store = new JsonStore(dataDir)
 // the browser dev server has no keychain: API keys come from its own environment
 const providers = new Providers({ dataDir: () => dataDir, key: (p) => (p === 'google' ? process.env.GEMINI_API_KEY : process.env.ANTHROPIC_API_KEY) || null })
@@ -97,6 +100,23 @@ const server = createServer((req, res) => {
           const b = await body<{ course: string; id: string; files: { name: string; data: string }[] }>(req)
           const files = (b.files ?? []).map((f) => ({ name: String(f.name), bytes: new Uint8Array(Buffer.from(String(f.data), 'base64')) }))
           return send(res, 200, { files: await saveWork(dataDir, String(b.course), String(b.id), files) })
+        }
+        // the platform window exists only in the desktop app; in fake mode the server plays one with a scripted page
+        case 'POST /api/platform/open': {
+          const { url: page } = await body<{ url: string }>(req)
+          if (fake && /^https?:\/\//i.test(String(page))) platformUrl = String(page)
+          return send(res, 200, { ok: fake })
+        }
+        case 'GET /api/platform/status':
+          return send(res, 200, { open: !!platformUrl, url: platformUrl, title: platformUrl ? 'Exercise 4: Lists · Code Expert' : null })
+        case 'GET /api/platform/capture':
+          return send(res, 200, { page: platformUrl ? fakeCapture(platformUrl, new Date()) : null })
+        case 'POST /api/platform/sign-out':
+          platformUrl = null
+          return send(res, 200, { ok: true })
+        case 'POST /api/codeexpert': {
+          const op = checkCeOp(await body<unknown>(req))
+          return send(res, 200, fake ? fakeCodeExpert(op) : { ok: false, signedIn: true, error: 'Code Expert sync works in the desktop app' })
         }
         case 'GET /api/test':
           if (fake) return send(res, 200, { ok: true, message: 'Dev server in fake mode: the scripted tutor answers.', path: null, version: null })

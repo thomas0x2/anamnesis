@@ -449,41 +449,40 @@ function CourseNotice(): ReactElement | null {
   )
 }
 
-/** Code Expert at a glance: linked or not, when it last synced, the next series due, and a sync button. */
+/** Code Expert and GitLab at a glance: what is linked, when it last synced, the next series due, and one sync button for both. */
 function CodeExpertNotice(): ReactElement {
   const app = useApp()
   const prep = useStore(app.exam)
   const now = useNow()
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
-  const link = prep.codeExpert ?? null
-  const synced = prep.online.filter((t) => t.codeExpert)
-  const open = synced
+  const ce = prep.codeExpert ?? null
+  const gl = prep.gitlab ?? null
+  const series = prep.online.filter((t) => t.codeExpert)
+  const repos = prep.online.filter((t) => t.gitlab)
+  const open = series
     .filter((t) => !workState(prep, t.id).done && t.codeExpert?.due && Date.parse(t.codeExpert.due) >= now.getTime() - 86_400_000)
     .sort((a, b) => (a.codeExpert?.due ?? '').localeCompare(b.codeExpert?.due ?? ''))[0]
+  const lines: string[] = []
+  if (ce) lines.push(`Code Expert: ${plural(series.length, 'series', 'series')}, synced ${relTime(ce.syncedAt, now)}.${open?.codeExpert?.due ? ` Next due: ${open.title}, ${new Date(open.codeExpert.due).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}.` : ''}`)
+  if (gl) lines.push(`GitLab: ${plural(repos.length, 'exercise')}, synced ${relTime(gl.syncedAt, now)}.`)
+  const sync = async (): Promise<void> => {
+    setBusy(true)
+    setNote(null)
+    const out = await Promise.all([ce ? app.syncCodeExpert() : null, gl ? app.syncGitLab() : null])
+    setBusy(false)
+    if (out[0] && !out[0].signedIn) setNote('Sign in to Code Expert in the window that opened, then sync again.')
+  }
   return (
     <div className="today-block half ce-notice">
-      <div className="eyebrow">code expert</div>
-      <div className="title">{link ? link.name : 'Not linked'}</div>
+      <div className="eyebrow">code expert · gitlab</div>
+      <div className="title">{ce && gl ? `${ce.name} · ${gl.name}` : ce ? ce.name : gl ? gl.name : 'Not linked'}</div>
       <div className="desc">
-        {link
-          ? `${plural(synced.length, 'series', 'series')} synced, last ${relTime(link.syncedAt, now)}.${open?.codeExpert?.due ? ` Next due: ${open.title}, ${new Date(open.codeExpert.due).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}.` : ''}`
-          : 'If the course has coding exercises on Code Expert, link it once in Exam prep and every series comes in with your points.'}
+        {lines.length ? lines.join(' ') : 'If the course has coding exercises on Code Expert or GitLab, link them once in Exam prep and every exercise comes in with your results.'}
         {note && <div className="tiny warn-text" style={{ marginTop: 4 }}>{note}</div>}
       </div>
-      {link ? (
-        <button
-          className="btn go"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true)
-            setNote(null)
-            void app.syncCodeExpert().then((r) => {
-              setBusy(false)
-              if (r && !r.signedIn) setNote('Sign in to Code Expert in the window that opened, then sync again.')
-            })
-          }}
-        >
+      {ce || gl ? (
+        <button className="btn go" disabled={busy} onClick={() => void sync()}>
           <Icon name="refresh" size={13} /> {busy ? 'Syncing…' : 'Sync now'}
         </button>
       ) : (

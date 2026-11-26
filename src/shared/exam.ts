@@ -4,13 +4,13 @@
 // much help the learner had.
 import { applyEvidence, getConcept, recordMisconception, type EvidenceInput } from './mastery'
 import { milestoneReward } from './rewards'
-import type { CodeExpertLink, CodeExpertSeries, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
+import type { CodeExpertLink, CodeExpertSeries, GitLabExercise, GitLabLink, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
 import { clamp, truncate, uid } from './util'
 
 export const DEFAULT_MOCK_EXAMS = 2
 
 export function emptyPrep(): ExamPrep {
-  return { version: 1, examDate: null, problemSets: null, mockExams: DEFAULT_MOCK_EXAMS, records: {}, submissions: [], online: [], codeExpert: null }
+  return { version: 1, examDate: null, problemSets: null, mockExams: DEFAULT_MOCK_EXAMS, records: {}, submissions: [], online: [], codeExpert: null, gitlab: null }
 }
 
 /** Read a stored file defensively (older or hand-edited files still load). */
@@ -28,7 +28,31 @@ export function normalizePrep(raw: unknown): ExamPrep {
     records: r.records && typeof r.records === 'object' ? r.records : {},
     submissions: Array.isArray(r.submissions) ? r.submissions.filter((s) => s && typeof s.id === 'string') : [],
     online: Array.isArray(r.online) ? r.online.map(normalizeOnline).filter((t): t is OnlineTask => t !== null) : [],
-    codeExpert: normalizeCeLink(r.codeExpert)
+    codeExpert: normalizeCeLink(r.codeExpert),
+    gitlab: normalizeGlLink(r.gitlab)
+  }
+}
+
+function normalizeGlLink(raw: unknown): GitLabLink | null {
+  const r = (raw ?? {}) as Partial<GitLabLink>
+  if (typeof r.origin !== 'string' || !/^https?:\/\/[^/]+$/.test(r.origin) || (r.kind !== 'group' && r.kind !== 'project') || typeof r.id !== 'number') return null
+  const s = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice(0, n) : '')
+  return { origin: r.origin, kind: r.kind, id: r.id, path: s(r.path, 300), name: s(r.name, 200), syncedAt: typeof r.syncedAt === 'string' ? r.syncedAt : null }
+}
+
+function normalizeGlExercise(raw: unknown): GitLabExercise | undefined {
+  const r = (raw ?? {}) as Partial<GitLabExercise>
+  if (typeof r.key !== 'string' || !r.key || typeof r.projectId !== 'number') return undefined
+  const t = r.tests
+  return {
+    key: r.key.slice(0, 400),
+    projectId: r.projectId,
+    path: typeof r.path === 'string' ? r.path.slice(0, 300) : '',
+    ref: typeof r.ref === 'string' ? r.ref.slice(0, 200) : 'main',
+    tests: t && typeof t.passed === 'number' && typeof t.total === 'number' && t.total > 0 && t.passed <= t.total ? { passed: t.passed, total: t.total } : null,
+    pipeline: typeof r.pipeline === 'string' ? r.pipeline.slice(0, 40) : null,
+    mine: r.mine === true,
+    lastCommitAt: typeof r.lastCommitAt === 'string' ? r.lastCommitAt : null
   }
 }
 
@@ -88,7 +112,8 @@ export function normalizeOnline(raw: unknown): OnlineTask | null {
     conceptIds: Array.isArray(r.conceptIds) ? [...new Set(r.conceptIds.filter((x): x is string => typeof x === 'string'))].slice(0, 12) : [],
     statement: typeof r.statement === 'string' && r.statement.trim() ? r.statement.trim().slice(0, 30_000) : null,
     addedAt: typeof r.addedAt === 'string' ? r.addedAt : new Date(0).toISOString(),
-    ...(normalizeCeSeries(r.codeExpert) ? { codeExpert: normalizeCeSeries(r.codeExpert) } : {})
+    ...(normalizeCeSeries(r.codeExpert) ? { codeExpert: normalizeCeSeries(r.codeExpert) } : {}),
+    ...(normalizeGlExercise(r.gitlab) ? { gitlab: normalizeGlExercise(r.gitlab) } : {})
   }
 }
 

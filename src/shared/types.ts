@@ -1,4 +1,5 @@
 import type { CeOp, CeResult } from './codeExpert'
+import type { GlOp, GlResult } from './gitlab'
 import type { PageCapture, PlatformStatus } from './platform'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from './agentTypes'
 import type { CloudSttRequest } from './stt'
@@ -207,6 +208,32 @@ export interface OnlineTask {
   addedAt: string
   /** a series synced from Code Expert: its tasks and their scores there */
   codeExpert?: CodeExpertSeries
+  /** an exercise synced from GitLab: its repository (and folder) and the latest CI tests */
+  gitlab?: GitLabExercise
+}
+
+export interface GitLabExercise {
+  /** "p<projectId>" or "p<projectId>:<folder>" */
+  key: string
+  projectId: number
+  path: string
+  ref: string
+  tests: { passed: number; total: number } | null
+  pipeline: string | null
+  /** the learner has commits there */
+  mine: boolean
+  lastCommitAt: string | null
+}
+
+/** The GitLab group (one repository per exercise) or repository (a folder per exercise) a course is linked to. */
+export interface GitLabLink {
+  /** e.g. https://gitlab.ethz.ch */
+  origin: string
+  kind: 'group' | 'project'
+  id: number
+  path: string
+  name: string
+  syncedAt: string | null
 }
 
 export interface CodeExpertSeries {
@@ -245,6 +272,8 @@ export interface ExamPrep {
   online: OnlineTask[]
   /** the linked Code Expert course, if any */
   codeExpert?: CodeExpertLink | null
+  /** the linked GitLab group or repository, if any */
+  gitlab?: GitLabLink | null
 }
 
 // ---------------------------------------------------------------- tutor output (LLM)
@@ -816,6 +845,8 @@ export interface Backend {
   signOutPlatforms(): Promise<void>
   /** Ask Code Expert (expert.ethz.ch) for the learner's courses, a course's series with scores, or submitted code, with their sign-in in the platform window. */
   codeExpert(op: CeOp): Promise<CeResult<unknown>>
+  /** Read a GitLab group or repository (exercises, README, CI tests, code) with the learner's sign-in in the platform window. */
+  gitlab(op: GlOp): Promise<GlResult<unknown>>
   info(): Promise<AppInfo>
   /** Start the tutor agent for a chat; events stream until it exits. */
   agentStart(req: AgentStartRequest, onEvent: (e: AgentEvent) => void): Promise<{ ok: boolean; error?: string; errorKind?: LlmErrorKind }>

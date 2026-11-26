@@ -1,9 +1,13 @@
 // In-browser backend: localStorage persistence and the scripted demo tutor. No model, no files.
 import { workFileName } from '@shared/exam'
+import { fakeCapture } from '@shared/platform'
 import { FakeAgentHost } from '@shared/fakeAgent'
 import { fakeGenerate } from '@shared/fakeTutor'
 import { DEFAULT_SETTINGS, type Backend, type DeepPartial, type Settings } from '@shared/types'
 import { deepMerge } from '@shared/util'
+
+/** the page the demo pretends to have open in the platform window */
+let platformUrl: string | null = null
 
 const KEY = 'anamnesis:'
 
@@ -58,6 +62,17 @@ export function createDemoBackend(): Backend {
     saveWork: async (_c, _s, files) => files.map((f, i) => ({ name: workFileName(f.name, i) ?? `file-${i + 1}`, size: f.bytes.byteLength })),
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
+    },
+    // no platform window in the browser: the page opens in a tab and the demo reads a scripted page
+    async openPlatform(url) {
+      platformUrl = url
+      window.open(url, '_blank', 'noopener')
+      return false
+    },
+    platformStatus: async () => ({ open: !!platformUrl, url: platformUrl, title: platformUrl ? 'Exercise 4: Lists · Code Expert' : null }),
+    capturePage: async () => (platformUrl ? fakeCapture(platformUrl, new Date()) : null),
+    signOutPlatforms: async () => {
+      platformUrl = null
     },
     info: async () => ({ version: '0.1.0', dataDir: 'browser localStorage', platform: navigator.platform, backend: 'demo' as const })
   }

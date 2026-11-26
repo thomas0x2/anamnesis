@@ -186,7 +186,7 @@ async function coursesFlow(page) {
   await nav(page, 'Exam prep').click()
   await page.getByRole('button', { name: 'Online task' }).click()
   await page.getByLabel('Title').fill('Exercise 4: Lists')
-  await page.getByLabel('Link').fill('expert.ethz.ch/ex4')
+  await page.getByLabel('Link', { exact: true }).fill('expert.ethz.ch/ex4')
   await page.getByLabel('Search concepts').fill('e')
   await page.locator('.concept-pick-item').first().click()
   await page.locator('.modal').getByRole('button', { name: 'Add' }).click()
@@ -207,6 +207,32 @@ async function coursesFlow(page) {
   await online.locator('.work-task').first().waitFor({ timeout: 60_000 })
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-exam-online.png`) })
   step('code for the online task was uploaded and checked per task')
+
+  // correct a logged result afterwards
+  await online.locator('.submission', { hasText: 'logged result' }).getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Points or tests passed').fill('5')
+  await page.locator('.modal').getByRole('button', { name: 'Save' }).click()
+  await online.locator('.submission .big', { hasText: '5/8' }).waitFor()
+  step('a logged result was edited afterwards')
+
+  // the platform window (played by the dev server in fake mode): open a page, import a task and its code from it
+  await page.getByLabel('Platform link').fill('https://expert.ethz.ch/ide/ex5')
+  await page.locator('.platform-bar').getByRole('button', { name: 'Open in app' }).click()
+  await page.getByRole('button', { name: 'Online task' }).click()
+  await page.getByRole('button', { name: 'Fill from the open page' }).click()
+  await page.waitForFunction(() => document.querySelector('input[aria-label="Title"]')?.value === 'Exercise 4: Lists', null, { timeout: 5000 }).catch(() => {
+    throw new Error('the task title was not taken from the page')
+  })
+  await page.getByLabel('Title').fill('Exercise 5: Reverse')
+  await page.locator('.modal').getByRole('button', { name: 'Add' }).click()
+  const imported = page.locator('.work-row', { hasText: 'Exercise 5: Reverse' })
+  await imported.getByText('statement pasted').waitFor()
+  await imported.getByRole('button', { name: 'Import from page' }).click()
+  await page.locator('.import-page', { hasText: 'result 7/8' }).waitFor()
+  await page.locator('.modal').getByRole('button', { name: 'Import' }).click()
+  await imported.locator('.submission .big', { hasText: '7/8' }).waitFor()
+  await imported.locator('.work-task').first().waitFor({ timeout: 60_000 })
+  step('a task, the test result and the code were imported from the platform page and checked')
 
   await nav(page, 'Today').click()
   await page.locator('.exam-notice', { hasText: 'Exam in 60 days' }).waitFor()

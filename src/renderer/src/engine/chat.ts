@@ -7,6 +7,7 @@ import { agentTools, buildAgentSystemPrompt, type AgentMode } from '@shared/agen
 import type { AgentEvent, AgentToolResult } from '@shared/agentTypes'
 import { addSuggestions, cheatsheetPrompt, suggestResultText, type SuggestInput } from '@shared/cheatsheet'
 import { prepSummary } from '@shared/exam'
+import { captureForTutor } from '@shared/platform'
 import { sanitizePlan } from '@shared/graph'
 import { getConcept } from '@shared/mastery'
 import { normalizeCard, normalizeModelUpdate, normalizePlan, type NormalizeContext } from '@shared/normalize'
@@ -383,6 +384,11 @@ export class ChatController {
       }
       case 'read_script':
         return this.readScript(args)
+      case 'platform_page': {
+        const page = await this.app.backend.capturePage().catch(() => null)
+        if (!page) return { text: 'No platform page is open. Ask the learner to open the task in the app: Exam prep → the task → "Open in app" (they sign in there once).' }
+        return { text: captureForTutor(page) }
+      }
       case 'course':
         return this.course(args)
       case 'learner':

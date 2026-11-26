@@ -5,7 +5,7 @@ import numcsJson from '@courses/numcs/course.json'
 import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
 import { generateWithRetry } from '@shared/retry'
 import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
-import { applyWork, buildWorkPrompt, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
+import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
 import { milestoneReward, rewardsForResponse } from '@shared/rewards'
@@ -743,6 +743,15 @@ export class AppController {
     await this.applyWorkToLearner(courseId, sub, m, [], (id) => this.graph.title(id))
     await this.updatePrep(courseId, (p) => ({ ...p, submissions: [...p.submissions, { ...sub, applied: true }] }))
     this.toast({ kind: 'info', text: concepts.length ? `${m.title}: logged. The mind model was updated.` : `${m.title}: logged.` }, 5000)
+    return true
+  }
+
+  /** Correct a logged result afterwards. The record changes; the mind model keeps the evidence of the first entry (it cannot be taken back). */
+  async editReport(submissionId: string, input: Omit<ReportInput, 'materialId'>): Promise<boolean> {
+    const sub = this.exam.get().submissions.find((x) => x.id === submissionId)
+    const next = sub ? editReported(sub, input, new Date()) : null
+    if (!next) return false
+    await this.updatePrep(this.courseId, (p) => ({ ...p, submissions: p.submissions.map((x) => (x.id === submissionId ? next : x)) }))
     return true
   }
 

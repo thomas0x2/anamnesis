@@ -77,6 +77,12 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     }
   },
   {
+    name: 'platform_page',
+    description:
+      "Read the page the learner has open in the app's platform window (Code Expert, GitLab, Moodle…, where coding problem sets live): its URL, the code in its editors and its visible text (task statement, test results). Returns a note when no page is open: then ask the learner to open the task from Exam prep (\"Open in app\"). Use it when the learner asks about a coding task or their code there; read it again after they change the code. Never paste the whole statement back.",
+    inputSchema: { type: 'object', properties: {}, required: [] }
+  },
+  {
     name: 'course',
     description:
       'Look up course concepts: details (summary, why it matters, prerequisites, what it enables, script pages, demos) for the given ids, or a search over titles and German terms.',
@@ -169,7 +175,7 @@ The learner works through a stream of cards, one at a time; you create every car
 - explain: content (text, equations, plots, demos, mermaid, sketch, code, script references). Waits until read.
 - ask: one question the learner answers in the card (kind probe, predict, check, practice, review, reflect). Waits for the answer and returns the graded result.
 - show_plan: the dependency tree of reasoning steps toward the goal; the learner reviews it (marks steps as known or to be taught) and you get the result. update_plan: progress in the side panel.
-- read_script, course, learner: look things up. update_learner: record what you concluded. finish: the closing summary.
+- read_script, course, learner: look things up. platform_page: the coding task (and the learner's code) open in the app's platform window. update_learner: record what you concluded. finish: the closing summary.
 Call tools one at a time and react to each result before the next step. Do not write a question in plain text when it should be an ask card; plain text is for short talk. When the learner writes in the chat instead of answering a card, the card's result says so: answer them first (briefly, a tool card if it needs a visual), then continue.
 
 A learning session for a goal concept usually goes:

@@ -108,7 +108,7 @@ A step that fails before any card arrived is retried once automatically (invalid
 ## Cards, answers and grading
 
 * **Card kinds:** `probe`, `predict`, `check`, `practice`, `review`, `reflect`, `explain`, `summary`, `message`.
-* **Blocks:** `text`, `equation`, `callout`, `steps`, `plot`, `demo`, `mermaid`, `sketch`, `script`, `code`, `table`.
+* **Blocks:** `text`, `equation`, `callout`, `steps`, `plot`, `widget`, `demo`, `mermaid`, `script`, `code`, `table`.
 * **Interactions:** `mcq` (single or multiple), `numeric`, `free`, `order`, `fill`, `continue`. Every graded interaction carries 2 to 4 hints, a worked solution, the concept ids it gives evidence about, a confidence prompt and, for practice and review, the level and cue.
 * **Attempts** (`MAX_ATTEMPTS`): one for probe and predict cards, three for check, practice and review, two for the explain-back.
 
@@ -298,7 +298,8 @@ Settings → Data exports the learner model, answers and points as one JSON file
 * **Demos** (`src/renderer/src/demos/`): 14 interactive components that the tutor configures with `demo.params`. They compute with `src/shared/numerics.ts` (Lagrange and barycentric interpolation, Lebesgue functions, Chebyshev nodes and polynomials, the DFT and trigonometric interpolation, splines, quadrature rules, fixed-point and Newton iterations, the SVD of a 2×2 matrix, least squares), which is unit tested.
 * **Plots** (`Chart.tsx`, `src/renderer/src/lib/axes.ts`): math.js expressions or explicit points, linear or logarithmic axes, with tested tick generation.
 * **Diagrams:** Mermaid for algorithms and concept maps, dagre for the plan tree.
-* **Sketches:** model-written HTML and JavaScript in a sandboxed iframe with an opaque origin and a Content Security Policy that allows inline code only and no network.
+* **Widgets** (`src/renderer/src/widgets/`): the default for interactive content. The tutor writes a few lines of JavaScript against the widget kit (`kit.js`, global `K`: `K.demo` with sliders, choices, toggles, buttons, a play clock; plot views with functions, curves, points, areas, arrows, vector fields, heat maps, level curves and draggable handles; panels with cells and bit patterns; a readout; helpers such as an RK4 `K.ode`). The app sends the kit, its stylesheet (`kit.css`, the Ma tokens) and the IBM Plex fonts with the code into `widget.html`, a sandboxed iframe with an opaque origin and a CSP that allows inline code only and no network. The frame sizes itself to the content, and errors are shown in the widget and returned to the tutor with the card's result so it can fix the code. The prompt documents the kit (`# Widget kit` in `prompts.ts`). The built-in demos stay as ready-made references the tutor may pick when one shows exactly the idea.
+* **Sketches** (legacy): free-form HTML from older transcripts still renders in `sketch.html`; the tutor no longer writes them.
 
 Model-written expressions are evaluated by a locked-down math.js instance (`src/shared/mathx.ts`) in which `import`, `evaluate`, `parse`, `createUnit`, `simplify` and `derivative` are unavailable.
 

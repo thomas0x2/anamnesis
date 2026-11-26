@@ -30,6 +30,15 @@ describe('blocks', () => {
     expect(p!.plot!.xMax).toBeGreaterThan(p!.plot!.xMin)
   })
 
+  it('reads widgets, also nested as a JSON string or written as a sketch with kit code', () => {
+    const code = 'K.demo({ draw(p, g) { g.fn((x) => x * x) } })'
+    expect(normalizeBlock({ type: 'widget', widget: { title: 'Parabola', code, height: 9000 } })?.widget).toEqual({ title: 'Parabola', code, caption: null, height: 720 })
+    expect(normalizeBlock({ type: 'widget', widget: JSON.stringify({ code: '```js\n' + code + '\n```' }), md: 'Try it' })?.widget).toEqual({ title: null, code, caption: 'Try it', height: null })
+    expect(normalizeBlock({ type: 'sketch', code, title: 'Old name' })).toMatchObject({ type: 'widget', widget: { title: 'Old name', code } })
+    expect(normalizeBlock({ type: 'widget', widget: { code: '' }, md: 'fallback' })).toEqual({ type: 'text', md: 'fallback' })
+    expect(normalizeBlock({ type: 'widget', widget: { code: 'x'.repeat(30_000) } })).toBeNull()
+  })
+
   it('falls back to text for unknown demos and clamps sketch heights', () => {
     expect(normalizeBlock({ type: 'demo', demo: { id: 'not-a-demo' }, md: 'see the figure' })).toEqual({ type: 'text', md: 'see the figure' })
     const d = normalizeBlock({ type: 'demo', demo: { id: 'chebyshev', params: { n: 8 } } })

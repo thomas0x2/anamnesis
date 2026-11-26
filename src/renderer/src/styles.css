@@ -5946,3 +5946,12 @@ svg.pace {
 .study-sessions .session-row {
   grid-template-columns: minmax(0, 1fr) auto auto auto auto;
 }
+
+/* ------------------------------------------------------------ tutor-built widgets (src/renderer/src/widgets) */
+.widget-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: dark;
+}

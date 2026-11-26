@@ -3,6 +3,7 @@ import { makeFn } from '@shared/mathx'
 import type { Block, PlotSpec } from '@shared/types'
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { DemoView } from '../demos'
+import { WidgetView } from '../widgets/Widget'
 import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { Chart, sample, SERIES_COLORS, type ChartSeries } from './Chart'
@@ -43,6 +44,8 @@ const BlockView = memo(function BlockView({ block: b, live }: { block: Block; li
       return b.plot ? <PlotBlock spec={b.plot} caption={b.md} /> : null
     case 'demo':
       return b.demo ? <DemoView id={b.demo.id} params={b.demo.params ?? null} caption={b.demo.caption ?? b.md ?? null} /> : null
+    case 'widget':
+      return b.widget ? <WidgetView title={b.widget.title} code={b.widget.code} caption={b.widget.caption ?? b.md ?? null} height={b.widget.height} /> : null
     case 'mermaid':
       return <MermaidBlock source={b.md ?? ''} />
     case 'sketch':

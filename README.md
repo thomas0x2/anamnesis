@@ -28,7 +28,7 @@ The tutor is Claude, run through the **Claude Code CLI** on your own Claude logi
 
 **Honest stats.** Readiness per chapter, calibration (how often you are right when you say you are sure), accuracy by difficulty, activity, upcoming reviews, help needed over time. Every chart has a table view.
 
-**Visual.** Fourteen interactive demos (interpolation and the Runge phenomenon, Lebesgue functions, Chebyshev polynomials, cancellation, Fourier series, roots of unity, trigonometric interpolation, aliasing, splines, quadrature, fixed-point cobwebs, Newton, the SVD, least squares), plots, diagrams and small sketches.
+**Visual.** The tutor builds interactive demos for the idea at hand in any course (sliders, draggable points, animations, phase portraits, bit patterns), all from one widget kit so they look like the rest of the app. For NumCS there are also fourteen ready-made demos (interpolation and the Runge phenomenon, Lebesgue functions, Chebyshev polynomials, cancellation, Fourier series, roots of unity, trigonometric interpolation, aliasing, splines, quadrature, fixed-point cobwebs, Newton, the SVD, least squares), plus plots and diagrams.
 
 **Voice.** Answers can be spoken: Whisper runs locally on your computer (the model downloads once), or, if you choose it in Settings → Voice, Gemini transcribes the recording with your Google AI key (better with technical terms, and it writes spoken math as LaTeX; the audio is sent to Google, and the local model takes over if Gemini fails). Cards can be read aloud with your system voices.
 

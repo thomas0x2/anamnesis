@@ -254,6 +254,7 @@ export const BLOCK_TYPES = [
   'callout',
   'steps',
   'plot',
+  'widget',
   'demo',
   'mermaid',
   'sketch',
@@ -302,6 +303,14 @@ export interface PlotSpec {
   series: PlotSeries[]
 }
 
+export interface WidgetSpec {
+  title?: string | null
+  /** JavaScript that calls K.demo({...}) */
+  code: string
+  caption?: string | null
+  height?: number | null
+}
+
 export interface Block {
   type: BlockType
   md?: string | null
@@ -310,6 +319,9 @@ export interface Block {
   items?: string[] | null
   plot?: PlotSpec | null
   demo?: { id: string; params?: string | null; caption?: string | null } | null
+  /** an interactive demo the tutor builds with the widget kit (src/renderer/src/widgets) */
+  widget?: WidgetSpec | null
+  /** legacy free-form sketch (old transcripts) */
   html?: string | null
   height?: number | null
   page?: number | null

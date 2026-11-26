@@ -175,3 +175,14 @@ describe('start and pause', () => {
     expect(normalizeStudyLog({ days: {}, clock: { workSec: 5 } }).clock.mode).toBe('auto')
   })
 })
+
+describe('onPlatform', () => {
+  it('counts the platform window while it had focus or input within the idle span', async () => {
+    const { onPlatform, IDLE_MS } = await import('../../src/shared/studyTime')
+    const t = 1_000_000_000
+    expect(onPlatform(null, t)).toBe(false)
+    expect(onPlatform(t - 60_000, t)).toBe(true)
+    expect(onPlatform(t - IDLE_MS, t)).toBe(false)
+    expect(onPlatform(t + 1000, t)).toBe(false)
+  })
+})

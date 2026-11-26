@@ -242,7 +242,7 @@ function SetRow({ s, onOpen }: { s: SetPlan; onOpen: () => void }): ReactElement
       </span>
       <span className={`plan-ready ${s.readiness}`}>{label}</span>
       <span className="tiny muted plan-missing" title={s.missingTitles.join(', ')}>
-        {s.readiness === 'partial' ? `missing: ${missing}` : s.readiness === 'solvable' ? 'every topic it practises is covered' : 'the map does not say what it practises'}
+        {s.readiness === 'partial' ? `missing: ${missing}` : s.readiness === 'solvable' ? 'every topic it practises is covered' : 'pick the topics it practises in Exam prep (Edit) to see if you can solve it'}
       </span>
     </div>
   )

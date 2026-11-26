@@ -23,6 +23,8 @@ interface Run {
   goal: string | null
   /** practice/review: how many items the app listed */
   items: number
+  /** the exam allows a cheat sheet: the app offered suggest_cheatsheet */
+  cheat: boolean
 }
 
 const ASK = new Set(['probe', 'predict', 'check', 'practice', 'review', 'reflect'])
@@ -37,7 +39,7 @@ export class FakeAgentHost {
     const mode = /Mode: (\w+)/.exec(req.system)?.[1]?.toLowerCase() ?? 'open'
     const goal = /\(id ([\w-]+)\)/.exec(req.system)?.[1] ?? null
     const items = (/Items \(number[^\n]*\n((?:\d+\. [^\n]*\n?)*)/.exec(req.system)?.[1] ?? '').split('\n').filter(Boolean).length
-    this.runs.set(req.chatId, { emit, pending: new Map(), queue: [], busy: false, stopped: false, started: !!req.resume, mode, goal, items })
+    this.runs.set(req.chatId, { emit, pending: new Map(), queue: [], busy: false, stopped: false, started: !!req.resume, mode, goal, items, cheat: req.tools.some((t) => t.name === 'suggest_cheatsheet') })
     emit({ chatId: req.chatId, type: 'status', status: 'ready', model: 'demo' })
     return { ok: true }
   }
@@ -154,6 +156,10 @@ export class FakeAgentHost {
       await this.tool(chatId, run, 'update_plan', { nodeId: node.id, status: 'current' })
       for (const c of (teachStep({ ...m, nodeId: node.id, nodeTitle: node.title }) as { cards: FakeCard[] }).cards) await this.card(chatId, run, c)
       await this.tool(chatId, run, 'update_plan', { nodeId: node.id, status: 'done' })
+      if (run.cheat && node === nodes[0])
+        await this.tool(chatId, run, 'suggest_cheatsheet', {
+          suggestions: [{ kind: 'formula', text: 'Barycentric weights: $\\lambda_j = 1 / \\prod_{k \\ne j} (x_j - x_k)$', why: 'Exact product, easy to get the index wrong under time pressure.', conceptIds: [] }]
+        })
     }
     for (const c of (wrapStep(m) as { cards: FakeCard[] }).cards.filter((c) => c.kind !== 'summary')) await this.card(chatId, run, c)
     await this.tool(chatId, run, 'update_learner', { notes: [], misconceptions: [], profile: [] })

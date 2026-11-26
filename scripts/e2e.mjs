@@ -315,6 +315,15 @@ async function runChat(page, label, { askMidway = false } = {}) {
       if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-asked.png`) })
       continue
     }
+    // a cheat sheet suggestion in the stream: add it to the sheet
+    const addCheat = page.locator('.cheat-suggest').getByRole('button', { name: 'Add', exact: true })
+    if (await addCheat.count()) {
+      if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-cheat-suggestion.png`) })
+      await addCheat.first().click()
+      await page.locator('.cheat-suggest .chip.good').first().waitFor()
+      cheatAdded = true
+      step(`${label}: the tutor suggested a cheat sheet entry and it was added`)
+    }
     if (!(await open.count())) continue
     // the agent can add cards while we act: a card that vanished mid-answer is not an error
     await answerCard(page, open.last(), label).catch((e) => {
@@ -329,6 +338,7 @@ async function runChat(page, label, { askMidway = false } = {}) {
  * dollar signs or TeX commands left in its visible text (code and KaTeX output excluded).
  */
 let mathChecks = 0
+let cheatAdded = false
 let peekChecked = false
 async function assertMathRendered(page, where) {
   const raw = await page.evaluate(() => {
@@ -476,12 +486,32 @@ async function flow(page) {
   await welcome.waitFor({ state: 'detached' })
 
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today.png`) })
+  // the exam allows a cheat sheet: the tutor gets suggest_cheatsheet and proposes entries while teaching
+  await nav(page, 'Exam prep').click()
+  await page.getByRole('group', { name: 'Cheat sheet allowed' }).getByRole('button', { name: 'Allowed', exact: true }).click()
+  await page.getByLabel('Page sides allowed').fill('2')
+  await page.getByLabel('Page sides allowed').press('Enter')
+  await page.locator('.cheat-group .eyebrow', { hasText: 'on the sheet · 0 of about 44' }).waitFor()
+  step('exam prep: the cheat sheet is allowed (2 page sides)')
+  await nav(page, 'Today').click()
+
   step('learn session (tutor agent with tools)')
   await page.getByRole('button', { name: 'Start with a probe' }).click()
   await page.locator('.session .phases').waitFor()
   if (!((await runChat(page, 'learn', { askMidway: true })) > 0)) throw new Error('the learn session earned no points')
   if (!(await page.locator('.session-side .plan-node').count())) throw new Error('the plan panel is missing')
   step('learn session: plan panel shows the dependency tree')
+  if (!cheatAdded) throw new Error('the tutor suggested no cheat sheet entry')
+  await nav(page, 'Exam prep').click()
+  await page.locator('.cheat-group .eyebrow', { hasText: 'on the sheet · 1 of about 44' }).waitFor()
+  await page.locator('.cheat-row.accepted', { hasText: 'Barycentric weights' }).locator('.katex').first().waitFor()
+  await assertMathRendered(page, 'cheat sheet')
+  step('the suggested entry is on the cheat sheet in Exam prep')
+  if (shotsDir) {
+    await page.locator('section[aria-label="Cheat sheet"]').scrollIntoViewIfNeeded()
+    await page.locator('section[aria-label="Cheat sheet"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-cheatsheet.png`) })
+  }
+  await nav(page, 'Today').click()
 
   step('practice session (agent)')
   await nav(page, 'Today').click()

@@ -7,6 +7,7 @@ import { captureCode, findScore, guessPlatform, testLines, type PageCapture } fr
 import { cleanUrl, HELP_LABEL, MAX_WORK_FILE_BYTES, onlineTask, PLATFORMS, prepProgress, solutionFor, WORK_EXTENSIONS, workItems, workState, type WorkState } from '@shared/exam'
 import type { Material, OnlineTask, Submission, WorkHelp, WorkTask } from '@shared/types'
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { CheatsheetSection } from '../components/Cheatsheet'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
 import { Modal } from '../components/Modal'
@@ -136,6 +137,7 @@ export function ExamView({ materialId }: { materialId?: string }): ReactElement 
           <EmptyHint text="No mock exams yet. Add old exams or practice exams as PDFs; write them timed and without notes, then upload your answers." />
         )}
       </section>
+      <CheatsheetSection />
       {adding && (
         <OnlineTaskDialog
           kind={adding}

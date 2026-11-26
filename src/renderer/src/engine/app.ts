@@ -4,6 +4,7 @@
 import numcsJson from '@courses/numcs/course.json'
 import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
 import { generateWithRetry } from '@shared/retry'
+import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
 import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
 import { applyEvidence, getConcept, recordMisconception, updateLevel, type EvidenceInput } from '@shared/mastery'
@@ -152,6 +153,8 @@ export class AppController {
   readonly job: Store<MaterialJob | null> = createStore<MaterialJob | null>(null)
   /** the exam date, goals, and the problem sets and mock exams done (with the learner's checked solutions) */
   readonly exam: Store<ExamPrep> = createStore<ExamPrep>(emptyPrep())
+  /** whether the exam allows a cheat sheet, and what the learner put on it (the tutor suggests entries) */
+  readonly cheatsheet: Store<Cheatsheet> = createStore<Cheatsheet>(emptyCheatsheet())
   /** submissions being graded right now (any course): submission id → model request id */
   private grading = new Map<string, string>()
   script: MaterialLibrary
@@ -245,6 +248,7 @@ export class AppController {
     const stale = prep.submissions.some((x) => x.status === 'grading' && !this.grading.has(x.id))
     this.exam.set(stale ? { ...prep, submissions: prep.submissions.map((x) => (x.status === 'grading' && !this.grading.has(x.id) ? { ...x, status: 'error' as const, error: 'The check was interrupted (the app was closed). Check it again.' } : x)) } : prep)
     if (stale) await this.saveExam()
+    this.cheatsheet.set(normalizeCheatsheet(await this.backend.readJson<Cheatsheet>(`courses/${id}/cheatsheet`)))
     // materials
     const file = await this.backend.readJson<MaterialsFile>(`courses/${id}/materials`)
     let items = file?.items ?? []
@@ -650,6 +654,51 @@ export class AppController {
 
   async setExamGoals(patch: Partial<Pick<ExamPrep, 'examDate' | 'problemSets' | 'mockExams'>>): Promise<void> {
     await this.updatePrep(this.courseId, (p) => ({ ...p, ...patch }))
+  }
+
+  // ------------------------------------------------------------ cheat sheet
+  async setCheatsheet(sheet: Cheatsheet): Promise<void> {
+    this.cheatsheet.set(sheet)
+    await this.backend.writeJson(`courses/${this.courseId}/cheatsheet`, sheet)
+  }
+
+  async setCheatRules(patch: Partial<CheatRules>): Promise<void> {
+    const cur = this.cheatsheet.get()
+    await this.setCheatsheet({ ...cur, rules: normalizeRules({ ...cur.rules, ...patch }) })
+  }
+
+  /** Change one entry: decide on a suggestion (add it, drop it), edit its text or kind. */
+  async updateCheatItem(id: string, patch: Partial<Pick<CheatItem, 'status' | 'text' | 'kind' | 'why'>>): Promise<void> {
+    const cur = this.cheatsheet.get()
+    const items = cur.items.map((x) => (x.id === id ? (normalizeCheatItem({ ...x, ...patch }) ?? x) : x))
+    await this.setCheatsheet({ ...cur, items })
+  }
+
+  /** An entry the learner writes themselves goes straight onto the sheet. */
+  async addCheatItem(input: { kind: CheatItem['kind']; text: string }): Promise<void> {
+    const item = normalizeCheatItem({ ...input, status: 'accepted', source: 'learner', at: nowIso() })
+    if (!item) return
+    const cur = this.cheatsheet.get()
+    await this.setCheatsheet({ ...cur, items: [...cur.items, item] })
+  }
+
+  async removeCheatItem(id: string): Promise<void> {
+    const cur = this.cheatsheet.get()
+    await this.setCheatsheet({ ...cur, items: cur.items.filter((x) => x.id !== id) })
+  }
+
+  /** Move an entry on the sheet one place up or down among the entries of its kind. */
+  async moveCheatItem(id: string, dir: -1 | 1): Promise<void> {
+    const cur = this.cheatsheet.get()
+    const it = cur.items.find((x) => x.id === id)
+    if (!it) return
+    const peers = cur.items.map((x, i) => ({ x, i })).filter(({ x }) => x.kind === it.kind && x.status === 'accepted')
+    const k = peers.findIndex(({ x }) => x.id === id)
+    const other = peers[k + dir]
+    if (!other) return
+    const items = [...cur.items]
+    ;[items[peers[k].i], items[other.i]] = [items[other.i], items[peers[k].i]]
+    await this.setCheatsheet({ ...cur, items })
   }
 
   /** A problem set or mock exam: a material, or a task added as living online (Code Expert, GitLab…). */

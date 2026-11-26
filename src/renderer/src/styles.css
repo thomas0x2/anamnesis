@@ -5471,3 +5471,75 @@ svg.pace {
 .free-voice {
   margin-top: 12px;
 }
+
+/* ------------------------------------------------------------ cheat sheet */
+.cheat-rules {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 26px;
+  align-items: flex-start;
+}
+.cheat-group {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cheat-group > .eyebrow,
+.cheat-group > .row {
+  margin-bottom: 6px;
+}
+.cheat-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.cheat-row.dismissed .cheat-body {
+  opacity: 0.55;
+}
+.cheat-kind {
+  justify-self: start;
+}
+.cheat-body .md p {
+  margin: 0;
+}
+.cheat-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.cheat-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.cheat-preview {
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-2);
+}
+.cheat-suggest {
+  margin: 10px 0;
+  padding: 10px 0 4px;
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line);
+}
+.cheat-suggest .eyebrow {
+  color: var(--accent-text);
+}
+.cheat-suggest .cheat-row:first-of-type {
+  border-top: 0;
+}
+@media (max-width: 720px) {
+  .cheat-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .cheat-actions {
+    justify-content: flex-start;
+  }
+}

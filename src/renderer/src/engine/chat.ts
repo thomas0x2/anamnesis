@@ -3,8 +3,9 @@
 // SessionController in agent mode (the same screen, grading and evidence as guided sessions), a plan
 // goes to the plan review and the side panel, look-ups read the course graph, the learner model and
 // the lecture notes. The phase in the header follows the tools the agent uses.
-import { AGENT_TOOLS, buildAgentSystemPrompt, type AgentMode } from '@shared/agentTools'
+import { agentTools, buildAgentSystemPrompt, type AgentMode } from '@shared/agentTools'
 import type { AgentEvent, AgentToolResult } from '@shared/agentTypes'
+import { addSuggestions, cheatsheetPrompt, suggestResultText, type SuggestInput } from '@shared/cheatsheet'
 import { prepSummary } from '@shared/exam'
 import { sanitizePlan } from '@shared/graph'
 import { getConcept } from '@shared/mastery'
@@ -203,9 +204,16 @@ export class ChatController {
     if (this.running) return true
     this.setAgent('starting', { error: null })
     const c = this.chat
-    const system = buildAgentSystemPrompt(this.app.course, this.app.graph, this.app.state.get().learner, { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue, examPrep: prepSummary(this.app.exam.get(), this.app.materials.get(), new Date()) }, new Date())
+    const cheatsheet = cheatsheetPrompt(this.app.cheatsheet.get())
+    const system = buildAgentSystemPrompt(
+      this.app.course,
+      this.app.graph,
+      this.app.state.get().learner,
+      { mode: c.mode, goalConceptId: c.goalConceptId, scope: c.scope, queue: this.cards.s.queue, examPrep: prepSummary(this.app.exam.get(), this.app.materials.get(), new Date()), cheatsheet },
+      new Date()
+    )
     const r = await this.app.backend.agentStart(
-      { chatId: c.id, system, tools: AGENT_TOOLS, resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId },
+      { chatId: c.id, system, tools: agentTools({ cheatsheet: !!cheatsheet }), resume: c.cliStarted ? c.cliSessionId : null, sessionId: c.cliSessionId },
       (e) => this.onEvent(e)
     )
     if (!r.ok) {
@@ -384,6 +392,17 @@ export class ChatController {
         if (!u) return { text: 'Nothing to update.', isError: true }
         this.app.applyModelUpdate(u)
         return { text: `Recorded ${u.notes.length} note(s), ${u.misconceptions.length} misconception(s), ${u.profile.length} profile line(s).` }
+      }
+      case 'suggest_cheatsheet': {
+        const sheet = this.app.cheatsheet.get()
+        if (sheet.rules.allowed !== 'yes') return { text: 'The exam does not allow a cheat sheet (the learner changed it). Do not suggest entries.', isError: true }
+        const input = (Array.isArray(args.suggestions) ? args.suggestions : []) as SuggestInput[]
+        const o = addSuggestions(sheet, input, new Set(this.app.course.concepts.map((x) => x.id)), new Date())
+        if (!o.added.length && !o.skipped.length) return { text: 'No entries: each suggestion needs a text.', isError: true }
+        await this.app.setCheatsheet(o.sheet)
+        // the card in the stream shows these entries (by id), so the learner decides there
+        this.updateItem(item.id, (it) => ({ ...(it as ToolItem), args: { ...args, itemIds: o.added.map((x) => x.id) } }))
+        return { text: suggestResultText(o, o.sheet) }
       }
       case 'finish': {
         const takeaways = (Array.isArray(args.takeaways) ? args.takeaways : []).map(String).filter(Boolean)

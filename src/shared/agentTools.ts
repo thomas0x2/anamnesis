@@ -2,6 +2,7 @@
 // app's MCP server; the app runs them in its UI: cards the learner answers, the plan panel, the
 // learner model, the lecture notes. Card-like tools wait until the learner has answered.
 import type { AgentToolDef } from './agentTypes'
+import { CHEAT_KINDS } from './cheatsheet'
 import type { CourseGraph } from './graph'
 import { conceptModelLine, conceptPlaces, coreRules } from './prompts'
 import { blockSchema, interactionSchema, modelUpdateSchema, planSchema } from './schema'
@@ -108,6 +109,37 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   }
 ]
 
+/** Offered only when the course's exam allows a cheat sheet. Returns at once: the learner decides later. */
+export const CHEATSHEET_TOOL: AgentToolDef = {
+  name: 'suggest_cheatsheet',
+  description:
+    "Suggest 1-2 entries for the learner's exam cheat sheet (only offered when the exam allows one). Each appears as a small card in the stream that the learner can add to the sheet, edit or drop. Returns at once; carry on teaching. Use it right after the learner has worked with something that is costly to memorise exactly and cheap to look up (formulas, conditions, conventions, pitfalls, short procedures), never for core ideas they must understand.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      suggestions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: [...CHEAT_KINDS] },
+            text: { type: 'string', description: 'the entry as it would stand on the sheet: compressed Markdown with LaTeX ($...$), one to three lines' },
+            why: { type: 'string', description: 'one short sentence: why look it up rather than memorise it' },
+            conceptIds: { type: 'array', items: { type: 'string' }, description: 'course concept ids it belongs to' }
+          },
+          required: ['kind', 'text']
+        }
+      }
+    },
+    required: ['suggestions']
+  }
+}
+
+/** The tools of a session: the cheat sheet tool only when the exam allows a sheet. */
+export function agentTools(opts: { cheatsheet: boolean }): AgentToolDef[] {
+  return opts.cheatsheet ? [...AGENT_TOOLS, CHEATSHEET_TOOL] : AGENT_TOOLS
+}
+
 /** The teaching doctrine shared with the classic step loop, minus its JSON-output framing. */
 function doctrine(course: Course): string {
   const rules = coreRules(course)
@@ -128,6 +160,8 @@ export interface AgentContext {
   queue?: PracticeTarget[]
   /** the exam date and the problem sets and mock exams done (exam preparation) */
   examPrep?: string | null
+  /** the cheat sheet section (rules, what is on it), when the exam allows a sheet */
+  cheatsheet?: string | null
 }
 
 const FLOW = String.raw`# How a session runs
@@ -159,6 +193,7 @@ export function buildAgentSystemPrompt(course: Course, graph: CourseGraph, learn
   for (const c of course.concepts) out.push(`- ${c.id}: ${c.title} [${c.chapter}]`)
   out.push('', `Exam: ${course.exam.format}`)
   if (ctx.examPrep) out.push(`Exam preparation: ${ctx.examPrep} Shape practice toward the exam when it is close.`)
+  if (ctx.cheatsheet) out.push('', ctx.cheatsheet)
   out.push('', '# This session')
   if (ctx.mode === 'learn' && ctx.goalConceptId) {
     const g = graph.get(ctx.goalConceptId)

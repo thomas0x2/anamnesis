@@ -1,6 +1,6 @@
 // The window: top bar navigation, the routed view, toasts, the script drawer and onboarding.
 import { dueConcepts } from '@shared/selection'
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { BrandMark, Icon } from './components/Icon'
 import { ScriptPeek } from './components/PdfPage'
 import { BreakLayer, StudyPill } from './components/StudyTime'
@@ -128,8 +128,24 @@ function TopBar(): ReactElement {
   const pending = useStore(app.pending, (p) => p.length)
   const checking = useStore(app.exam, (e) => e.submissions.filter((x) => x.status === 'grading').length)
 
+  // Fold the bar only as far as it has to: try the full bar, and step down while it overflows.
+  const bar = useRef<HTMLElement>(null)
+  const [fit, setFit] = useState(0)
+  const [width, setWidth] = useState(() => (typeof window === 'undefined' ? 0 : window.innerWidth))
+  useEffect(() => {
+    const onResize = (): void => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const content = `${width}|${route}|${!!sc}|${rewards.total}|${due}|${pending}|${jobRunning}|${checking}`
+  useLayoutEffect(() => setFit(0), [content])
+  useLayoutEffect(() => {
+    const el = bar.current
+    if (el && fit < 4 && el.scrollWidth > el.clientWidth + 1) setFit(fit + 1)
+  }, [fit, content])
+
   return (
-    <header className="topbar">
+    <header className={`topbar fit-${fit}`} ref={bar}>
       <div className="brand">
         <BrandMark />
         <span className="brand-name">anamnesis</span>

@@ -4951,46 +4951,54 @@ b {
 .resume-card {
   max-width: 260px;
 }
-/* narrower windows: icons only (the open screen keeps its label), then the brand name, the points and the
-   resume card go, and finally even the open screen's label */
-@media (max-width: 1520px) {
-  .topnav .nav-label {
-    display: none;
-  }
-  .topnav .nav-item {
-    padding: 7px 10px;
-  }
-  .topnav .nav-item.active .nav-label {
-    display: inline;
-  }
+/* When the top bar does not fit, TopBar steps through these (measured, not by window width), so tab labels
+   stay as long as there is room: 1 drops the brand name and the points and tightens the spacing, 2 drops
+   the tab icons but keeps every label, 3 shows icons with only the open screen's label, 4 drops that label
+   and the resume card too. */
+.topbar[class*='fit-']:not(.fit-0) {
+  gap: 12px;
 }
-@media (max-width: 1100px) {
-  .topbar {
-    gap: 12px;
-  }
-  .brand-name,
-  .topbar-end .points,
-  .topbar .resume-card {
-    display: none;
-  }
-  .course-btn {
-    margin-left: 0;
-  }
+.topbar[class*='fit-']:not(.fit-0) .brand-name,
+.topbar[class*='fit-']:not(.fit-0) .topbar-end .points {
+  display: none;
 }
-@media (max-width: 900px) {
-  .topnav .nav-item.active .nav-label {
-    display: none;
-  }
-  .topnav .nav-item {
-    padding: 7px 8px;
-  }
-  .nav-group + .nav-group {
-    margin-left: 3px;
-    padding-left: 3px;
-  }
-  .study-timer .study-pill .study-due {
-    display: none;
-  }
+.topbar[class*='fit-']:not(.fit-0) .course-btn {
+  margin-left: 0;
+}
+.topbar.fit-1 .topnav .nav-item {
+  padding: 6px 9px;
+  gap: 6px;
+}
+.topbar.fit-2 .topnav .nav-item svg {
+  display: none;
+}
+.topbar.fit-2 .topnav .nav-item {
+  padding: 6px 8px;
+}
+.topbar.fit-2 .nav-group + .nav-group {
+  margin-left: 4px;
+  padding-left: 4px;
+}
+.topbar.fit-3 .topnav .nav-label,
+.topbar.fit-4 .topnav .nav-label {
+  display: none;
+}
+.topbar.fit-3 .topnav .nav-item.active .nav-label {
+  display: inline;
+}
+.topbar.fit-3 .topnav .nav-item {
+  padding: 7px 10px;
+}
+.topbar.fit-4 .topnav .nav-item {
+  padding: 7px 8px;
+}
+.topbar.fit-4 .resume-card,
+.topbar.fit-4 .study-timer .study-pill .study-due {
+  display: none;
+}
+.topbar.fit-4 .nav-group + .nav-group {
+  margin-left: 3px;
+  padding-left: 3px;
 }
 
 /* Today: a glance row, then softly framed blocks on a 6-column grid */

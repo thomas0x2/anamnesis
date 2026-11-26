@@ -8,6 +8,7 @@ import { BarChart } from '../components/Bars'
 import { Chart } from '../components/Chart'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
+import { StudyTimePanel } from '../components/StudyTime'
 import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { LEVEL_LABEL, pct, plural, relTime, STATUS_LABEL } from '../lib/format'
@@ -94,7 +95,7 @@ export function StatsView(): ReactElement {
       <div className="page-head">
         <div>
           <h1>Stats</h1>
-          <div className="sub">Measured on retrieval: answers you produced, scored after hints. Time spent does not count.</div>
+          <div className="sub">Measured on retrieval: answers you produced, scored after hints. Study time is shown, but it never counts toward mastery or points.</div>
         </div>
       </div>
 
@@ -126,6 +127,10 @@ export function StatsView(): ReactElement {
             {ov.brier !== null ? ` · Brier ${ov.brier.toFixed(2)}` : ''}
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <StudyTimePanel />
       </div>
 
       <div style={{ marginTop: 16 }}>

@@ -3,6 +3,7 @@
 import { prepProgress, workItems, workState } from '@shared/exam'
 import { statusRank, STATUS_ORDER } from '@shared/mastery'
 import { dueConcepts, nextDue } from '@shared/selection'
+import { fmtStudyShort, totalsSince } from '@shared/studyTime'
 import type { ConceptStatus } from '@shared/types'
 import { useMemo, type ReactElement } from 'react'
 import { Icon } from '../components/Icon'
@@ -329,6 +330,9 @@ function Glance({ due, learned }: { due: number; learned: number }): ReactElemen
   const weekAgo = now.getTime() - 7 * 86_400_000
   const weekPts = state.rewards.events.filter((e) => Date.parse(e.at) >= weekAgo).reduce((s, e) => s + e.points, 0)
   const weekSessions = state.sessions.filter((s) => Date.parse(s.startedAt) >= weekAgo).length
+  const studyLog = useStore(app.study.log)
+  const studiedToday = totalsSince(studyLog, now, 1).sec
+  const studiedWeek = totalsSince(studyLog, now, 7).sec
   const exam = p.daysLeft === null || p.daysLeft < 0 ? '–' : String(p.daysLeft)
   const cells: {
     k: string
@@ -357,9 +361,9 @@ function Glance({ due, learned }: { due: number; learned: number }): ReactElemen
       go: () => app.go({ name: 'exam' })
     },
     {
-      k: 'this week',
-      v: `+${weekPts}`,
-      s: `${plural(weekSessions, 'session')}`,
+      k: 'studied today',
+      v: fmtStudyShort(studiedToday),
+      s: `${fmtStudyShort(studiedWeek)} this week · ${plural(weekSessions, 'session')} · +${weekPts}`,
       go: () => app.go({ name: 'stats' })
     }
   ]

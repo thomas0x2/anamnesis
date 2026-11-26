@@ -9,6 +9,7 @@ import { useStore } from '../engine/store'
 import { pct } from '../lib/format'
 import { speak, transcriber, voices } from '../voice/voice'
 import { GEMINI_STT, LOCAL_STT_FALLBACK } from '@shared/stt'
+import { BREAK_PRESETS, normalizeBreakSettings } from '@shared/studyTime'
 
 export const STT_MODELS: { id: string; label: string }[] = [
   { id: 'onnx-community/whisper-tiny.en', label: 'Tiny, English only (fastest, ~40 MB)' },
@@ -585,6 +586,8 @@ export function SettingsView(): ReactElement {
           </Row>
         </div>
 
+        <BreakSettingsPanel s={s} save={save} />
+
         <div className="panel">
           <div className="panel-title">
             <h3>Your data</h3>
@@ -643,6 +646,58 @@ export function SettingsView(): ReactElement {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Study time and breaks: whether the tutor suggests breaks, and the rhythm. */
+function BreakSettingsPanel({ s, save }: { s: Settings; save: (patch: Parameters<ReturnType<typeof useApp>['saveSettings']>[0]) => void }): ReactElement {
+  const b = normalizeBreakSettings(s.breaks)
+  const preset = BREAK_PRESETS.find((p) => p.s.workMin === b.workMin && p.s.shortMin === b.shortMin && p.s.longEveryMin === b.longEveryMin && p.s.longMin === b.longMin)
+  const slider = (name: string, key: 'workMin' | 'shortMin' | 'longMin', min: number, max: number, step: number, desc?: string): ReactElement => (
+    <Row name={name} desc={desc}>
+      <span className="row" style={{ gap: 6 }}>
+        <input type="range" aria-label={name} min={min} max={max} step={step} value={b[key]} disabled={!b.enabled} onChange={(e) => save({ breaks: { [key]: Number(e.target.value) } })} />
+        <span className="small" style={{ width: 52, textAlign: 'right' }}>
+          {b[key]} min
+        </span>
+      </span>
+    </Row>
+  )
+  return (
+    <div className="panel">
+      <div className="panel-title">
+        <h3>Study time and breaks</h3>
+      </div>
+      <Row
+        name="Suggest breaks"
+        desc="The app counts the time you actively study and the tutor suggests a break at a natural pause when one is due. Short breaks of up to 10 minutes reliably reduce fatigue, focus on demanding work fades after roughly 50 to 90 minutes, and breaks away from the screen help most."
+      >
+        <Toggle on={b.enabled} onChange={(v) => save({ breaks: { enabled: v } })} label="Suggest breaks" />
+      </Row>
+      <Row name="Rhythm" desc={preset ? preset.desc : 'Your own rhythm (set below).'}>
+        <span className="seg" role="group" aria-label="Break rhythm">
+          {BREAK_PRESETS.map((p) => (
+            <button key={p.id} className={preset?.id === p.id ? 'on' : ''} disabled={!b.enabled} onClick={() => save({ breaks: p.s })} title={p.desc}>
+              {p.label}
+            </button>
+          ))}
+        </span>
+      </Row>
+      {slider('Study before a break', 'workMin', 20, 120, 5)}
+      {slider('Short break', 'shortMin', 3, 20, 1)}
+      <Row name="Long break every" desc="A longer break after this much study since the last one.">
+        <select className="select" style={{ width: 140 }} aria-label="Long break every" disabled={!b.enabled} value={b.longEveryMin} onChange={(e) => save({ breaks: { longEveryMin: Number(e.target.value) } })}>
+          {[...new Set([0, 90, 120, 150, 180, 240, b.longEveryMin])]
+            .sort((x, y) => x - y)
+            .map((m) => (
+              <option key={m} value={m}>
+                {m === 0 ? 'never' : `${Math.round((m / 60) * 10) / 10} hours`}
+              </option>
+            ))}
+        </select>
+      </Row>
+      {b.longEveryMin > 0 && slider('Long break', 'longMin', 10, 45, 5)}
     </div>
   )
 }

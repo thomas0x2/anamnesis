@@ -5,7 +5,6 @@ import { CourseGraph } from '../../src/shared/graph'
 import {
   accrue,
   countsNow,
-  RUNNING_IDLE_MS,
   setTimerMode,
   backFromBreakNote,
   breakNote,
@@ -159,30 +158,16 @@ describe('the tutor and breaks', () => {
 })
 
 describe('start and pause', () => {
-  const base = { studyScreen: true, visible: true, idleMs: 1000, onBreak: false }
-  it('counts by itself on study screens, always once started, never when paused', () => {
-    expect(countsNow('auto', base)).toBe(true)
-    expect(countsNow('auto', { ...base, studyScreen: false })).toBe(false)
-    expect(countsNow('auto', { ...base, visible: false })).toBe(false)
-    expect(countsNow('running', { ...base, studyScreen: false, visible: false, idleMs: 60 * 60_000 })).toBe(true)
-    expect(countsNow('running', { ...base, idleMs: RUNNING_IDLE_MS })).toBe(false)
-    expect(countsNow('running', { ...base, onBreak: true })).toBe(false)
-    expect(countsNow('paused', base)).toBe(false)
+  it('counts only while started, never paused or on a break', () => {
+    expect(countsNow('running', false)).toBe(true)
+    expect(countsNow('running', true)).toBe(false)
+    expect(countsNow('paused', false)).toBe(false)
   })
-  it('keeps the mode in the log and reads old logs as automatic', () => {
+  it('keeps the mode in the log; a new or old log starts paused', () => {
     const log = setTimerMode(emptyStudyLog(), 'running')
     expect(normalizeStudyLog(JSON.parse(JSON.stringify(log))).clock.mode).toBe('running')
-    expect(normalizeStudyLog({ days: {}, clock: { workSec: 5 } }).clock.mode).toBe('auto')
-  })
-})
-
-describe('onPlatform', () => {
-  it('counts the platform window while it had focus or input within the idle span', async () => {
-    const { onPlatform, IDLE_MS } = await import('../../src/shared/studyTime')
-    const t = 1_000_000_000
-    expect(onPlatform(null, t)).toBe(false)
-    expect(onPlatform(t - 60_000, t)).toBe(true)
-    expect(onPlatform(t - IDLE_MS, t)).toBe(false)
-    expect(onPlatform(t + 1000, t)).toBe(false)
+    expect(emptyStudyLog().clock.mode).toBe('paused')
+    expect(normalizeStudyLog({ days: {}, clock: { workSec: 5 } }).clock.mode).toBe('paused')
+    expect(normalizeStudyLog({ days: {}, clock: { mode: 'auto' } }).clock.mode).toBe('paused')
   })
 })

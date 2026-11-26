@@ -1,6 +1,5 @@
-// Study time and breaks. The app counts the time you actively study (a tutor session on screen, the
-// course materials, exam prep) while you do something in the window, per day and course and per tutor
-// session. From the same clock it knows how long you have worked since your last break and tells the
+// Study time and breaks. The learner starts and pauses the timer (nothing counts by itself); while it runs,
+// the time counts per day and course, and per tutor session when one is on screen. From the same clock it knows how long you have worked since your last break and tells the
 // tutor when a break is due, so it can suggest one at a natural pause.
 //
 // The defaults follow the evidence on breaks (see docs/LEARNING_SCIENCE.md, "Breaks"): short breaks of
@@ -13,8 +12,6 @@ import type { BreakSettings, SessionType } from './types'
 import { DEFAULT_BREAKS } from './types'
 import { clamp, dayKey, uid } from './util'
 
-/** Time counts while the learner did something in the window within this span (reading a card, working on paper). */
-export const IDLE_MS = 8 * 60_000
 /** How often the clock ticks. */
 export const TICK_MS = 15_000
 /** A break the learner put off comes back after this many minutes. */
@@ -74,7 +71,8 @@ export interface BreakClock {
   mode: TimerMode
 }
 
-export type TimerMode = 'auto' | 'running' | 'paused'
+/** The learner starts and pauses the timer; nothing counts by itself. */
+export type TimerMode = 'running' | 'paused'
 
 export interface StudyLog {
   version: 1
@@ -95,7 +93,7 @@ export const MAX_SESSIONS = 400
 export const MAX_BREAKS = 400
 
 export function emptyClock(): BreakClock {
-  return { workSec: 0, sinceLongSec: 0, lastActiveAt: null, snoozedUntil: null, current: null, mode: 'auto' }
+  return { workSec: 0, sinceLongSec: 0, lastActiveAt: null, snoozedUntil: null, current: null, mode: 'paused' }
 }
 
 export function emptyStudyLog(): StudyLog {
@@ -162,7 +160,7 @@ export function normalizeStudyLog(raw: unknown): StudyLog {
     lastActiveAt: iso(c.lastActiveAt),
     snoozedUntil: iso(c.snoozedUntil),
     current: c.current ? normalizeBreak(c.current) : null,
-    mode: c.mode === 'running' || c.mode === 'paused' ? c.mode : 'auto'
+    mode: c.mode === 'running' ? 'running' : 'paused'
   }
   return { version: 1, days, sessions, breaks, clock }
 }
@@ -203,27 +201,12 @@ function applyGap(log: StudyLog, gapSec: number, s: BreakSettings, now: Date): S
   return { ...log, clock, breaks: listed ? [...log.breaks, rec].slice(-MAX_BREAKS) : log.breaks }
 }
 
-/** A started timer with no input in the window for this long was forgotten: it goes back to automatic. */
-export const RUNNING_IDLE_MS = 3 * 3600_000
-
-/** Whether this tick counts as study. Automatic: on a study screen, window visible, input in the last few
- * minutes. Started: always (up to RUNNING_IDLE_MS without input). Paused or on a break: never. */
-export function countsNow(mode: TimerMode, x: { studyScreen: boolean; visible: boolean; idleMs: number; onBreak: boolean }): boolean {
-  if (x.onBreak || mode === 'paused') return false
-  if (mode === 'running') return x.idleMs < RUNNING_IDLE_MS
-  return x.studyScreen && x.visible && x.idleMs < IDLE_MS
+/** Whether this tick counts as study: only while the learner has started the timer, and not during a break. */
+export function countsNow(mode: TimerMode, onBreak: boolean): boolean {
+  return mode === 'running' && !onBreak
 }
 
-/**
- * Working in the app's platform window (Code Expert, GitLab…) counts as study for the open course: the window
- * reports focus and input, and the time counts while that was within IDLE_MS, even though the main window
- * gets no input and may be covered.
- */
-export function onPlatform(lastPlatformMs: number | null, nowMs: number): boolean {
-  return lastPlatformMs !== null && nowMs - lastPlatformMs >= 0 && nowMs - lastPlatformMs < IDLE_MS
-}
-
-/** Start, pause or go back to automatic counting. */
+/** Start or pause the timer. */
 export function setTimerMode(log: StudyLog, mode: TimerMode): StudyLog {
   return log.clock.mode === mode ? log : { ...log, clock: { ...log.clock, mode } }
 }

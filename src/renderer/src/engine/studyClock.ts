@@ -1,14 +1,11 @@
-// The study clock: counts active study time while the learner works in a tutor session, the course
-// materials or exam prep (and did something in the window within the last few minutes), runs breaks,
-// and tells the tutor when one is due. One log for all courses: study-time.json in the data folder.
+// The study clock: counts study time only while the learner has started it (Start / Pause next to the
+// clock in the top bar), runs breaks, and tells the tutor when one is due. One log for all courses: study-time.json in the data folder.
 import {
-  onPlatform,
   accrue,
   backFromBreakNote,
   breakNote,
   breakStatus,
   countsNow,
-  RUNNING_IDLE_MS,
   setTimerMode,
   emptyStudyLog,
   endBreak,
@@ -27,12 +24,11 @@ import {
   type TimerMode
 } from '@shared/studyTime'
 import type { BreakSettings, Session } from '@shared/types'
-import type { AppController, Route } from './app'
+import type { AppController } from './app'
 import { createStore, type Store } from './store'
 
 const FILE = 'study-time'
 /** Screens where time counts as study. */
-const STUDY_ROUTES = new Set<Route['name']>(['session', 'chat', 'script', 'exam'])
 
 export interface BreakOffer {
   kind: BreakKind
@@ -49,9 +45,6 @@ export class StudyClock {
   readonly tick: Store<number> = createStore(0)
   /** the break the learner is looking at (opened from the top bar or a tutor card), before it starts */
   readonly offer: Store<BreakOffer | null> = createStore<BreakOffer | null>(null)
-  private lastInput = 0
-  /** the last focus or input in the platform window (Code Expert, GitLab…) */
-  private lastPlatform: number | null = null
   private lastTick = 0
   private timer: ReturnType<typeof setInterval> | null = null
   private saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -84,50 +77,22 @@ export class StudyClock {
     if (cur && Date.now() - Date.parse(cur.startedAt) > (cur.plannedMin + 30) * 60_000) this.finishBreak(false)
   }
 
-  /** Listen for activity and tick. Browser and Electron alike. */
+  /** Tick. Browser and Electron alike. Only Start and Pause decide whether time counts. */
   start(): void {
     if (this.timer || typeof window === 'undefined') return
-    const mark = (): void => {
-      this.lastInput = Date.now()
-    }
-    for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, mark, { passive: true, capture: true })
-    let lastMove = 0
-    window.addEventListener(
-      'pointermove',
-      () => {
-        const t = Date.now()
-        if (t - lastMove > 5000) {
-          lastMove = t
-          mark()
-        }
-      },
-      { passive: true }
-    )
-    this.app.backend.onPlatformActivity?.(() => {
-      this.lastPlatform = Date.now()
-      mark()
-    })
-    this.lastInput = Date.now()
     this.lastTick = Date.now()
     this.timer = setInterval(() => this.onTick(), TICK_MS)
   }
 
-  /** Something counts as activity even without input (dictating, the app opening a session). */
-  poke(): void {
-    this.lastInput = Date.now()
-  }
-
-  private context(): StudyContext | null {
+  /** What the running timer counts toward: the tutor session on screen, else the open course. */
+  private context(): StudyContext {
     const app = this.app
     const route = app.ui.get().route.name
-    // working on a problem set in the platform window counts for the open course, wherever the main window is
-    if (!STUDY_ROUTES.has(route)) return onPlatform(this.lastPlatform, Date.now()) ? { courseId: app.courseId, session: null } : null
     const sc = app.session.get()
     if ((route === 'session' || route === 'chat') && sc) {
       const s = sc.s
       return { courseId: app.courseId, session: { id: s.id, title: this.sessionTitle(s), type: s.type } }
     }
-    if (route === 'session' || route === 'chat') return null
     return { courseId: app.courseId, session: null }
   }
 
@@ -145,16 +110,10 @@ export class StudyClock {
     const dt = Math.min(t - this.lastTick, TICK_MS * 2)
     this.lastTick = t
     if (!this.loaded) return
-    const visible = typeof document === 'undefined' || document.visibilityState === 'visible' || onPlatform(this.lastPlatform, t)
     const clock = this.log.get().clock
-    const auto = this.context()
-    // a started timer counts for the open course wherever you are in the app
-    const ctx = clock.mode === 'running' ? (auto ?? { courseId: this.app.courseId, session: null }) : auto
-    const now = new Date(t)
-    const idleMs = t - this.lastInput
-    // a timer started and then forgotten (hours without touching the app) goes back to automatic
-    if (clock.mode === 'running' && idleMs >= RUNNING_IDLE_MS) this.commit((l) => setTimerMode(l, 'auto'))
-    if (ctx && countsNow(clock.mode, { studyScreen: !!auto, visible, idleMs, onBreak: !!clock.current })) {
+    if (countsNow(clock.mode, !!clock.current)) {
+      const ctx = this.context()
+      const now = new Date(t)
       this.log.set((l) => accrue(l, ctx, dt / 1000, now, this.settings))
       this.dirty = true
       this.scheduleSave()
@@ -190,9 +149,8 @@ export class StudyClock {
     return this.log.get().clock.mode
   }
 
-  /** Start: count every minute for the open course until Pause, also off the screen. */
+  /** Start: every minute counts for the open course (or the tutor session on screen) until Pause, whatever you do. */
   startTimer(): void {
-    this.lastInput = Date.now()
     this.lastTick = Date.now()
     this.commit((l) => setTimerMode(l, 'running'))
   }
@@ -235,7 +193,6 @@ export class StudyClock {
     const out = endBreak(this.log.get(), new Date(), this.settings, sid)
     if (!out.rec) return
     this.commit(() => out.log)
-    this.lastInput = Date.now()
     this.suggestedAt = 0
     this.toldAt = 0
     this.soonTold = false

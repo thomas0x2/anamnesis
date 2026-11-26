@@ -50,11 +50,7 @@ export function StudyPill(): ReactElement | null {
   const mode = log.clock.mode
   const tip = [
     `Studied today: ${fmtStudy(today)}`,
-    mode === 'running'
-      ? 'Timer started: every minute counts for the open course until you pause it'
-      : mode === 'paused'
-        ? 'Paused: nothing counts until you press Start'
-        : 'Counting by itself while you work in a session, the materials or exam prep',
+    mode === 'running' ? 'Running: every minute counts for the open course until you press Pause' : 'Paused: nothing counts until you press Start',
     st.enabled ? `${fmtStudy(st.workMin * 60)} since your last break${st.due ? '' : `; next break in about ${mins(st.dueInMin)}`}` : 'Break suggestions are off (Settings → Learning)',
     'Click to take a break now'
   ].join('\n')
@@ -64,18 +60,12 @@ export function StudyPill(): ReactElement | null {
         <Icon name="clock" size={13} /> {fmtStudyShort(today)}
         {mode === 'paused' ? <span className="study-due">paused</span> : due ? <span className="study-due">break</span> : null}
       </button>
-      {mode === 'running' || mode === 'auto' ? (
-        <button
-          className={`study-toggle ${mode === 'running' ? 'on' : ''}`}
-          onClick={() => app.study.pauseTimer()}
-          title={mode === 'running' ? 'Pause the timer' : 'Pause: stop counting study time until you press Start'}
-          aria-label="Pause the study timer"
-        >
+      {mode === 'running' ? (
+        <button className="study-toggle on" onClick={() => app.study.pauseTimer()} title="Pause: stop counting until you press Start" aria-label="Pause the study timer">
           <Icon name="pause" size={12} />
         </button>
-      ) : null}
-      {mode !== 'running' && (
-        <button className="study-toggle" onClick={() => app.study.startTimer()} title="Start: count every minute for the open course until you pause, also away from the screen (paper, lectures)" aria-label="Start the study timer">
+      ) : (
+        <button className="study-toggle" onClick={() => app.study.startTimer()} title="Start: count every minute for the open course until you press Pause, in the app or away from it (Code Expert, notebooks, paper, lectures)" aria-label="Start the study timer">
           <Icon name="play" size={12} />
         </button>
       )}

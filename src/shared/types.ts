@@ -1,3 +1,4 @@
+import type { PageCapture, PlatformStatus } from './platform'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from './agentTypes'
 import type { CloudSttRequest } from './stt'
 // Domain types shared by the Electron main process, the renderer and the tests.
@@ -756,6 +757,13 @@ export interface Backend {
   /** Save the learner's solution files (PDF, images, text) in the data folder; returns what was stored. */
   saveWork(courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]): Promise<{ name: string; size: number }[]>
   openExternal(url: string): Promise<void>
+  /** Open a platform page (Code Expert, GitLab…) in the app's own window, where the learner signs in; false where there is none (the browser version opens a tab). */
+  openPlatform(url: string): Promise<boolean>
+  platformStatus(): Promise<PlatformStatus>
+  /** Read the page open in the platform window: its text and the code in its editors. */
+  capturePage(): Promise<PageCapture | null>
+  /** Forget the sign-ins made in the platform window. */
+  signOutPlatforms(): Promise<void>
   info(): Promise<AppInfo>
   /** Start the tutor agent for a chat; events stream until it exits. */
   agentStart(req: AgentStartRequest, onEvent: (e: AgentEvent) => void): Promise<{ ok: boolean; error?: string; errorKind?: LlmErrorKind }>

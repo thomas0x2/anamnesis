@@ -420,6 +420,14 @@ export function reportedSubmission(x: ReportInput, conceptIds: string[], now: Da
   }
 }
 
+/** A logged result corrected afterwards (score, note, how the learner worked). It keeps its id, time and concepts; null when the numbers make no sense. */
+export function editReported(sub: Submission, x: Omit<ReportInput, 'materialId'>, now: Date): Submission | null {
+  if (sub.source !== 'reported') return null
+  const next = reportedSubmission({ ...x, materialId: sub.materialId }, sub.tasks[0]?.conceptIds ?? [], now)
+  if (!next) return null
+  return { ...next, id: sub.id, at: sub.at, applied: sub.applied, gradedAt: now.toISOString() }
+}
+
 /** The concepts a material practises, from the course map (the online task's own picks for tasks without a PDF). */
 export function practisedConcepts(m: Material, concepts: Course['concepts'], prep: Pick<ExamPrep, 'online'>): string[] {
   const t = onlineTask(prep, m.id)

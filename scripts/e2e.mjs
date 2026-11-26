@@ -521,6 +521,30 @@ async function flow(page) {
   if (!((await runChat(page, 'learn', { askMidway: true })) > 0)) throw new Error('the learn session earned no points')
   if (!(await page.locator('.session-side .plan-node').count())) throw new Error('the plan panel is missing')
   step('learn session: plan panel shows the dependency tree')
+  // the learner asks for a break: the tutor's break card, the break screen, back early (does not count)
+  {
+    const composer = page.getByRole('textbox', { name: 'Message to the tutor' })
+    await composer.fill('Can I take a break?')
+    await composer.press('Enter')
+    const card = page.locator('.break-suggest')
+    await card.waitFor({ timeout: 15_000 })
+    if (shotsDir) await card.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-break-suggestion.png`) })
+    await card.getByRole('button', { name: 'Start 10-min break' }).click()
+    const screen = page.getByRole('dialog', { name: 'Break' })
+    await screen.waitFor()
+    await screen.locator('.break-timer').waitFor()
+    if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-break-screen.png`) })
+    await screen.getByRole('button', { name: "I'm back early" }).click()
+    await screen.waitFor({ state: 'detached' })
+    await card.getByText('Back early: not counted as a break.').waitFor()
+    step('break: the tutor suggests one on request, the break screen runs, coming back early does not count')
+    // the top bar clock opens the break dialog
+    await page.locator('.study-pill').click()
+    const dlg = page.getByRole('dialog', { name: 'Take a break' })
+    await dlg.waitFor()
+    await dlg.getByRole('button', { name: /Cancel|Not now/ }).click()
+    await dlg.waitFor({ state: 'detached' })
+  }
   if (!cheatAdded) throw new Error('the tutor suggested no cheat sheet entry')
   await nav(page, 'Exam prep').click()
   await page.locator('.cheat-group .eyebrow', { hasText: 'on the sheet · 1 of about 44' }).waitFor()
@@ -567,6 +591,21 @@ async function flow(page) {
   await nav(page, 'Today').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
   if (!((await runSession(page, 'practice')) > 0)) throw new Error('the practice session earned no points')
+
+  // study time: the Stats panel lists the tutor sessions with their active time
+  await nav(page, 'Stats').click()
+  await page.getByRole('heading', { name: 'Study time', level: 3 }).waitFor()
+  if (!(await page.locator('.study-sessions .session-row').count())) throw new Error('study time: no tutor session was timed')
+  if (shotsDir) await page.locator('[aria-label="Study time"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-study-time.png`) })
+  step('Stats: study time per day and per tutor session')
+  // the break rhythm is adjustable
+  await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
+  await page.getByRole('group', { name: 'Break rhythm' }).getByRole('button', { name: '25 / 5' }).click()
+  await page.getByText('Pomodoro: 25 minutes of work').waitFor()
+  if ((await page.getByLabel('Study before a break').inputValue()) !== '25') throw new Error('the break rhythm did not change')
+  if (shotsDir) await page.locator('.panel', { hasText: 'Study time and breaks' }).screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-break-settings.png`) })
+  await page.getByRole('group', { name: 'Break rhythm' }).getByRole('button', { name: '50 / 10' }).click()
+  step('Settings: the break rhythm can be changed')
 
   for (const [name, heading] of [
     ['Course map', 'Course map'],

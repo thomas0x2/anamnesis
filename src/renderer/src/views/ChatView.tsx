@@ -6,6 +6,7 @@ import type { Block } from '@shared/types'
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Blocks } from '../components/Blocks'
 import { CheatSuggestCard } from '../components/Cheatsheet'
+import { BreakSuggestCard } from '../components/StudyTime'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
 import { VoiceButton } from '../components/Voice'
@@ -120,6 +121,7 @@ export function ToolView({ it }: { it: ToolItem }): ReactElement | null {
   if (it.name === 'show_plan') return <ToolLine icon="tree" text={it.status === 'streaming' ? 'Drawing a plan…' : 'Made a plan (see the side panel)'} error={it.status === 'error' ? it.result : null} />
   if (it.name === 'update_plan') return null
   if (it.name === 'suggest_cheatsheet') return <CheatSuggestCard it={it} />
+  if (it.name === 'suggest_break') return <BreakSuggestCard it={it} />
   const a = ChatController.preview(it) ?? {}
   const text =
     it.name === 'read_script'

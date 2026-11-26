@@ -3,6 +3,7 @@
 // learner model, the lecture notes. Card-like tools wait until the learner has answered.
 import type { AgentToolDef } from './agentTypes'
 import { CHEAT_KINDS } from './cheatsheet'
+import { BREAK_IDEAS, BREAK_TOOL_NAME } from './studyTime'
 import type { CourseGraph } from './graph'
 import { conceptModelLine, conceptPlaces, coreRules } from './prompts'
 import { blockSchema, interactionSchema, modelUpdateSchema, planSchema } from './schema'
@@ -141,9 +142,27 @@ export const CHEATSHEET_TOOL: AgentToolDef = {
   }
 }
 
-/** The tools of a session: the cheat sheet tool only when the exam allows a sheet. */
-export function agentTools(opts: { cheatsheet: boolean }): AgentToolDef[] {
-  return opts.cheatsheet ? [...AGENT_TOOLS, CHEATSHEET_TOOL] : AGENT_TOOLS
+/** Offered when break suggestions are on. Returns at once; the app tells the tutor when the learner is back. */
+export const BREAK_TOOL: AgentToolDef = {
+  name: BREAK_TOOL_NAME,
+  description:
+    'Suggest a break to the learner: a small card in the stream with the length, your reason and an idea for the break, which they can start (a timer runs) or put off. Use it when the app says a break is due (at the next natural pause, never mid-question) or when the learner asks for one. Returns at once; then end your turn without a new card: the app tells you when they are back or skipped it.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      minutes: { type: 'integer', description: 'length of the break in minutes (use the one the app names)' },
+      kind: { type: 'string', enum: ['short', 'long'] },
+      reason: { type: 'string', description: 'one short sentence, e.g. "You have worked for 50 minutes and just finished the weights."' },
+      idea: { type: 'string', enum: BREAK_IDEAS.map((x) => x.id), description: 'what to do: move, outside, rest (quiet rest, eyes closed; best right after learning something new), water' }
+    },
+    required: ['minutes', 'reason']
+  }
+}
+
+/** The tools of a session: the cheat sheet tool only when the exam allows a sheet, the break tool when breaks are on. */
+export function agentTools(opts: { cheatsheet: boolean; breaks?: boolean }): AgentToolDef[] {
+  const extra = [...(opts.cheatsheet ? [CHEATSHEET_TOOL] : []), ...(opts.breaks ? [BREAK_TOOL] : [])]
+  return extra.length ? [...AGENT_TOOLS, ...extra] : AGENT_TOOLS
 }
 
 /** The teaching doctrine shared with the classic step loop, minus its JSON-output framing. */
@@ -168,6 +187,8 @@ export interface AgentContext {
   examPrep?: string | null
   /** the cheat sheet section (rules, what is on it), when the exam allows a sheet */
   cheatsheet?: string | null
+  /** the breaks section (the learner's rhythm), when break suggestions are on */
+  breaks?: string | null
 }
 
 const FLOW = String.raw`# How a session runs
@@ -175,6 +196,7 @@ The learner works through a stream of cards, one at a time; you create every car
 - explain: content (text, equations, plots, demos, mermaid, sketch, code, script references). Waits until read.
 - ask: one question the learner answers in the card (kind probe, predict, check, practice, review, reflect). Waits for the answer and returns the graded result.
 - show_plan: the dependency tree of reasoning steps toward the goal; the learner reviews it (marks steps as known or to be taught) and you get the result. update_plan: progress in the side panel.
+- suggest_break (when offered): a break card when one is due or the learner asks for one.
 - read_script, course, learner: look things up. platform_page: the coding task (and the learner's code) open in the app's platform window. update_learner: record what you concluded. finish: the closing summary.
 Call tools one at a time and react to each result before the next step. Do not write a question in plain text when it should be an ask card; plain text is for short talk. When the learner writes in the chat instead of answering a card, the card's result says so: answer them first (briefly, a tool card if it needs a visual), then continue.
 
@@ -200,6 +222,7 @@ export function buildAgentSystemPrompt(course: Course, graph: CourseGraph, learn
   out.push('', `Exam: ${course.exam.format}`)
   if (ctx.examPrep) out.push(`Exam preparation: ${ctx.examPrep} Shape practice toward the exam when it is close.`)
   if (ctx.cheatsheet) out.push('', ctx.cheatsheet)
+  if (ctx.breaks) out.push('', ctx.breaks)
   out.push('', '# This session')
   if (ctx.mode === 'learn' && ctx.goalConceptId) {
     const g = graph.get(ctx.goalConceptId)

@@ -3,6 +3,7 @@ import { dueConcepts } from '@shared/selection'
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { BrandMark, Icon } from './components/Icon'
 import { ScriptPeek } from './components/PdfPage'
+import { BreakLayer, StudyPill } from './components/StudyTime'
 import { useApp, type Route } from './engine/app'
 import type { SessionController } from './engine/session'
 import { useStore } from './engine/store'
@@ -53,6 +54,7 @@ export function App(): ReactElement {
       </main>
       <ScriptPeek />
       <Toasts />
+      <BreakLayer />
       {onboarding && <Onboarding />}
     </div>
   )
@@ -155,6 +157,7 @@ function TopBar(): ReactElement {
         ))}
       </nav>
       <div className="topbar-end">
+        <StudyPill />
         <button className={`nav-item icon ${route === 'settings' ? 'active' : ''}`} onClick={() => app.go({ name: 'settings' })} aria-label="Settings" title="Settings">
           <Icon name="settings" size={16} />
         </button>

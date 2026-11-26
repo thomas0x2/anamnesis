@@ -46,6 +46,7 @@ import { ChatController, chatSession, newChatRecord, type ChatIndexEntry, type C
 import { MaterialLibrary } from './script'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
+import { StudyClock } from './studyClock'
 
 export type Route =
   | { name: 'home' }
@@ -166,6 +167,8 @@ export class AppController {
   readonly exam: Store<ExamPrep> = createStore<ExamPrep>(emptyPrep())
   /** whether the exam allows a cheat sheet, and what the learner put on it (the tutor suggests entries) */
   readonly cheatsheet: Store<Cheatsheet> = createStore<Cheatsheet>(emptyCheatsheet())
+  /** study time per session, day and course, and breaks (one log for all courses) */
+  readonly study: StudyClock = new StudyClock(this)
   /** submissions being graded right now (any course): submission id → model request id */
   private grading = new Map<string, string>()
   script: MaterialLibrary
@@ -222,6 +225,8 @@ export class AppController {
 
   async init(): Promise<void> {
     this.settings.set(await this.backend.getSettings())
+    await this.study.init().catch(() => {})
+    this.study.start()
     this.metas = ((await this.backend.readJson<CourseMeta[]>('courses-index')) ?? []).filter((m) => m && typeof m.id === 'string')
     this.refreshCourseList()
     if (!this.settings.get().onboarded) this.ui.set((u) => ({ ...u, onboarding: true }))
@@ -979,6 +984,7 @@ export class AppController {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
     const st = this.state.get()
+    await this.study.save()
     await this.backend.writeJson(stateName(this.courseId), st)
     const profile = JSON.stringify(st.learner.profile)
     if (profile !== this.savedProfile) {

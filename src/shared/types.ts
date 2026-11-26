@@ -676,8 +676,25 @@ export interface Settings {
     autoSpeak: boolean
   }
   learning: { desiredRetention: number; practiceItems: number; tutorMode: 'agent' | 'guided' }
+  /** study time and breaks: the tutor suggests a break after workMin minutes of study (see studyTime.ts) */
+  breaks: BreakSettings
   onboarded: boolean
 }
+
+export interface BreakSettings {
+  /** the tutor (or, in guided sessions, the app) suggests breaks */
+  enabled: boolean
+  /** minutes of study before a short break is due */
+  workMin: number
+  /** length of a short break */
+  shortMin: number
+  /** a long break after about this many minutes of study since the last long one; 0 = no long breaks */
+  longEveryMin: number
+  /** length of a long break */
+  longMin: number
+}
+
+export const DEFAULT_BREAKS: BreakSettings = { enabled: true, workMin: 50, shortMin: 10, longEveryMin: 150, longMin: 25 }
 
 export const DEFAULT_SETTINGS: Settings = {
   activeCourse: 'numcs',
@@ -698,6 +715,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autoSpeak: false
   },
   learning: { desiredRetention: 0.9, practiceItems: 8, tutorMode: 'agent' },
+  breaks: DEFAULT_BREAKS,
   onboarded: false
 }
 

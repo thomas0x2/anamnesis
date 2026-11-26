@@ -19,6 +19,7 @@ Anamnesis is built on a handful of well-replicated findings about how people lea
 | Rewards that inform | Points only for evidence of understanding, each with its reason | `rewards.ts` |
 | Words and pictures, small steps | 14 interactive demos, plots and diagrams; short cards | `src/renderer/src/demos/`, `prompts.ts` (rules 2 and 6) |
 | Open learner model | The mind model is visible, explained and editable | `src/renderer/src/views/MindView.tsx` |
+| Breaks | Active study time is counted; the tutor suggests a break away from the screen when one is due (adjustable rhythm) | `src/shared/studyTime.ts`, `src/renderer/src/engine/studyClock.ts` |
 
 ## 1. Retrieval practice
 
@@ -152,6 +153,12 @@ A concept comes back for review when its predicted recall falls to the target re
 
 **In the app.** The mind model shows, for every concept, mastery with an uncertainty band, memory strength, practice level, the understanding, independence and transfer facets, active and resolved misconceptions, the tutor's notes and your own, and the evidence behind every number. You can edit or delete misconceptions and notes. Your own notes are passed to the tutor marked as trusted (`conceptModelLine` in `prompts.ts`).
 
+## 15. Breaks
+
+**Evidence.** Short breaks of 10 minutes or less reliably reduce fatigue and raise vigour; their effect on performance is smaller and grows with break length (Albulescu et al., 2022, a meta-analysis of micro-breaks). Attention on demanding work tends to fade after roughly 50 to 90 minutes; no single interval is proven best (Pomodoro's 25/5 is a convention). In a study with students, breaks on a fixed schedule left them less tired than breaks taken at will, with the same output (Biwer et al., 2023). Breaks away from the screen (movement, going outside, quiet rest) restore more than scrolling a phone, and a few minutes of quiet, wakeful rest right after learning improve later recall (Dewar et al., 2012).
+
+**In the app.** The app counts active study time (a tutor session, the materials or exam prep on screen, with input in the last few minutes), per day, course and tutor session, and shows it in Stats, on Today and in the top bar. The default rhythm is 50 minutes of study and a 10-minute break, with a 25-minute break after about 2.5 hours; Settings → Study time and breaks offers 25/5 and 90/15 or any rhythm of your own, or turns suggestions off. When a break is coming up or due, the tutor is told in its tool results and suggests one at the next natural pause (`suggest_break`), preferring quiet rest right after new material; it restarts with a quick recall when you are back. A break counts when it lasts at least half its planned length, and time away from the app counts as a break once it is long enough. If the tutor does not suggest the due break, or in guided sessions, the app reminds you itself. Study time never earns points or counts toward mastery.
+
 ## What LLM tutors add, and what can go wrong
 
 The evidence on LLM tutors is new and mixed. It is the main reason for the guardrails in the design.
@@ -182,6 +189,8 @@ The guardrails that follow from this:
 
 Read for this project (the figures above come from these):
 
+* Albulescu, P., Macsinga, I., Rusu, A., Sulea, C., Bodnaru, A., & Tulbure, B. T. (2022). "Give me a break!" A systematic review and meta-analysis on the efficacy of micro-breaks for increasing well-being and performance. *PLoS ONE, 17*(8), e0272460. <https://doi.org/10.1371/journal.pone.0272460>
+
 * Barbieri, C. A., et al. (2023). A meta-analysis of the worked examples effect on mathematics performance. *Educational Psychology Review, 35*, 11. <https://doi.org/10.1007/s10648-023-09745-1>
 * Bastani, H., et al. (2025). Generative AI without guardrails can harm learning: Evidence from high school mathematics. *PNAS, 122*(26). <https://papers.ssrn.com/abstract=4895486>
 * Brod, G. (2021). Predicting as a learning strategy. *Psychonomic Bulletin & Review*. <https://pmc.ncbi.nlm.nih.gov/articles/PMC8642250>
@@ -199,6 +208,8 @@ Read for this project (the figures above come from these):
 
 Cited for well-established ideas, described in words only:
 
+* Biwer, F., de Bruin, A., & Persoon, A. (2023), on systematic (Pomodoro-like) versus self-regulated study breaks.
+* Dewar, M., Alber, J., Butler, C., Cowan, N., & Della Sala, S. (2012), on wakeful rest after learning and long-term retention.
 * Bjork, E. L., & Bjork, R. A. (2011). Making things hard on yourself, but in a good way: Creating desirable difficulties to enhance learning. In *Psychology and the real world*.
 * Bjork, R. A., Dunlosky, J., & Kornell, N. (2013). Self-regulated learning: Beliefs, techniques, and illusions. *Annual Review of Psychology, 64*.
 * Bloom, B. S. (1984). The 2 sigma problem: The search for methods of group instruction as effective as one-to-one tutoring. *Educational Researcher, 13*(6).

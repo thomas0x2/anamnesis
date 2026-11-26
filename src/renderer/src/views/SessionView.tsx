@@ -9,6 +9,7 @@ import { CardView, type PredictionRef } from '../components/CardView'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
 import { PlanGraph } from '../components/PlanGraph'
+import { BreakNudge } from '../components/StudyTime'
 import { useApp } from '../engine/app'
 import type { ChatController, ChatItem, ChatView, ToolItem } from '../engine/chat'
 import { draftKey, type SessionController, type SessionView as View } from '../engine/session'
@@ -95,6 +96,7 @@ function SessionInner({ sc }: { sc: SessionController }): ReactElement {
       <SessionHeader sc={sc} v={v} cc={cc} onChat={() => setChat((c) => !c)} />
       <div className={`session-body ${showSide ? '' : 'no-side'}`}>
         <div className="stream" ref={streamRef} onScroll={onScroll}>
+          <BreakNudge agent={!!cc} />
           <div className="stream-inner">
             {finished && !cc ? (
               <DoneScreen sc={sc} />

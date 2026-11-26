@@ -25,6 +25,8 @@ interface Run {
   items: number
   /** the exam allows a cheat sheet: the app offered suggest_cheatsheet */
   cheat: boolean
+  /** break suggestions are on: the app offered suggest_break */
+  breaks: boolean
 }
 
 const ASK = new Set(['probe', 'predict', 'check', 'practice', 'review', 'reflect'])
@@ -39,7 +41,7 @@ export class FakeAgentHost {
     const mode = /Mode: (\w+)/.exec(req.system)?.[1]?.toLowerCase() ?? 'open'
     const goal = /\(id ([\w-]+)\)/.exec(req.system)?.[1] ?? null
     const items = (/Items \(number[^\n]*\n((?:\d+\. [^\n]*\n?)*)/.exec(req.system)?.[1] ?? '').split('\n').filter(Boolean).length
-    this.runs.set(req.chatId, { emit, pending: new Map(), queue: [], busy: false, stopped: false, started: !!req.resume, mode, goal, items, cheat: req.tools.some((t) => t.name === 'suggest_cheatsheet') })
+    this.runs.set(req.chatId, { emit, pending: new Map(), queue: [], busy: false, stopped: false, started: !!req.resume, mode, goal, items, cheat: req.tools.some((t) => t.name === 'suggest_cheatsheet'), breaks: req.tools.some((t) => t.name === 'suggest_break') })
     emit({ chatId: req.chatId, type: 'status', status: 'ready', model: 'demo' })
     return { ok: true }
   }
@@ -120,7 +122,12 @@ export class FakeAgentHost {
       if (!run.started) {
         run.started = true
         await this.script(chatId, run)
-      } else await this.say(chatId, run, `Good question. Think about what stays the same for every $j$. *(demo tutor; you asked: ${text.slice(0, 80)})*`)
+      } else if (run.breaks && /\bbreak\b/i.test(text) && !text.startsWith('[')) {
+        // the learner asks for a break: the break card, then the turn ends
+        await this.tool(chatId, run, 'suggest_break', { minutes: 10, kind: 'short', reason: 'You asked for one, and a pause now helps the last idea settle.', idea: 'rest' })
+      } else if (/^\[The learner is back/.test(text)) await this.say(chatId, run, 'Welcome back. Quick recall before we go on: what did the weights depend on? *(demo tutor)*')
+      else if (text.startsWith('[')) await this.say(chatId, run, 'Alright, let us carry on. *(demo tutor)*')
+      else await this.say(chatId, run, `Good question. Think about what stays the same for every $j$. *(demo tutor; you asked: ${text.slice(0, 80)})*`)
       run.emit({ chatId, type: 'turn_end', ok: true, costUsd: 0 })
     } catch {
       /* stopped */

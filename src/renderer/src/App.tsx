@@ -10,8 +10,9 @@ import { useStore } from './engine/store'
 import { useNow } from './lib/hooks'
 import { ChatScreen } from './views/ChatView'
 import { ExamView } from './views/ExamView'
-import { PlanView } from './views/PlanView'
+import { CourseView } from './views/CourseView'
 import { HomeView } from './views/HomeView'
+import { PlanView } from './views/PlanView'
 import { CourseDialog, MaterialsView } from './views/MaterialsView'
 import { MapView } from './views/MapView'
 import { MindView } from './views/MindView'
@@ -71,6 +72,8 @@ function RouteView({ route }: { route: Route }): ReactElement {
       return <PlanView />
     case 'home':
       return <HomeView />
+    case 'course':
+      return <CourseView />
     case 'map':
       return <MapView conceptId={route.conceptId} />
     case 'session':
@@ -91,14 +94,17 @@ function RouteView({ route }: { route: Route }): ReactElement {
 }
 
 type NavItem = { name: Route['name']; label: string; icon: string }
-// Three groups: study now, the course itself, and how you are doing.
+// Three groups: across all courses (Today, the plan), the open course (its dashboard, tutor, map,
+// materials, mind model), and its exam and stats. Everything after the first group shows only the
+// course picked in the course menu.
 const NAV_GROUPS: NavItem[][] = [
   [
     { name: 'home', label: 'Today', icon: 'home' },
-    { name: 'chat', label: 'Tutor', icon: 'chat' },
     { name: 'plan', label: 'Plan', icon: 'calendar' }
   ],
   [
+    { name: 'course', label: 'Course', icon: 'layers' },
+    { name: 'chat', label: 'Tutor', icon: 'chat' },
     { name: 'map', label: 'Course map', icon: 'map' },
     { name: 'materials', label: 'Materials', icon: 'book' },
     { name: 'mind', label: 'Mind model', icon: 'mind' }
@@ -129,7 +135,7 @@ function TopBar(): ReactElement {
         <span className="brand-name">anamnesis</span>
         <CourseSwitcher />
       </div>
-      {sc && route !== 'session' && route !== 'home' && <ResumeCard sc={sc} />}
+      {sc && route !== 'session' && route !== 'home' && route !== 'course' && <ResumeCard sc={sc} />}
       <nav className="topnav" aria-label="Main">
         {NAV_GROUPS.map((group, gi) => (
           <div className="nav-group" key={gi}>
@@ -149,8 +155,8 @@ function TopBar(): ReactElement {
                       …
                     </span>
                   )}
-                  {n.name === 'home' && due > 0 && (
-                    <span className="count hot" title={`${due} concepts due for review`}>
+                  {n.name === 'course' && due > 0 && (
+                    <span className="count hot" title={`${due} concepts due for review in ${app.course.short}`}>
                       {due}
                     </span>
                   )}

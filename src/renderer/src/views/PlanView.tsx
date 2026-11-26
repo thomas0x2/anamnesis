@@ -2,29 +2,34 @@
 // every course on track for its exam, and the next steps in each (reviews, the problem sets whose
 // topics are covered, what to learn to unlock the next set, mock exams near the end). See
 // src/shared/scheduler.ts for the model.
-import { fmtDuration, fmtParts, studyPlan, type CoursePlan, type PaceStatus, type PlanStep, type SetPlan, type StudyPlan } from '@shared/scheduler'
+import { fmtDuration, fmtParts, studyPlan, type CoursePlan, type CourseSnapshot, type PaceStatus, type PlanStep, type SetPlan, type StudyPlan } from '@shared/scheduler'
 import { useEffect, useState, type ReactElement } from 'react'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
-import { useApp } from '../engine/app'
+import { useApp, type AppController } from '../engine/app'
 import { useStore } from '../engine/store'
 import { useNow } from '../lib/hooks'
 import { pct, plural } from '../lib/format'
 
 /** The plan, recomputed when the active course changes (answers, checked solutions, goals) and every few minutes. */
 export function usePlan(): StudyPlan | null {
+  return usePlanData()?.plan ?? null
+}
+
+/** The plan with the course snapshots it was computed from (Today lists deadlines from them). */
+export function usePlanData(): { plan: StudyPlan; snaps: CourseSnapshot[] } | null {
   const app = useApp()
   const learner = useStore(app.state, (s) => s.learner)
   const prep = useStore(app.exam)
   const materials = useStore(app.materials)
   const courses = useStore(app.courses)
   const now = useNow(5 * 60_000)
-  const [plan, setPlan] = useState<StudyPlan | null>(null)
+  const [plan, setPlan] = useState<{ plan: StudyPlan; snaps: CourseSnapshot[] } | null>(null)
   useEffect(() => {
     let live = true
     const t = setTimeout(() => {
       void Promise.all([app.planSnapshots(), app.readStudyLog()])
-        .then(([snaps, log]) => live && setPlan(studyPlan(snaps, new Date(), log)))
+        .then(([snaps, log]) => live && setPlan({ plan: studyPlan(snaps, new Date(), log), snaps }))
         .catch(() => live && setPlan(null))
     }, 150)
     return () => {
@@ -35,7 +40,7 @@ export function usePlan(): StudyPlan | null {
   return plan
 }
 
-const PACE: Record<PaceStatus, { label: string; tone: string; help: string }> = {
+export const PACE: Record<PaceStatus, { label: string; tone: string; help: string }> = {
   'no-date': { label: 'no exam date', tone: 'outline', help: 'Set the exam date in Exam prep to schedule this course.' },
   over: { label: 'exam passed', tone: 'outline', help: 'The exam date has passed.' },
   done: { label: 'all done', tone: 'good', help: 'Everything in the plan is done. Reviews keep it fresh.' },
@@ -184,18 +189,23 @@ function CourseRow({ c, index }: { c: CoursePlan; index: number | null }): React
   )
 }
 
+/** Do a step of the plan: open its course and start the review or the learning, or go to Exam prep. */
+export async function runStep(app: AppController, courseId: string, s: PlanStep): Promise<void> {
+  if (s.kind === 'review') {
+    await app.openIn(courseId, { name: 'course' })
+    await app.startReview()
+  } else if (s.kind === 'learn' && s.conceptId) {
+    await app.openIn(courseId, { name: 'course' })
+    await app.startLearn(s.conceptId)
+  } else await app.openIn(courseId, { name: 'exam' })
+}
+
+export const stepLabel = (s: PlanStep): string => (s.kind === 'review' ? 'Review' : s.kind === 'learn' ? 'Learn' : 'Set date')
+
 function Step({ c, s }: { c: CoursePlan; s: PlanStep }): ReactElement {
   const app = useApp()
-  const go = async (): Promise<void> => {
-    if (s.kind === 'review') {
-      await app.openIn(c.id, { name: 'home' })
-      await app.startReview()
-    } else if (s.kind === 'learn' && s.conceptId) {
-      await app.openIn(c.id, { name: 'home' })
-      await app.startLearn(s.conceptId)
-    } else await app.openIn(c.id, { name: 'exam' })
-  }
-  const label = s.kind === 'review' ? 'Review' : s.kind === 'learn' ? 'Learn' : 'Set date'
+  const go = (): Promise<void> => runStep(app, c.id, s)
+  const label = stepLabel(s)
   return (
     <li className="plan-step">
       <span className={`plan-kind ${s.kind}`}>{s.kind}</span>
@@ -274,40 +284,3 @@ function HowItWorks(): ReactElement {
     </details>
   )
 }
-
-/** Today: the course to start with and how long, from the plan. */
-export function PlanNotice(): ReactElement | null {
-  const app = useApp()
-  const plan = usePlan()
-  if (!plan) return null
-  const open = plan.courses.filter((c) => c.perDay !== null && c.pace !== 'done')
-  if (!open.length) return null
-  const todo = open.filter((c) => c.todayLeft >= 5)
-  const first = todo[0]
-  const then = todo.slice(1, 3)
-  return (
-    <div className="today-block wide plan-notice">
-      <div className="grow">
-        <div className="eyebrow">across your courses</div>
-        <div className="title" style={{ marginTop: 8 }}>
-          {first ? (
-            <>
-              Start with {first.short}: about {fmtDuration(first.todayLeft)} today
-            </>
-          ) : (
-            'Today’s share is done for every course'
-          )}
-        </div>
-        <div className="desc" style={{ marginTop: 4 }}>
-          {`About ${fmtDuration(plan.perDay)} a day keeps every course on track${fmtParts(plan.perDayParts) ? ` (${fmtParts(plan.perDayParts)})` : ''}.`}
-          {then.length ? ` Then ${then.map((c) => `${c.short} (${fmtDuration(c.todayLeft)})`).join(', ')}.` : ''}
-          {first?.steps[0] ? ` First step: ${first.steps[0].title}.` : ''}
-        </div>
-      </div>
-      <button className="btn go" onClick={() => app.go({ name: 'plan' })}>
-        See the plan <Icon name="chev-right" size={14} />
-      </button>
-    </div>
-  )
-}
-

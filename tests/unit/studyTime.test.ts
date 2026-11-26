@@ -4,6 +4,9 @@ import { agentTools, AGENT_TOOLS, BREAK_TOOL, buildAgentSystemPrompt } from '../
 import { CourseGraph } from '../../src/shared/graph'
 import {
   accrue,
+  countsNow,
+  RUNNING_IDLE_MS,
+  setTimerMode,
   backFromBreakNote,
   breakNote,
   breaksPrompt,
@@ -152,5 +155,23 @@ describe('the tutor and breaks', () => {
     const b = startBreak(log, { kind: 'short', minutes: 10, source: 'tutor' }, at(52))
     const back = endBreak(b, at(63), s)
     expect(backFromBreakNote(back.rec!, back.minutes, false)).toMatch(/back from a 11-minute break/)
+  })
+})
+
+describe('start and pause', () => {
+  const base = { studyScreen: true, visible: true, idleMs: 1000, onBreak: false }
+  it('counts by itself on study screens, always once started, never when paused', () => {
+    expect(countsNow('auto', base)).toBe(true)
+    expect(countsNow('auto', { ...base, studyScreen: false })).toBe(false)
+    expect(countsNow('auto', { ...base, visible: false })).toBe(false)
+    expect(countsNow('running', { ...base, studyScreen: false, visible: false, idleMs: 60 * 60_000 })).toBe(true)
+    expect(countsNow('running', { ...base, idleMs: RUNNING_IDLE_MS })).toBe(false)
+    expect(countsNow('running', { ...base, onBreak: true })).toBe(false)
+    expect(countsNow('paused', base)).toBe(false)
+  })
+  it('keeps the mode in the log and reads old logs as automatic', () => {
+    const log = setTimerMode(emptyStudyLog(), 'running')
+    expect(normalizeStudyLog(JSON.parse(JSON.stringify(log))).clock.mode).toBe('running')
+    expect(normalizeStudyLog({ days: {}, clock: { workSec: 5 } }).clock.mode).toBe('auto')
   })
 })

@@ -21,7 +21,7 @@ import { useApp } from "../engine/app";
 import { useStore } from "../engine/store";
 import { pct, relTime, STATUS_HELP, STATUS_LABEL } from "../lib/format";
 import { useNow } from "../lib/hooks";
-import { StatusLegend } from "./HomeView";
+import { StatusLegend } from "./CourseView";
 
 const W = 196;
 const H = 46;

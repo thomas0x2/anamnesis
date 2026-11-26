@@ -13,7 +13,7 @@ import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { LEVEL_LABEL, pct, plural, relTime, STATUS_LABEL } from '../lib/format'
 import { useNow } from '../lib/hooks'
-import { SegBar, StatusLegend } from './HomeView'
+import { SegBar, StatusLegend } from './CourseView'
 
 function ChartPanel({ title, hint, children, table, footer }: { title: string; hint?: string; children: ReactNode; table?: ReactNode; footer?: ReactNode }): ReactElement {
   const [showTable, setShowTable] = useState(false)

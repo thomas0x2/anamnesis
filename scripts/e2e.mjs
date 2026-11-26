@@ -147,7 +147,7 @@ async function coursesFlow(page) {
   step('the reader opens a material')
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-reader.png`) })
 
-  await nav(page, 'Today').click()
+  await nav(page, 'Course').click()
   await page.getByRole('button', { name: 'Start with a probe' }).click()
   if (!((await runSession(page, 'new course learn')) > 0)) throw new Error('the learn session in the new course earned no points')
 
@@ -292,23 +292,39 @@ async function coursesFlow(page) {
   await nbRow.locator('.work-task').first().waitFor({ timeout: 60_000 })
   step('a Jupyter notebook in the course folder became a problem set, was marked started when edited and checked from the file')
 
-  await nav(page, 'Today').click()
+  await nav(page, 'Course').click()
   await page.locator('.exam-notice', { hasText: 'Exam in 60 days' }).waitFor()
-  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-exam.png`) })
-  step('Today shows the exam countdown and the goal')
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-course-exam.png`) })
+  step('the course dashboard shows the exam countdown and the goal')
   await page.locator('.mastery-map .cell.here').first().waitFor()
   await page.locator('.exam-pace .pace-note', { hasText: /of 12/ }).waitFor()
   await page.locator('.activity .day.today').waitFor()
   if (shotsDir) {
     await page.setViewportSize({ width: 1380, height: 2000 })
     await page.locator('.toast').first().waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
-    await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-progress.png`) })
+    await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-course-progress.png`) })
     await page.setViewportSize({ width: 1380, height: 900 })
   }
-  step('Today shows where you are on the course, the pace toward the exam and recent activity')
+  step('the course dashboard shows where you are on the course, the pace toward the exam and recent activity')
 
-  // the plan across courses: this course has an exam date, so it is scheduled first; NumCS has none yet
-  await page.locator('.plan-notice', { hasText: 'Start with FS' }).waitFor()
+  // Today, across courses: this course has an exam date, so the plan starts with it; NumCS has none yet
+  await nav(page, 'Today').click()
+  await page.getByRole('heading', { level: 1, name: /Start with FS/ }).waitFor()
+  await page.locator('.plan-notice', { hasText: 'FS' }).waitFor()
+  await page.locator('.course-card.first', { hasText: 'Fixture Systems' }).waitFor()
+  await page.locator('.course-card', { hasText: 'no exam date' }).waitFor()
+  await page.locator('.study-bars .day.today').waitFor()
+  if (shotsDir) {
+    await page.setViewportSize({ width: 1380, height: 1500 })
+    await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today-overview.png`) })
+    await page.setViewportSize({ width: 1380, height: 900 })
+  }
+  step('Today shows every course in the plan’s order, what is due and study time, whichever course is open')
+  // the course card opens that course's dashboard
+  await page.locator('.course-card', { hasText: 'Fixture Systems' }).getByRole('button', { name: /Dashboard/ }).click()
+  await page.locator('.ce-notice', { hasText: 'Fixture' }).waitFor()
+  await page.locator('.cheat-notice').waitFor()
+  step('the course dashboard shows Code Expert and the cheat sheet for the open course')
   await nav(page, 'Plan').click()
   await page.locator('.plan-course.first', { hasText: 'Fixture Systems' }).waitFor()
   await page.locator('.plan-course.first .plan-step').first().waitFor()
@@ -561,7 +577,7 @@ async function flow(page) {
   await page.getByLabel('Page sides allowed').press('Enter')
   await page.locator('.cheat-group .eyebrow', { hasText: 'on the sheet · 0 of about 44' }).waitFor()
   step('exam prep: the cheat sheet is allowed (2 page sides)')
-  await nav(page, 'Today').click()
+  await nav(page, 'Course').click()
 
   step('learn session (tutor agent with tools)')
   await page.getByRole('button', { name: 'Start with a probe' }).click()
@@ -603,10 +619,10 @@ async function flow(page) {
     await page.locator('section[aria-label="Cheat sheet"]').scrollIntoViewIfNeeded()
     await page.locator('section[aria-label="Cheat sheet"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-cheatsheet.png`) })
   }
-  await nav(page, 'Today').click()
+  await nav(page, 'Course').click()
 
   step('practice session (agent)')
-  await nav(page, 'Today').click()
+  await nav(page, 'Course').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
   await page.locator('.session .phases').waitFor()
   if (!((await runChat(page, 'practice')) > 0)) throw new Error('the practice session earned no points')
@@ -636,7 +652,7 @@ async function flow(page) {
     await page.getByText('audio never leaves your Mac').waitFor()
     step('speech recognition can be switched to Gemini, with the privacy note')
   }
-  await nav(page, 'Today').click()
+  await nav(page, 'Course').click()
   await page.getByRole('button', { name: 'Practice a mix' }).click()
   if (!((await runSession(page, 'practice')) > 0)) throw new Error('the practice session earned no points')
 
@@ -646,6 +662,16 @@ async function flow(page) {
   if (!(await page.locator('.study-sessions .session-row').count())) throw new Error('study time: no tutor session was timed')
   if (shotsDir) await page.locator('[aria-label="Study time"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-study-time.png`) })
   step('Stats: study time per day and per tutor session')
+  // the timer in the top bar: Start counts everywhere, Pause stops counting, until Start again
+  await page.getByRole('button', { name: 'Start the study timer' }).click()
+  await page.locator('.study-timer.running').waitFor()
+  await page.getByRole('button', { name: 'Pause the study timer' }).click()
+  await page.locator('.study-timer.paused').waitFor()
+  await page.getByRole('button', { name: /Study time today .*paused/ }).waitFor()
+  if (shotsDir) await page.locator('.topbar-end').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-timer-paused.png`) })
+  await page.getByRole('button', { name: 'Start the study timer' }).click()
+  await page.locator('.study-timer.running').waitFor()
+  step('the study timer starts and pauses from the top bar')
   // the break rhythm is adjustable
   await page.locator('.topbar').getByRole('button', { name: /Settings/ }).click()
   await page.getByRole('group', { name: 'Break rhythm' }).getByRole('button', { name: '25 / 5' }).click()

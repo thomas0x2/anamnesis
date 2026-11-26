@@ -249,6 +249,16 @@ async function coursesFlow(page) {
   }
   step('Today shows where you are on the course, the pace toward the exam and recent activity')
 
+  // the plan across courses: this course has an exam date, so it is scheduled first; NumCS has none yet
+  await page.locator('.plan-notice', { hasText: 'Start with FS' }).waitFor()
+  await nav(page, 'Plan').click()
+  await page.locator('.plan-course.first', { hasText: 'Fixture Systems' }).waitFor()
+  await page.locator('.plan-course.first .plan-step').first().waitFor()
+  await page.locator('.plan-rest .plan-course', { hasText: 'no exam date' }).waitFor()
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-plan.png`) })
+  step('the plan puts the course with an exam date first, with its daily time and next steps')
+  await nav(page, 'Today').click()
+
   await page.locator('.course-btn').click()
   await page.getByRole('menuitemradio', { name: /NumCS/ }).click()
   await page.locator('.course-btn', { hasText: 'NumCS' }).waitFor()

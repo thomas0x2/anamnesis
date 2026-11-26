@@ -9,6 +9,7 @@ import { useStore } from './engine/store'
 import { useNow } from './lib/hooks'
 import { ChatScreen } from './views/ChatView'
 import { ExamView } from './views/ExamView'
+import { PlanView } from './views/PlanView'
 import { HomeView } from './views/HomeView'
 import { CourseDialog, MaterialsView } from './views/MaterialsView'
 import { MapView } from './views/MapView'
@@ -64,6 +65,8 @@ function RouteView({ route }: { route: Route }): ReactElement {
       return <MaterialsView />
     case 'exam':
       return <ExamView materialId={route.materialId} />
+    case 'plan':
+      return <PlanView />
     case 'home':
       return <HomeView />
     case 'map':
@@ -90,7 +93,8 @@ type NavItem = { name: Route['name']; label: string; icon: string }
 const NAV_GROUPS: NavItem[][] = [
   [
     { name: 'home', label: 'Today', icon: 'home' },
-    { name: 'chat', label: 'Tutor', icon: 'chat' }
+    { name: 'chat', label: 'Tutor', icon: 'chat' },
+    { name: 'plan', label: 'Plan', icon: 'calendar' }
   ],
   [
     { name: 'map', label: 'Course map', icon: 'map' },

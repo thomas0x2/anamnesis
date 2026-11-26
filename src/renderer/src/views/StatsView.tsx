@@ -35,8 +35,8 @@ function ChartPanel({ title, hint, children, table, footer }: { title: string; h
   )
 }
 
-// one hue, brighter = more answers (the light end clears the chart surface at 2.8:1)
-const ACTIVITY_RAMP = ['var(--surface-3)', '#3d3d3d', '#6a6a6a', '#a8a8a8', '#ececec']
+// one cool hue family, lighter = more answers (tokens in styles.css; every step stays apart under colour-vision deficiency)
+const ACTIVITY_RAMP = ['var(--heat-0)', 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)', 'var(--heat-4)']
 const ACTIVITY_BINS = [0, 1, 6, 12, 24]
 const binOf = (n: number): number => (n >= 24 ? 4 : n >= 12 ? 3 : n >= 6 ? 2 : n >= 1 ? 1 : 0)
 

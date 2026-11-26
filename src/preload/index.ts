@@ -48,6 +48,7 @@ const api = {
   platformStatus: () => ipcRenderer.invoke('platform:status'),
   capturePage: () => ipcRenderer.invoke('platform:capture'),
   signOutPlatforms: () => ipcRenderer.invoke('platform:sign-out'),
+  codeExpert: (op: unknown) => ipcRenderer.invoke('codeexpert:run', op),
   info: () => ipcRenderer.invoke('app:info'),
   onBeforeQuit(fn: () => Promise<void>) {
     ipcRenderer.removeAllListeners('app:before-quit')

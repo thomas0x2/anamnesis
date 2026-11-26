@@ -18,6 +18,7 @@ import { readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../src/node/
 import { fakeGenerate } from '../src/shared/fakeTutor'
 import type { LlmRequest, LlmResult } from '../src/shared/types'
 import { fakeCapture } from '../src/shared/platform'
+import { checkCeOp, fakeCodeExpert } from '../src/shared/codeExpert'
 
 const port = Number(process.env.PORT ?? 5318)
 const dataDir = resolve(process.env.ANAMNESIS_DATA_DIR ?? join(tmpdir(), 'anamnesis-dev'))
@@ -113,6 +114,10 @@ const server = createServer((req, res) => {
         case 'POST /api/platform/sign-out':
           platformUrl = null
           return send(res, 200, { ok: true })
+        case 'POST /api/codeexpert': {
+          const op = checkCeOp(await body<unknown>(req))
+          return send(res, 200, fake ? fakeCodeExpert(op) : { ok: false, signedIn: true, error: 'Code Expert sync works in the desktop app' })
+        }
         case 'GET /api/test':
           if (fake) return send(res, 200, { ok: true, message: 'Dev server in fake mode: the scripted tutor answers.', path: null, version: null })
           return send(res, 200, await providers.test(await loadSettings(store)))

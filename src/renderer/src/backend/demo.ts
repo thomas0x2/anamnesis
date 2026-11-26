@@ -1,6 +1,7 @@
 // In-browser backend: localStorage persistence and the scripted demo tutor. No model, no files.
 import { workFileName } from '@shared/exam'
 import { fakeCapture } from '@shared/platform'
+import { fakeCodeExpert } from '@shared/codeExpert'
 import { FakeAgentHost } from '@shared/fakeAgent'
 import { fakeGenerate } from '@shared/fakeTutor'
 import { DEFAULT_SETTINGS, type Backend, type DeepPartial, type Settings } from '@shared/types'
@@ -71,6 +72,7 @@ export function createDemoBackend(): Backend {
     },
     platformStatus: async () => ({ open: !!platformUrl, url: platformUrl, title: platformUrl ? 'Exercise 4: Lists · Code Expert' : null }),
     capturePage: async () => (platformUrl ? fakeCapture(platformUrl, new Date()) : null),
+    codeExpert: async (op) => fakeCodeExpert(op),
     signOutPlatforms: async () => {
       platformUrl = null
     },

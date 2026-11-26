@@ -1,6 +1,7 @@
 // Backend over HTTP to scripts/dev-server.ts (lets the UI run in a normal browser for development and tests).
 import type { AgentEvent } from '@shared/agentTypes'
 import type { PageCapture, PlatformStatus } from '@shared/platform'
+import type { CeResult } from '@shared/codeExpert'
 import type { AppInfo, Backend, FolderFile, DeepPartial, LlmEvent, LlmRequest, LlmResult, LlmTestResult, Settings } from '@shared/types'
 
 export function createHttpBackend(base: string): Backend {
@@ -126,6 +127,7 @@ export function createHttpBackend(base: string): Backend {
     },
     platformStatus: () => j<PlatformStatus>('/api/platform/status'),
     capturePage: async () => ((await j<{ page: PageCapture | null }>('/api/platform/capture')).page),
+    codeExpert: async (op) => (await (await post('/api/codeexpert', op)).json()) as CeResult<unknown>,
     signOutPlatforms: async () => {
       await post('/api/platform/sign-out', {})
     },

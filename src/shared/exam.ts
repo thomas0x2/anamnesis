@@ -4,13 +4,13 @@
 // much help the learner had.
 import { applyEvidence, getConcept, recordMisconception, type EvidenceInput } from './mastery'
 import { milestoneReward } from './rewards'
-import type { Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
+import type { CodeExpertLink, CodeExpertSeries, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
 import { clamp, truncate, uid } from './util'
 
 export const DEFAULT_MOCK_EXAMS = 2
 
 export function emptyPrep(): ExamPrep {
-  return { version: 1, examDate: null, problemSets: null, mockExams: DEFAULT_MOCK_EXAMS, records: {}, submissions: [], online: [] }
+  return { version: 1, examDate: null, problemSets: null, mockExams: DEFAULT_MOCK_EXAMS, records: {}, submissions: [], online: [], codeExpert: null }
 }
 
 /** Read a stored file defensively (older or hand-edited files still load). */
@@ -27,8 +27,34 @@ export function normalizePrep(raw: unknown): ExamPrep {
     mockExams: mocks,
     records: r.records && typeof r.records === 'object' ? r.records : {},
     submissions: Array.isArray(r.submissions) ? r.submissions.filter((s) => s && typeof s.id === 'string') : [],
-    online: Array.isArray(r.online) ? r.online.map(normalizeOnline).filter((t): t is OnlineTask => t !== null) : []
+    online: Array.isArray(r.online) ? r.online.map(normalizeOnline).filter((t): t is OnlineTask => t !== null) : [],
+    codeExpert: normalizeCeLink(r.codeExpert)
   }
+}
+
+function normalizeCeLink(raw: unknown): CodeExpertLink | null {
+  const r = (raw ?? {}) as Partial<CodeExpertLink>
+  const s = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice(0, n) : '')
+  if (!s(r.courseId, 40) || !/^[A-Z]{2}\d{2}$/.test(s(r.semester, 10))) return null
+  return { courseId: s(r.courseId, 40), semester: s(r.semester, 10), name: s(r.name, 200), slug: s(r.slug, 60), syncedAt: typeof r.syncedAt === 'string' ? r.syncedAt : null }
+}
+
+function normalizeCeSeries(raw: unknown): CodeExpertSeries | undefined {
+  const r = (raw ?? {}) as Partial<CodeExpertSeries>
+  if (typeof r.seriesId !== 'string' || !r.seriesId) return undefined
+  const tasks = (Array.isArray(r.tasks) ? r.tasks : [])
+    .filter((t) => t && typeof t.id === 'string')
+    .slice(0, 50)
+    .map((t) => ({
+      id: t.id,
+      name: typeof t.name === 'string' ? t.name.slice(0, 200) : 'Task',
+      maxPoints: typeof t.maxPoints === 'number' && t.maxPoints > 0 ? t.maxPoints : 1,
+      result: typeof t.result === 'number' ? Math.max(0, Math.min(1, t.result)) : null,
+      submitted: t.submitted === true,
+      feedback: typeof t.feedback === 'string' ? t.feedback.slice(0, 2000) : null,
+      projectId: typeof t.projectId === 'string' ? t.projectId.slice(0, 40) : null
+    }))
+  return { seriesId: r.seriesId.slice(0, 40), due: typeof r.due === 'string' ? r.due : null, tasks }
 }
 
 // ---------------------------------------------------------------- problem sets without a PDF
@@ -61,7 +87,8 @@ export function normalizeOnline(raw: unknown): OnlineTask | null {
     url: cleanUrl(r.url),
     conceptIds: Array.isArray(r.conceptIds) ? [...new Set(r.conceptIds.filter((x): x is string => typeof x === 'string'))].slice(0, 12) : [],
     statement: typeof r.statement === 'string' && r.statement.trim() ? r.statement.trim().slice(0, 30_000) : null,
-    addedAt: typeof r.addedAt === 'string' ? r.addedAt : new Date(0).toISOString()
+    addedAt: typeof r.addedAt === 'string' ? r.addedAt : new Date(0).toISOString(),
+    ...(normalizeCeSeries(r.codeExpert) ? { codeExpert: normalizeCeSeries(r.codeExpert) } : {})
   }
 }
 

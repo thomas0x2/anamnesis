@@ -12,7 +12,8 @@ import { looksLikeGoogleKey, routeFor } from '../shared/models'
 import { addUsage, looksLikeApiKey, normalizeUsage } from '../shared/usage'
 import type { CloudSttRequest } from '../shared/stt'
 import { ApiKeyVault } from './apiKey'
-import { capturePlatform, openPlatform, platformStatus, signOutPlatforms } from './platform'
+import { checkCeOp, fakeCodeExpert } from '../shared/codeExpert'
+import { capturePlatform, openPlatform, platformStatus, runCodeExpert, signOutPlatforms } from './platform'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
 app.setName('Anamnesis')
@@ -231,6 +232,7 @@ function registerIpc(): void {
   ipcMain.handle('platform:status', () => platformStatus())
   ipcMain.handle('platform:capture', () => capturePlatform())
   ipcMain.handle('platform:sign-out', () => signOutPlatforms())
+  ipcMain.handle('codeexpert:run', (_e, op: unknown) => (process.env.ANAMNESIS_FAKE === '1' ? fakeCodeExpert(checkCeOp(op)) : runCodeExpert(checkCeOp(op), win)))
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir: dataDir(), platform: process.platform, backend: 'electron' }))
 }
 

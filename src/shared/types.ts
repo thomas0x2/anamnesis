@@ -1,3 +1,4 @@
+import type { CeOp, CeResult } from './codeExpert'
 import type { PageCapture, PlatformStatus } from './platform'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from './agentTypes'
 import type { CloudSttRequest } from './stt'
@@ -204,6 +205,23 @@ export interface OnlineTask {
   /** the task statement, pasted by the learner: the check of a solution grades against it */
   statement: string | null
   addedAt: string
+  /** a series synced from Code Expert: its tasks and their scores there */
+  codeExpert?: CodeExpertSeries
+}
+
+export interface CodeExpertSeries {
+  seriesId: string
+  due: string | null
+  tasks: { id: string; name: string; maxPoints: number; result: number | null; submitted: boolean; feedback: string | null; projectId: string | null }[]
+}
+
+/** The Code Expert course a course of the app is linked to (its series sync into the online tasks). */
+export interface CodeExpertLink {
+  courseId: string
+  semester: string
+  name: string
+  slug: string
+  syncedAt: string | null
 }
 
 export interface WorkRecord {
@@ -225,6 +243,8 @@ export interface ExamPrep {
   submissions: Submission[]
   /** problem sets and mock exams without a PDF, e.g. coding tasks on Code Expert or GitLab */
   online: OnlineTask[]
+  /** the linked Code Expert course, if any */
+  codeExpert?: CodeExpertLink | null
 }
 
 // ---------------------------------------------------------------- tutor output (LLM)
@@ -764,6 +784,8 @@ export interface Backend {
   capturePage(): Promise<PageCapture | null>
   /** Forget the sign-ins made in the platform window. */
   signOutPlatforms(): Promise<void>
+  /** Ask Code Expert (expert.ethz.ch) for the learner's courses, a course's series with scores, or submitted code, with their sign-in in the platform window. */
+  codeExpert(op: CeOp): Promise<CeResult<unknown>>
   info(): Promise<AppInfo>
   /** Start the tutor agent for a chat; events stream until it exits. */
   agentStart(req: AgentStartRequest, onEvent: (e: AgentEvent) => void): Promise<{ ok: boolean; error?: string; errorKind?: LlmErrorKind }>

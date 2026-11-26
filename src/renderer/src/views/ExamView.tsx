@@ -228,8 +228,9 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
   const checked = ws.submissions.find((s) => s.status === 'graded' && s.source !== 'reported')
   const ce = online?.codeExpert ?? null
   const gl = online?.gitlab ?? null
-  const synced = ce || gl
-  const ceSubmitted = gl ? true : !!ce?.tasks.some((t) => t.projectId)
+  const nb = online?.notebook ?? null
+  const synced = ce || gl || nb
+  const ceSubmitted = gl || nb ? true : !!ce?.tasks.some((t) => t.projectId)
   const [fetching, setFetching] = useState(false)
   return (
     <div className={`work-row ${open ? 'open' : ''}`}>
@@ -272,7 +273,7 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
             <button
               className={`btn sm ${checked ? '' : 'primary'}`}
               disabled={ws.status === 'grading' || fetching || !ceSubmitted}
-              title={gl ? 'Fetch your code from the repository on GitLab and have it checked' : ceSubmitted ? 'Fetch the code you submitted on Code Expert for every task of this series and have it checked' : 'Submit on Code Expert first, then sync'}
+              title={nb ? 'Read your filled-in notebook (code and outputs) from the course folder and have it checked' : gl ? 'Fetch your code from the repository on GitLab and have it checked' : ceSubmitted ? 'Fetch the code you submitted on Code Expert for every task of this series and have it checked' : 'Submit on Code Expert first, then sync'}
               onClick={() => {
                 setFetching(true)
                 void app.checkSyncedCode(m.id).then((id) => {
@@ -295,7 +296,9 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           {online && <OnlineInfo t={online} onEdit={() => setEditing(true)} onImport={() => setImporting(true)} />}
           {ws.submissions.length === 0 ? (
             <div className="small muted" style={{ padding: '6px 0 4px' }}>
-              {gl
+              {nb
+                ? 'A Jupyter notebook from your course folder. Work in it where it is (save it in Jupyter); “Check my code” reads your cells and their outputs and has the tutor go through them.'
+                : gl
                 ? 'Synced from GitLab. Push your work there; the next sync logs the tests your latest pipeline passed, and “Check my code” has the tutor go through the code in the repository.'
                 : ce
                 ? 'Synced from Code Expert. Submit there; the next sync logs your points, and “Check my code” has the tutor go through what you submitted, task by task.'
@@ -652,10 +655,11 @@ function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void
         <span className="tiny muted" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t.platform || 'Online'}
           {t.url ? ` · ${t.url.replace(/^https?:\/\//, '')}` : ''}
+          {t.notebook ? ` · ${t.notebook.path.split(/[\\/]/).slice(-2).join('/')}${t.notebook.mtimeMs > t.notebook.foundMtimeMs ? ' · edited' : ''}` : ''}
           {t.codeExpert ? (t.codeExpert.due ? ` · due ${new Date(t.codeExpert.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '') : t.statement ? ' · statement pasted' : ''}
         </span>
         <span className="row" style={{ gap: 6 }}>
-          {!t.codeExpert && !t.gitlab && (
+          {!t.codeExpert && !t.gitlab && !t.notebook && (
             <button className="btn sm ghost" onClick={onImport} title="Read the task, your code and the test results from the page open in the platform window">
               <Icon name="copy" size={13} /> Import from page
             </button>

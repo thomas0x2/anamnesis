@@ -6,7 +6,7 @@ import { FakeAgentHost } from '../shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
 import { Providers } from '../node/providers'
 import { JsonStore, loadSettings, saveSettings } from '../node/store'
-import { fileInfo, readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../node/files'
+import { fileInfo, readMaterial, readNotebook, resolveWorkFiles, saveWork, scanPdfs } from '../node/files'
 import type { DeepPartial, KeyProvider, LlmRequest, Provider, Settings } from '../shared/types'
 import { looksLikeGoogleKey, routeFor } from '../shared/models'
 import { addUsage, looksLikeApiKey, normalizeUsage } from '../shared/usage'
@@ -225,6 +225,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('work:save', (_e, courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]) => saveWork(dataDir(), courseId, submissionId, files))
   ipcMain.handle('folder:scan', (_e, path: string) => (typeof path === 'string' && path ? scanPdfs(path) : null))
+  ipcMain.handle('notebook:read', (_e, path: unknown) => readNotebook(path))
   ipcMain.handle('shell:open', (_e, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)
     return undefined

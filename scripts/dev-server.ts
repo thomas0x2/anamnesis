@@ -14,7 +14,7 @@ import { FakeAgentHost } from '../src/shared/fakeAgent'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../src/shared/agentTypes'
 import { Providers } from '../src/node/providers'
 import { JsonStore, loadSettings, saveSettings } from '../src/node/store'
-import { readMaterial, resolveWorkFiles, saveWork, scanPdfs } from '../src/node/files'
+import { readMaterial, readNotebook, resolveWorkFiles, saveWork, scanPdfs } from '../src/node/files'
 import { fakeGenerate } from '../src/shared/fakeTutor'
 import type { LlmRequest, LlmResult } from '../src/shared/types'
 import { fakeCapture } from '../src/shared/platform'
@@ -96,6 +96,10 @@ const server = createServer((req, res) => {
         case 'POST /api/scan': {
           const { path } = await body<{ path: string }>(req)
           return send(res, 200, { files: typeof path === 'string' && path ? await scanPdfs(path) : null })
+        }
+        case 'POST /api/notebook': {
+          const { path } = await body<{ path: string }>(req)
+          return send(res, 200, { text: await readNotebook(path) })
         }
         case 'POST /api/work': {
           const b = await body<{ course: string; id: string; files: { name: string; data: string }[] }>(req)

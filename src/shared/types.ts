@@ -210,6 +210,15 @@ export interface OnlineTask {
   codeExpert?: CodeExpertSeries
   /** an exercise synced from GitLab: its repository (and folder) and the latest CI tests */
   gitlab?: GitLabExercise
+  /** a Jupyter notebook found in the course folder: the learner fills it in where it is */
+  notebook?: NotebookFile
+}
+
+export interface NotebookFile {
+  path: string
+  /** when it was found, and when it last changed (a later change means the learner worked on it) */
+  foundMtimeMs: number
+  mtimeMs: number
 }
 
 export interface GitLabExercise {
@@ -833,6 +842,8 @@ export interface Backend {
   pickFolder(): Promise<string | null>
   /** The PDFs in a folder (and its subfolders, a few levels deep). */
   scanFolder(path: string): Promise<FolderFile[] | null>
+  /** The text of a Jupyter notebook (.ipynb) found in a course folder; null when it cannot be read. */
+  readNotebook(path: string): Promise<string | null>
   /** Save the learner's solution files (PDF, images, text) in the data folder; returns what was stored. */
   saveWork(courseId: string, submissionId: string, files: { name: string; bytes: Uint8Array }[]): Promise<{ name: string; size: number }[]>
   openExternal(url: string): Promise<void>

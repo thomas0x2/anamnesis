@@ -60,6 +60,7 @@ export function createDemoBackend(): Backend {
     pickMaterials: async () => [],
     pickFolder: async () => null,
     scanFolder: async () => null,
+    readNotebook: async () => null,
     // the demo keeps nothing on disk: the scripted grade does not read the files
     saveWork: async (_c, _s, files) => files.map((f, i) => ({ name: workFileName(f.name, i) ?? `file-${i + 1}`, size: f.bytes.byteLength })),
     openExternal: async (url) => {

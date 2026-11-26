@@ -4,6 +4,7 @@
 // takes the session cookie for reads, so no access token is needed. It only reads.
 import type { ExamPrep, GitLabLink, OnlineTask } from './types'
 import { CODE_EXTENSIONS } from './exam'
+import { notebookText, parseNotebook } from './notebook'
 import { uid } from './util'
 
 export type GlOp =
@@ -63,7 +64,12 @@ const GL_CLIENT = String.raw`async function (op) {
   const readmeOf = async (pid, ref, dir) => {
     const tree = (await soft('/projects/' + pid + '/repository/tree?per_page=100&ref=' + enc(ref) + (dir ? '&path=' + enc(dir) : ''))) || []
     const f = tree.find((x) => x.type === 'blob' && README.test(x.name))
-    if (!f) return { readme: null, tree }
+    if (!f) {
+      // no README: a Jupyter notebook is the exercise
+      const nb = tree.find((x) => x.type === 'blob' && /\.ipynb$/i.test(x.name) && !/(solution|l[oö]sung|loesung|checkpoint)/i.test(x.name))
+      const t = nb ? await soft('/projects/' + pid + '/repository/files/' + enc(nb.path) + '/raw?ref=' + enc(ref), true) : null
+      return { readme: null, notebook: typeof t === 'string' && t.length < 5000000 ? t : null, tree }
+    }
     const t = await soft('/projects/' + pid + '/repository/files/' + enc(f.path) + '/raw?ref=' + enc(ref), true)
     return { readme: typeof t === 'string' ? t.slice(0, 30000) : null, tree }
   }
@@ -97,8 +103,8 @@ const GL_CLIENT = String.raw`async function (op) {
         for (let i = 0; i < ps.length; i += 6) {
           await Promise.all(ps.slice(i, i + 6).map(async (p) => {
             const ref = p.default_branch || 'main'
-            const [{ readme }, own, pipe] = await Promise.all([readmeOf(p.id, ref, ''), mineIn(p.id, ref, '', me), pipelineOf(p.id, ref)])
-            out.push({ key: 'p' + p.id, name: p.name, projectId: p.id, path: '', ref, webUrl: p.web_url, readme, mine: own.mine, lastCommitAt: own.at, tests: pipe ? sum(pipe.suites) : null, pipeline: pipe ? pipe.status : null })
+            const [{ readme, notebook }, own, pipe] = await Promise.all([readmeOf(p.id, ref, ''), mineIn(p.id, ref, '', me), pipelineOf(p.id, ref)])
+            out.push({ key: 'p' + p.id, name: p.name, projectId: p.id, path: '', ref, webUrl: p.web_url, readme, notebook, mine: own.mine, lastCommitAt: own.at, tests: pipe ? sum(pipe.suites) : null, pipeline: pipe ? pipe.status : null })
           }))
         }
       } else {
@@ -109,14 +115,14 @@ const GL_CLIENT = String.raw`async function (op) {
         const pipe = await pipelineOf(p.id, ref)
         const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
         if (!dirs.length) {
-          const [{ readme }, own] = await Promise.all([readmeOf(p.id, ref, ''), mineIn(p.id, ref, '', me)])
-          out.push({ key: 'p' + p.id, name: p.name, projectId: p.id, path: '', ref, webUrl: p.web_url, readme, mine: own.mine, lastCommitAt: own.at, tests: pipe ? sum(pipe.suites) : null, pipeline: pipe ? pipe.status : null })
+          const [{ readme, notebook }, own] = await Promise.all([readmeOf(p.id, ref, ''), mineIn(p.id, ref, '', me)])
+          out.push({ key: 'p' + p.id, name: p.name, projectId: p.id, path: '', ref, webUrl: p.web_url, readme, notebook, mine: own.mine, lastCommitAt: own.at, tests: pipe ? sum(pipe.suites) : null, pipeline: pipe ? pipe.status : null })
         }
         for (let i = 0; i < dirs.length; i += 6) {
           await Promise.all(dirs.slice(i, i + 6).map(async (d) => {
-            const [{ readme }, own] = await Promise.all([readmeOf(p.id, ref, d.path), mineIn(p.id, ref, d.path, me)])
+            const [{ readme, notebook }, own] = await Promise.all([readmeOf(p.id, ref, d.path), mineIn(p.id, ref, d.path, me)])
             const suites = pipe ? pipe.suites.filter((s) => norm(s.name).includes(norm(d.name))) : []
-            out.push({ key: 'p' + p.id + ':' + d.path, name: d.name, projectId: p.id, path: d.path, ref, webUrl: p.web_url + '/-/tree/' + enc(ref) + '/' + d.path.split('/').map(enc).join('/'), readme, mine: own.mine, lastCommitAt: own.at, tests: sum(suites), pipeline: pipe ? pipe.status : null })
+            out.push({ key: 'p' + p.id + ':' + d.path, name: d.name, projectId: p.id, path: d.path, ref, webUrl: p.web_url + '/-/tree/' + enc(ref) + '/' + d.path.split('/').map(enc).join('/'), readme, notebook, mine: own.mine, lastCommitAt: own.at, tests: sum(suites), pipeline: pipe ? pipe.status : null })
           }))
         }
       }
@@ -189,7 +195,7 @@ export function normalizeExercises(raw: unknown): GlExercise[] {
       path: str(r.path, 300),
       ref: str(r.ref, 200) || 'main',
       webUrl: /^https?:\/\//.test(str(r.webUrl, 2000)) ? str(r.webUrl, 2000) : '',
-      readme: str(r.readme, 30_000).trim() || null,
+      readme: str(r.readme, 30_000).trim() || (typeof r.notebook === 'string' ? notebookText(parseNotebook(r.notebook) ?? [], { outputs: false, limit: 30_000 }).trim() || null : null),
       mine: r.mine === true,
       lastCommitAt: date(r.lastCommitAt),
       tests: total && passed !== null && passed <= total ? { passed, total } : null,

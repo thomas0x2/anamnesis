@@ -8,7 +8,7 @@ import type { JsonStore } from './store'
 
 const SKIP = new Set(['node_modules', '.git', '__MACOSX'])
 
-/** PDFs in `dir` and its subfolders (up to 4 levels, at most 600 files). */
+/** PDFs and Jupyter notebooks in `dir` and its subfolders (up to 4 levels, at most 600 files). */
 export async function scanPdfs(dir: string, maxDepth = 4, limit = 600): Promise<FolderFile[] | null> {
   const root = resolve(dir)
   try {
@@ -31,7 +31,7 @@ export async function scanPdfs(dir: string, maxDepth = 4, limit = 600): Promise<
       const full = join(d, e.name)
       if (e.isDirectory()) {
         if (depth < maxDepth) await walk(full, depth + 1)
-      } else if (e.isFile() && /\.pdf$/i.test(e.name)) {
+      } else if (e.isFile() && /\.(pdf|ipynb)$/i.test(e.name)) {
         try {
           const s = await stat(full)
           out.push({ path: full, rel: relative(root, full), name: e.name, size: s.size, mtimeMs: s.mtimeMs })
@@ -64,6 +64,18 @@ export async function readMaterial(store: JsonStore, settings: Settings, courseI
   if (!path || !/\.pdf$/i.test(path)) return null
   try {
     return new Uint8Array(await readFile(path))
+  } catch {
+    return null
+  }
+}
+
+/** The text of a Jupyter notebook (only .ipynb files, at most 20 MB). */
+export async function readNotebook(path: unknown): Promise<string | null> {
+  if (typeof path !== 'string' || !/\.ipynb$/i.test(path)) return null
+  try {
+    const full = resolve(path)
+    if ((await stat(full)).size > 20 * 1024 * 1024) return null
+    return await readFile(full, 'utf8')
   } catch {
     return null
   }

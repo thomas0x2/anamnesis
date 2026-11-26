@@ -6,6 +6,7 @@ import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension,
 import { generateWithRetry } from '@shared/retry'
 import type { CourseSnapshot } from '@shared/scheduler'
 import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
+import { isSolutionNotebook, notebookForCheck, notebookKind, notebookText, notebookTitle, parseNotebook } from '@shared/notebook'
 import { glCode, GL_NOTE, normalizeExercises, normalizeResolved, parseGitLabUrl, planGitLab } from '@shared/gitlab'
 import { guessConcepts, normalizeCourses, normalizeSync, planSync, seriesCode, SYNC_NOTE, type CeCourse, type CeFile } from '@shared/codeExpert'
 import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
@@ -475,8 +476,10 @@ export class AppController {
     if (!folder) return 0
     if (!force && Date.now() - this.lastScan < 60_000) return 0
     this.lastScan = Date.now()
-    const files = await this.backend.scanFolder(folder).catch(() => null)
-    if (!files) return 0
+    const all = await this.backend.scanFolder(folder).catch(() => null)
+    if (!all) return 0
+    await this.syncNotebooks(all.filter((f) => /\.ipynb$/i.test(f.name)))
+    const files = all.filter((f) => !/\.ipynb$/i.test(f.name))
     const have = new Set(this.materials.get().map((m) => m.path))
     const fresh = files.filter((f) => !have.has(f.path) && !this.ignored.includes(f.path))
     if (autoAdd && fresh.length) {
@@ -802,8 +805,49 @@ export class AppController {
     await this.updatePrep(this.courseId, (p) => ({ ...p, online: p.online.map((t) => (t.id === id ? normalizeOnline({ ...t, ...patch, id: t.id, addedAt: t.addedAt }) ?? t : t)) }))
   }
 
+  /**
+   * Jupyter notebooks in the course folder are problem sets (or mock exams): each new one becomes a task with its
+   * Markdown and code as the statement; worked solutions are left out. A notebook changed since it was found has
+   * been worked on: it is marked started.
+   */
+  private async syncNotebooks(files: FolderFile[]): Promise<void> {
+    const courseId = this.courseId
+    const prep = this.exam.get()
+    const known = new Map(prep.online.filter((t) => t.notebook).map((t) => [t.notebook?.path ?? '', t]))
+    const added: OnlineTask[] = []
+    const changed = new Map<string, number>()
+    for (const f of files) {
+      const t = known.get(f.path)
+      if (t) {
+        if (t.notebook && t.notebook.mtimeMs !== f.mtimeMs) changed.set(t.id, f.mtimeMs)
+        continue
+      }
+      if (this.ignored.includes(f.path) || isSolutionNotebook(f.name) || added.length >= 40) continue
+      const cells = parseNotebook((await this.backend.readNotebook(f.path).catch(() => null)) ?? '')
+      if (!cells) continue
+      const statement = notebookText(cells, { outputs: false, limit: 30_000 }) || null
+      const concepts = this.course.concepts.filter((c) => !!this.graph.get(c.id))
+      const task = newOnlineTask({ kind: notebookKind(f.rel), title: notebookTitle(f.name, cells), platform: 'Jupyter', url: null, statement, conceptIds: statement ? guessConcepts(`${f.name}\n${statement}`, concepts) : [] }, new Date())
+      if (task) added.push({ ...task, notebook: { path: f.path, foundMtimeMs: f.mtimeMs, mtimeMs: f.mtimeMs } })
+    }
+    if (courseId !== this.courseId || (!added.length && !changed.size)) return
+    await this.updatePrep(courseId, (p) => ({
+      ...p,
+      online: [...p.online.map((t) => (t.notebook && changed.has(t.id) ? { ...t, notebook: { ...t.notebook, mtimeMs: changed.get(t.id) ?? t.notebook.mtimeMs } } : t)), ...added]
+    }))
+    const records = this.exam.get().records
+    for (const t of this.exam.get().online) if (t.notebook && t.notebook.mtimeMs > t.notebook.foundMtimeMs && (!records[t.id] || records[t.id].status === 'todo')) await this.setWorkStatus(t.id, 'started')
+    if (added.length) this.toast({ kind: 'info', text: `Found ${added.length} Jupyter notebook${added.length === 1 ? '' : 's'} in the course folder: added to Exam prep.` }, 6000)
+  }
+
   /** Remove an online task with its records (the mind model keeps what it learned from them). */
   async deleteOnlineTask(id: string): Promise<void> {
+    const nb = onlineTask(this.exam.get(), id)?.notebook
+    if (nb) {
+      // a removed notebook does not come back with the next scan of the folder
+      this.ignored = [...new Set([...this.ignored, nb.path])]
+      await this.saveMaterials()
+    }
     for (const s of this.exam.get().submissions) if (s.materialId === id) await this.deleteSubmission(s.id)
     await this.updatePrep(this.courseId, (p) => {
       const records = { ...p.records }
@@ -953,6 +997,15 @@ export class AppController {
   async checkSyncedCode(taskId: string): Promise<string | null> {
     const t = onlineTask(this.exam.get(), taskId)
     if (t?.codeExpert) return this.checkSeriesCode(taskId)
+    if (t?.notebook) {
+      const cells = parseNotebook((await this.backend.readNotebook(t.notebook.path).catch(() => null)) ?? '')
+      if (!cells) {
+        this.toast({ kind: 'error', text: `Could not read ${t.notebook.path}. Is the notebook still there?` })
+        return null
+      }
+      const name = t.notebook.path.split(/[\\/]/).pop() ?? 'notebook.ipynb'
+      return this.submitWork({ materialId: t.id, files: [], text: notebookForCheck(name, cells), help: 'alone', examConditions: t.kind === 'exam', minutes: null })
+    }
     const link = this.exam.get().gitlab
     if (!t?.gitlab || !link) return null
     const r = await this.backend.gitlab({ op: 'code', origin: link.origin, projectId: t.gitlab.projectId, path: t.gitlab.path, ref: t.gitlab.ref })
@@ -960,7 +1013,13 @@ export class AppController {
       this.toast({ kind: 'error', text: r.signedIn ? `Could not read the code: ${r.error.slice(0, 160)}` : 'Sign in to GitLab in the window that opened, then try again.' }, 8000)
       return null
     }
-    const files = (Array.isArray(r.data) ? r.data : []).filter((f): f is { path: string; content: string } => !!f && typeof f.path === 'string' && typeof f.content === 'string')
+    const files = (Array.isArray(r.data) ? r.data : [])
+      .filter((f): f is { path: string; content: string } => !!f && typeof f.path === 'string' && typeof f.content === 'string')
+      .map((f) => {
+        // a notebook goes to the check as its cells and outputs, not as JSON
+        const cells = /\.ipynb$/i.test(f.path) ? parseNotebook(f.content) : null
+        return cells ? { path: f.path, content: notebookText(cells, { outputs: true }) } : f
+      })
     if (!files.length) {
       this.toast({ kind: 'error', text: 'No code files found in that repository.' })
       return null

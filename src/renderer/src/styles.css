@@ -5309,3 +5309,155 @@ svg.pace {
   align-items: stretch;
   gap: 4px;
 }
+
+/* ---------------------------------------------------------------- talk button: dictation front and centre */
+.talk {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  padding: 0 16px 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+.talk:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  background: var(--surface-2);
+}
+.talk:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+}
+.talk:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.talk.working:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+.talk-point {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #0b0b0b;
+}
+.talk.working .talk-point {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.talk kbd {
+  margin-left: 2px;
+  color: var(--faint);
+}
+.talk.recording {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.talk.recording .talk-point {
+  box-shadow: 0 0 0 0 rgba(229, 96, 59, 0.45);
+  animation: talk-pulse 1.4s ease-out infinite;
+}
+@keyframes talk-pulse {
+  to {
+    box-shadow: 0 0 0 10px rgba(229, 96, 59, 0);
+  }
+}
+.talk-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+}
+.talk-bars i {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: #0b0b0b;
+  animation: talk-bar 0.9s ease-in-out infinite;
+}
+.talk-bars i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+.talk-bars i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+@keyframes talk-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.talk.compact {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+}
+.talk.compact .talk-point {
+  width: 38px;
+  height: 38px;
+}
+.talk.compact.recording {
+  border-color: var(--brand);
+}
+.talk-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.talk-wrap.compact .talk-status {
+  position: absolute;
+  right: 0;
+  bottom: 52px;
+  white-space: nowrap;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+/* the reasoning box: the talk button is the way in, not a quiet link */
+.reasoning-start {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.reasoning-start .reasoning-toggle {
+  margin-top: 0;
+}
+.reasoning-head .talk {
+  height: 44px;
+}
+.reasoning-head .talk .talk-point {
+  width: 32px;
+  height: 32px;
+}
+
+/* free answers: the button sits under the text field instead of a small mic in its corner */
+.free-wrap .textarea {
+  padding-right: 12px;
+}
+.free-voice {
+  margin-top: 12px;
+}

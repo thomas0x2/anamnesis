@@ -28,7 +28,7 @@ import {
   OrderInput,
 } from "./Interactions";
 import { Markdown } from "./Markdown";
-import { SpeakButton, useDictation, VoiceButton } from "./Voice";
+import { SpeakButton, TalkButton, useDictation, useDictationHotkey } from "./Voice";
 
 const KIND_ICON: Record<Card["kind"], string> = {
   probe: "probe",
@@ -533,43 +533,39 @@ function ReasoningBox({
     setText((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t)),
   );
   useEffect(() => onBusy(phase !== "idle"), [phase, onBusy]);
+  const start = (): void => {
+    setOpen(true);
+    void toggle();
+  };
+  // the shortcut opens the box and starts listening in one go, like the button
+  useDictationHotkey(!disabled, 2, open ? () => void toggle() : start, phase !== "idle");
   if (!open) {
     return (
-      <button
-        className="btn sm ghost reasoning-toggle"
-        disabled={disabled}
-        onClick={() => {
-          setOpen(true);
-          void toggle();
-        }}
-      >
-        <Icon name="mic" size={15} /> Explain your reasoning
-      </button>
+      <div className="reasoning-start">
+        <TalkButton
+          className="reasoning-toggle"
+          phase={phase}
+          loading={loading}
+          idleLabel="Talk through your reasoning"
+          disabled={disabled}
+          onClick={start}
+        />
+        <span className="tiny muted">Graded with your answer: sound reasoning can earn partial credit for a slip.</span>
+      </div>
     );
   }
   const recording = phase === "recording";
   return (
     <div className={`reasoning-box ${recording ? "recording" : ""}`}>
       <div className="reasoning-head">
-        <button
-          type="button"
-          className={`btn sm reasoning-mic ${recording ? "rec" : ""}`}
-          disabled={disabled || phase === "working"}
+        <TalkButton
+          className={`reasoning-mic ${recording ? "rec" : ""}`}
+          phase={phase}
+          loading={loading}
+          idleLabel={text.trim() ? "Add more by voice" : "Talk it through"}
+          disabled={disabled}
           onClick={() => void toggle()}
-        >
-          {recording ? (
-            <span className="rec-dot" aria-hidden />
-          ) : (
-            <Icon name={phase === "working" ? "clock" : "mic"} size={15} />
-          )}
-          {recording
-            ? "Listening… click when done"
-            : phase === "working"
-              ? (loading ?? "Transcribing…")
-              : text.trim()
-                ? "Add more by voice"
-                : "Talk it through"}
-        </button>
+        />
         <span className="spacer" />
         <button
           className="btn icon sm ghost"

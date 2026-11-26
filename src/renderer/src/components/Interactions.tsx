@@ -135,7 +135,7 @@ export function FreeInput({ it, disabled, onChange, onSubmit, initial, placehold
         className="textarea"
         value={text}
         disabled={disabled}
-        placeholder={placeholder ?? 'Type your answer, or press the mic and say it.'}
+        placeholder={placeholder ?? 'Type your answer, or say it with the button below.'}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -146,8 +146,8 @@ export function FreeInput({ it, disabled, onChange, onSubmit, initial, placehold
         rows={it.allowVoice ? 4 : 3}
       />
       {!disabled && (
-        <div className="mic-slot">
-          <VoiceButton onText={(t) => setText((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t))} />
+        <div className="free-voice">
+          <VoiceButton idleLabel={text.trim() ? 'Add more by voice' : 'Say it out loud'} onText={(t) => setText((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t))} />
         </div>
       )}
     </div>

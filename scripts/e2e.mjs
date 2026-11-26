@@ -378,6 +378,14 @@ async function answerCard(page, card, label) {
         step('practice: one click on "Explain your reasoning" starts listening')
         await card.getByRole('button', { name: 'Answer without reasoning' }).click()
         await card.locator('.reasoning-box').waitFor({ state: 'detached' })
+        // the dictation shortcut does the same from anywhere on the card (the answer wins over the chat composer)
+        await page.locator('body').click({ position: { x: 5, y: 300 } })
+        await page.keyboard.press(electronMode && process.platform === 'darwin' ? 'Meta+D' : 'Control+D')
+        await rec.waitFor({ timeout: 3_000 })
+        if (await page.locator('.composer .talk.recording').count()) throw new Error('the shortcut started the chat dictation instead of the answer')
+        step('practice: the dictation shortcut starts talking through the reasoning')
+        await card.getByRole('button', { name: 'Answer without reasoning' }).click()
+        await card.locator('.reasoning-box').waitFor({ state: 'detached' })
       }
       // no microphone: the panel opens for typing
       await page.evaluate(() => (window.__micOk = false))

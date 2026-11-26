@@ -4,6 +4,7 @@
 import numcsJson from '@courses/numcs/course.json'
 import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
 import { generateWithRetry } from '@shared/retry'
+import type { CourseSnapshot } from '@shared/scheduler'
 import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
 import { guessConcepts, normalizeCourses, normalizeSync, planSync, seriesCode, SYNC_NOTE, type CeCourse, type CeFile } from '@shared/codeExpert'
 import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
@@ -58,6 +59,7 @@ export type Route =
   | { name: 'script'; page?: number }
   | { name: 'materials' }
   | { name: 'exam'; materialId?: string }
+  | { name: 'plan' }
   | { name: 'settings' }
 
 export interface Toast {
@@ -672,6 +674,44 @@ export class AppController {
 
   async setExamGoals(patch: Partial<Pick<ExamPrep, 'examDate' | 'problemSets' | 'mockExams'>>): Promise<void> {
     await this.updatePrep(this.courseId, (p) => ({ ...p, ...patch }))
+  }
+
+  // ------------------------------------------------------------ study plan across courses
+  /** Every course as the study plan needs it: the active one as it is on screen, the others from their files. */
+  async planSnapshots(): Promise<CourseSnapshot[]> {
+    const out: CourseSnapshot[] = []
+    for (const entry of this.courses.get()) {
+      if (entry.id === this.courseId) {
+        out.push({ course: this.course, learner: this.state.get().learner, materials: this.materials.get(), prep: this.exam.get() })
+        continue
+      }
+      try {
+        const builtin = BUILTIN_COURSES.find((c) => c.id === entry.id)
+        const meta = this.metas.find((m) => m.id === entry.id)
+        if (!builtin && !meta) continue
+        const ext = (await this.backend.readJson<CourseExtension>(`courses/${entry.id}/map`)) ?? emptyExtension()
+        const course = buildCourse(builtin ?? metaToCourse(meta as CourseMeta), ext)
+        const saved = await this.backend.readJson<AppState>(stateName(entry.id))
+        const learner = saved && saved.version === 1 && saved.learner ? saved.learner : freshState().learner
+        const materials = (await this.backend.readJson<MaterialsFile>(`courses/${entry.id}/materials`))?.items ?? []
+        const prep = normalizePrep(await this.backend.readJson<ExamPrep>(`courses/${entry.id}/exam`))
+        out.push({ course, learner, materials, prep })
+      } catch {
+        // a damaged course file leaves that course out of the plan, never the plan itself
+      }
+    }
+    return out
+  }
+
+  /** The study time log (all courses), for the plan's pace; null before there is one. */
+  async readStudyLog(): Promise<unknown> {
+    return (await this.backend.readJson<unknown>('study-time').catch(() => null)) ?? null
+  }
+
+  /** Open a course (if it is not the one on screen) and go somewhere in it. */
+  async openIn(courseId: string, route: Route): Promise<void> {
+    if (courseId !== this.courseId) await this.switchCourse(courseId)
+    this.go(route)
   }
 
   // ------------------------------------------------------------ cheat sheet

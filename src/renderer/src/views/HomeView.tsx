@@ -10,6 +10,7 @@ import { Icon } from '../components/Icon'
 import { ActivityBars, CourseMasteryMap, ExamPace } from '../components/ProgressViz'
 import { Markdown } from '../components/Markdown'
 import { useApp } from '../engine/app'
+import { PlanNotice } from './PlanView'
 import { useStore } from '../engine/store'
 import { plural, relTime, STATUS_LABEL } from '../lib/format'
 import { useNow } from '../lib/hooks'
@@ -61,6 +62,8 @@ export function HomeView(): ReactElement {
       <CourseNotice />
 
       <div className="today-grid">
+        <PlanNotice />
+
         {sc ? (
           <ActiveSessionBanner />
         ) : (

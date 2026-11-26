@@ -4,7 +4,7 @@
 // much help the learner had.
 import { applyEvidence, getConcept, recordMisconception, type EvidenceInput } from './mastery'
 import { milestoneReward } from './rewards'
-import type { CodeExpertLink, CodeExpertSeries, GitLabExercise, GitLabLink, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
+import type { CodeExpertLink, CodeExpertSeries, GitLabExercise, GitLabLink, NotebookFile, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
 import { clamp, truncate, uid } from './util'
 
 export const DEFAULT_MOCK_EXAMS = 2
@@ -31,6 +31,13 @@ export function normalizePrep(raw: unknown): ExamPrep {
     codeExpert: normalizeCeLink(r.codeExpert),
     gitlab: normalizeGlLink(r.gitlab)
   }
+}
+
+function normalizeNotebook(raw: unknown): NotebookFile | undefined {
+  const r = (raw ?? {}) as Partial<NotebookFile>
+  if (typeof r.path !== 'string' || !/\.ipynb$/i.test(r.path)) return undefined
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  return { path: r.path.slice(0, 2000), foundMtimeMs: n(r.foundMtimeMs), mtimeMs: n(r.mtimeMs) }
 }
 
 function normalizeGlLink(raw: unknown): GitLabLink | null {
@@ -113,7 +120,8 @@ export function normalizeOnline(raw: unknown): OnlineTask | null {
     statement: typeof r.statement === 'string' && r.statement.trim() ? r.statement.trim().slice(0, 30_000) : null,
     addedAt: typeof r.addedAt === 'string' ? r.addedAt : new Date(0).toISOString(),
     ...(normalizeCeSeries(r.codeExpert) ? { codeExpert: normalizeCeSeries(r.codeExpert) } : {}),
-    ...(normalizeGlExercise(r.gitlab) ? { gitlab: normalizeGlExercise(r.gitlab) } : {})
+    ...(normalizeGlExercise(r.gitlab) ? { gitlab: normalizeGlExercise(r.gitlab) } : {}),
+    ...(normalizeNotebook(r.notebook) ? { notebook: normalizeNotebook(r.notebook) } : {})
   }
 }
 

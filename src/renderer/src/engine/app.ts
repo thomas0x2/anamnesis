@@ -6,6 +6,7 @@ import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension,
 import { generateWithRetry } from '@shared/retry'
 import type { CourseSnapshot } from '@shared/scheduler'
 import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
+import { glCode, GL_NOTE, normalizeExercises, normalizeResolved, parseGitLabUrl, planGitLab } from '@shared/gitlab'
 import { guessConcepts, normalizeCourses, normalizeSync, planSync, seriesCode, SYNC_NOTE, type CeCourse, type CeFile } from '@shared/codeExpert'
 import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
 import { CourseGraph } from '@shared/graph'
@@ -661,6 +662,7 @@ export class AppController {
 
   /** Change the exam preparation of a course; another course's file is read and written directly. */
   private ceSyncing = false
+  private glSyncing = false
 
   private async updatePrep(courseId: string, fn: (p: ExamPrep) => ExamPrep): Promise<void> {
     if (courseId === this.courseId) {
@@ -849,25 +851,100 @@ export class AppController {
       const concepts = this.course.concepts.filter((c) => !!this.graph.get(c.id))
       const online = plan.online.map((t) => (plan.added.includes(t.id) && t.statement ? { ...t, conceptIds: guessConcepts(`${t.title}\n${t.statement}`, concepts) } : t))
       await this.updatePrep(courseId, (p) => ({ ...p, online, codeExpert: { ...link, syncedAt: nowIso() } }))
-      let logged = 0
-      for (const res of plan.results) {
-        const prev = this.exam.get().submissions.find((x) => x.materialId === res.taskId && x.source === 'reported' && (x.reported?.note ?? '').startsWith(SYNC_NOTE))
-        const input = { points: res.points, max: res.max, note: res.note, help: 'alone' as const, minutes: null, examConditions: false }
-        if (!prev) {
-          if (await this.reportWork({ ...input, materialId: res.taskId }, true)) logged++
-        } else if (prev.reported?.points !== res.points || prev.reported?.max !== res.max || prev.reported?.note !== res.note) {
-          if (await this.editReport(prev.id, { ...input, help: prev.help })) logged++
-        }
-      }
-      const records = this.exam.get().records
-      for (const id of plan.done) if (records[id]?.status !== 'done') await this.setWorkStatus(id, 'done')
-      for (const id of plan.started) if (!records[id] || records[id].status === 'todo') await this.setWorkStatus(id, 'started')
+      const logged = await this.logSynced(plan.results, SYNC_NOTE, plan.done, plan.started)
       const parts = [plan.added.length ? `${plan.added.length} new` : '', plan.updated ? `${plan.updated} updated` : '', logged ? `${logged} result${logged === 1 ? '' : 's'} logged` : ''].filter(Boolean)
       this.toast({ kind: 'info', text: `Code Expert: ${series.length} series${parts.length ? `, ${parts.join(', ')}` : ', nothing new'}.` }, 6000)
       return { ok: true, signedIn: true, added: plan.added.length, updated: plan.updated, logged, error: null }
     } finally {
       this.ceSyncing = false
     }
+  }
+
+  /** Log (or correct) results that came from a platform sync; mark the rest done or started. */
+  private async logSynced(results: { taskId: string; points: number; max: number; note: string }[], prefix: string, done: string[], started: string[]): Promise<number> {
+    let logged = 0
+    for (const res of results) {
+      const prev = this.exam.get().submissions.find((x) => x.materialId === res.taskId && x.source === 'reported' && (x.reported?.note ?? '').startsWith(prefix))
+      const input = { points: res.points, max: res.max, note: res.note, help: 'alone' as const, minutes: null, examConditions: false }
+      if (!prev) {
+        if (await this.reportWork({ ...input, materialId: res.taskId }, true)) logged++
+      } else if (prev.reported?.points !== res.points || prev.reported?.max !== res.max || prev.reported?.note !== res.note) {
+        if (await this.editReport(prev.id, { ...input, help: prev.help })) logged++
+      }
+    }
+    const records = this.exam.get().records
+    for (const id of done) if (records[id]?.status !== 'done') await this.setWorkStatus(id, 'done')
+    for (const id of started) if (!records[id] || records[id].status === 'todo') await this.setWorkStatus(id, 'started')
+    return logged
+  }
+
+  // ------------------------------------------------------------ GitLab
+  /** Link this course to a GitLab group (a repository per exercise) or repository (a folder per exercise) from a pasted link, and sync it. */
+  async linkGitLab(url: string | null): Promise<SyncSummary | null> {
+    if (url === null) {
+      await this.updatePrep(this.courseId, (p) => ({ ...p, gitlab: null }))
+      return null
+    }
+    const at = parseGitLabUrl(url)
+    if (!at) {
+      this.toast({ kind: 'error', text: 'That is not a link to a GitLab group or repository.' })
+      return null
+    }
+    const r = await this.backend.gitlab({ op: 'resolve', origin: at.origin, path: at.path })
+    if (!r.ok) {
+      if (r.signedIn) this.toast({ kind: 'error', text: `GitLab: ${r.error.slice(0, 160)}` }, 7000)
+      return { ok: false, signedIn: r.signedIn, added: 0, updated: 0, logged: 0, error: r.error }
+    }
+    const link = normalizeResolved(r.data, at.origin)
+    if (!link) return null
+    await this.updatePrep(this.courseId, (p) => ({ ...p, gitlab: link }))
+    return this.syncGitLab()
+  }
+
+  /** Bring in every exercise of the linked GitLab group or repository: its README, whether the learner committed, the latest CI tests. */
+  async syncGitLab(): Promise<SyncSummary | null> {
+    const courseId = this.courseId
+    const link = this.exam.get().gitlab
+    if (!link || this.glSyncing) return null
+    this.glSyncing = true
+    try {
+      const r = await this.backend.gitlab({ op: 'sync', origin: link.origin, kind: link.kind, id: link.id })
+      if (courseId !== this.courseId) return null
+      if (!r.ok) {
+        this.toast({ kind: 'error', text: r.signedIn ? `GitLab sync failed: ${r.error.slice(0, 160)}` : 'Sign in to GitLab in the window that opened, then sync again.' }, 8000)
+        return { ok: false, signedIn: r.signedIn, added: 0, updated: 0, logged: 0, error: r.error }
+      }
+      const exercises = normalizeExercises(r.data)
+      const plan = planGitLab(this.exam.get(), exercises, new Date())
+      const concepts = this.course.concepts.filter((c) => !!this.graph.get(c.id))
+      const online = plan.online.map((t) => (plan.added.includes(t.id) && t.statement ? { ...t, conceptIds: guessConcepts(`${t.title}\n${t.statement}`, concepts) } : t))
+      await this.updatePrep(courseId, (p) => ({ ...p, online, gitlab: { ...link, syncedAt: nowIso() } }))
+      const logged = await this.logSynced(plan.results, GL_NOTE, [], plan.started)
+      const parts = [plan.added.length ? `${plan.added.length} new` : '', plan.updated ? `${plan.updated} updated` : '', logged ? `${logged} result${logged === 1 ? '' : 's'} logged` : ''].filter(Boolean)
+      this.toast({ kind: 'info', text: `GitLab: ${exercises.length} exercise${exercises.length === 1 ? '' : 's'}${parts.length ? `, ${parts.join(', ')}` : ', nothing new'}.` }, 6000)
+      return { ok: true, signedIn: true, added: plan.added.length, updated: plan.updated, logged, error: null }
+    } finally {
+      this.glSyncing = false
+    }
+  }
+
+  /** Fetch the code of a synced exercise (synced series on Code Expert, repository or folder on GitLab) and have it checked. */
+  async checkSyncedCode(taskId: string): Promise<string | null> {
+    const t = onlineTask(this.exam.get(), taskId)
+    if (t?.codeExpert) return this.checkSeriesCode(taskId)
+    const link = this.exam.get().gitlab
+    if (!t?.gitlab || !link) return null
+    const r = await this.backend.gitlab({ op: 'code', origin: link.origin, projectId: t.gitlab.projectId, path: t.gitlab.path, ref: t.gitlab.ref })
+    if (!r.ok) {
+      this.toast({ kind: 'error', text: r.signedIn ? `Could not read the code: ${r.error.slice(0, 160)}` : 'Sign in to GitLab in the window that opened, then try again.' }, 8000)
+      return null
+    }
+    const files = (Array.isArray(r.data) ? r.data : []).filter((f): f is { path: string; content: string } => !!f && typeof f.path === 'string' && typeof f.content === 'string')
+    if (!files.length) {
+      this.toast({ kind: 'error', text: 'No code files found in that repository.' })
+      return null
+    }
+    return this.submitWork({ materialId: t.id, files: [], text: glCode(t, files), help: 'alone', examConditions: false, minutes: null })
   }
 
   /** Fetch the code the learner submitted for a synced series and have it checked, all tasks at once. */

@@ -4,6 +4,7 @@
 // the app, every permission request denied. Its cookies are the sign-in; "Sign out" clears them.
 import { BrowserWindow, session, type WebFrameMain } from 'electron'
 import { CODE_EXPERT_ORIGIN, ceScript, type CeOp, type CeResult } from '../shared/codeExpert'
+import { glScript, type GlOp, type GlResult } from '../shared/gitlab'
 import { CAPTURE_SCRIPT, mergeCaptures, type PageCapture, type PlatformStatus } from '../shared/platform'
 
 const PARTITION = 'persist:platforms'
@@ -72,46 +73,53 @@ export async function capturePlatform(): Promise<PageCapture | null> {
   return mergeCaptures(results, new Date())
 }
 
-const onCodeExpert = (url: string): boolean => {
+const sameOrigin = (url: string, origin: string): boolean => {
   try {
-    return new URL(url).origin === CODE_EXPERT_ORIGIN
+    return new URL(url).origin === origin
   } catch {
     return false
   }
 }
 
-/** A hidden window on the platform session at Code Expert, to run requests in without disturbing the visible one. */
-async function codeExpertPage(): Promise<BrowserWindow> {
-  const bg = new BrowserWindow({ show: false, webPreferences: { session: platformSession(), sandbox: true, contextIsolation: true, nodeIntegration: false } })
-  bg.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  await withTimeout(bg.loadURL(`${CODE_EXPERT_ORIGIN}/`).catch(() => undefined), 30_000)
-  return bg
-}
+let busy: Promise<unknown> = Promise.resolve()
 
-let ceBusy: Promise<unknown> = Promise.resolve()
+type PageResult = { ok: true; data: unknown } | { ok: false; signedIn: boolean; error: string }
 
 /**
- * Run one Code Expert operation (courses, sync, code) inside a Code Expert page on the platform session, so it
- * carries the learner's sign-in. When they are not signed in, the platform window opens at Code Expert for it.
+ * Run a read-only script inside a page of a platform (Code Expert, GitLab) in a hidden window on the platform
+ * session, so its requests carry the learner's sign-in. When they are not signed in, the visible platform
+ * window opens at that site for it. One run at a time.
  */
-export function runCodeExpert(op: CeOp, parent: BrowserWindow | null): Promise<CeResult<unknown>> {
-  const run = async (): Promise<CeResult<unknown>> => {
-    const bg = await codeExpertPage()
+function runInPage(origin: string, script: string, signIn: string, parent: BrowserWindow | null): Promise<PageResult> {
+  const run = async (): Promise<PageResult> => {
+    const bg = new BrowserWindow({ show: false, webPreferences: { session: platformSession(), sandbox: true, contextIsolation: true, nodeIntegration: false } })
+    bg.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     try {
-      const url = bg.webContents.getURL()
-      let res: CeResult<unknown> | null = null
-      if (onCodeExpert(url)) res = (await withTimeout(bg.webContents.executeJavaScript(ceScript(op), true) as Promise<CeResult<unknown>>, 180_000).catch((e: unknown) => ({ ok: false as const, signedIn: true, error: String(e) }))) ?? { ok: false, signedIn: true, error: 'Code Expert took too long' }
+      await withTimeout(bg.loadURL(`${origin}/`).catch(() => undefined), 30_000)
+      let res: PageResult | null
+      if (sameOrigin(bg.webContents.getURL(), origin))
+        res = (await withTimeout(bg.webContents.executeJavaScript(script, true) as Promise<PageResult>, 180_000).catch((e: unknown) => ({ ok: false as const, signedIn: true, error: String(e) }))) ?? { ok: false, signedIn: true, error: 'the site took too long' }
       else res = { ok: false, signedIn: false, error: 'not signed in' }
-      if (!res || typeof res !== 'object') res = { ok: false, signedIn: true, error: 'no answer from Code Expert' }
-      if (!res.ok && !res.signedIn) openPlatform(`${CODE_EXPERT_ORIGIN}/`, parent)
+      if (!res || typeof res !== 'object') res = { ok: false, signedIn: true, error: 'no answer from the site' }
+      if (!res.ok && !res.signedIn) openPlatform(signIn, parent)
       return res
     } finally {
       if (!bg.isDestroyed()) bg.destroy()
     }
   }
-  const p = ceBusy.then(run, run)
-  ceBusy = p.catch(() => undefined)
+  const p = busy.then(run, run)
+  busy = p.catch(() => undefined)
   return p
+}
+
+/** Run one Code Expert operation (courses, sync, code) with the learner's sign-in. */
+export function runCodeExpert(op: CeOp, parent: BrowserWindow | null): Promise<CeResult<unknown>> {
+  return runInPage(CODE_EXPERT_ORIGIN, ceScript(op), `${CODE_EXPERT_ORIGIN}/`, parent)
+}
+
+/** Run one GitLab operation (resolve a link, sync, code) on that GitLab with the learner's sign-in. */
+export function runGitLab(op: GlOp, parent: BrowserWindow | null): Promise<GlResult<unknown>> {
+  return runInPage(op.origin, glScript(op), `${op.origin}/users/sign_in`, parent)
 }
 
 /** Forget every sign-in made in the platform window. */

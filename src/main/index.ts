@@ -13,7 +13,8 @@ import { addUsage, looksLikeApiKey, normalizeUsage } from '../shared/usage'
 import type { CloudSttRequest } from '../shared/stt'
 import { ApiKeyVault } from './apiKey'
 import { checkCeOp, fakeCodeExpert } from '../shared/codeExpert'
-import { capturePlatform, openPlatform, platformStatus, runCodeExpert, signOutPlatforms } from './platform'
+import { checkGlOp, fakeGitLab } from '../shared/gitlab'
+import { capturePlatform, openPlatform, platformStatus, runCodeExpert, runGitLab, signOutPlatforms } from './platform'
 
 if (process.env.ANAMNESIS_DATA_DIR) app.setPath('userData', resolve(process.env.ANAMNESIS_DATA_DIR))
 app.setName('Anamnesis')
@@ -233,6 +234,11 @@ function registerIpc(): void {
   ipcMain.handle('platform:capture', () => capturePlatform())
   ipcMain.handle('platform:sign-out', () => signOutPlatforms())
   ipcMain.handle('codeexpert:run', (_e, op: unknown) => (process.env.ANAMNESIS_FAKE === '1' ? fakeCodeExpert(checkCeOp(op)) : runCodeExpert(checkCeOp(op), win)))
+  ipcMain.handle('gitlab:run', (_e, raw: unknown) => {
+    const op = checkGlOp(raw)
+    if (!op) return { ok: false, signedIn: true, error: 'not a GitLab link' }
+    return process.env.ANAMNESIS_FAKE === '1' ? fakeGitLab(op) : runGitLab(op, win)
+  })
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir: dataDir(), platform: process.platform, backend: 'electron' }))
 }
 

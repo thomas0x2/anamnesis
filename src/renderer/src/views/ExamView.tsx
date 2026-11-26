@@ -63,6 +63,8 @@ export function ExamView({ materialId }: { materialId?: string }): ReactElement 
 
       <CodeExpertPanel />
 
+      <GitLabPanel />
+
       <PlatformBar />
 
       <div className="exam-progress">
@@ -225,7 +227,9 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
   const graded = ws.submissions.find((s) => s.status === 'graded')
   const checked = ws.submissions.find((s) => s.status === 'graded' && s.source !== 'reported')
   const ce = online?.codeExpert ?? null
-  const ceSubmitted = !!ce?.tasks.some((t) => t.projectId)
+  const gl = online?.gitlab ?? null
+  const synced = ce || gl
+  const ceSubmitted = gl ? true : !!ce?.tasks.some((t) => t.projectId)
   const [fetching, setFetching] = useState(false)
   return (
     <div className={`work-row ${open ? 'open' : ''}`}>
@@ -264,14 +268,14 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           <button className="btn sm ghost" onClick={() => setReporting(true)} title="Log a result without uploading anything: tests passed, points on the platform">
             <Icon name="list" size={14} /> Log result
           </button>
-          {ce ? (
+          {synced ? (
             <button
               className={`btn sm ${checked ? '' : 'primary'}`}
               disabled={ws.status === 'grading' || fetching || !ceSubmitted}
-              title={ceSubmitted ? 'Fetch the code you submitted on Code Expert for every task of this series and have it checked' : 'Submit on Code Expert first, then sync'}
+              title={gl ? 'Fetch your code from the repository on GitLab and have it checked' : ceSubmitted ? 'Fetch the code you submitted on Code Expert for every task of this series and have it checked' : 'Submit on Code Expert first, then sync'}
               onClick={() => {
                 setFetching(true)
-                void app.checkSeriesCode(m.id).then((id) => {
+                void app.checkSyncedCode(m.id).then((id) => {
                   setFetching(false)
                   if (id && !open) onToggle()
                 })
@@ -291,7 +295,9 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           {online && <OnlineInfo t={online} onEdit={() => setEditing(true)} onImport={() => setImporting(true)} />}
           {ws.submissions.length === 0 ? (
             <div className="small muted" style={{ padding: '6px 0 4px' }}>
-              {ce
+              {gl
+                ? 'Synced from GitLab. Push your work there; the next sync logs the tests your latest pipeline passed, and “Check my code” has the tutor go through the code in the repository.'
+                : ce
                 ? 'Synced from Code Expert. Submit there; the next sync logs your points, and “Check my code” has the tutor go through what you submitted, task by task.'
                 : online
                 ? `Work on it on ${online.platform || 'the platform'}. Then log your result (e.g. tests passed or points), or upload or paste your code to have each task checked. Either updates ${online.conceptIds.length ? 'the concepts it practises' : 'your mind model'}; a checked solution counts more than a logged result.`
@@ -649,7 +655,7 @@ function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void
           {t.codeExpert ? (t.codeExpert.due ? ` · due ${new Date(t.codeExpert.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '') : t.statement ? ' · statement pasted' : ''}
         </span>
         <span className="row" style={{ gap: 6 }}>
-          {!t.codeExpert && (
+          {!t.codeExpert && !t.gitlab && (
             <button className="btn sm ghost" onClick={onImport} title="Read the task, your code and the test results from the page open in the platform window">
               <Icon name="copy" size={13} /> Import from page
             </button>
@@ -668,6 +674,20 @@ function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void
           )}
         </span>
       </div>
+      {t.gitlab && (
+        <div className="ce-tasks" aria-label="On GitLab">
+          <span className="ce-task">
+            <span>CI</span>
+            <span className={`tiny ${!t.gitlab.tests ? 'muted' : t.gitlab.tests.passed === t.gitlab.tests.total ? 'good' : t.gitlab.tests.passed > 0 ? 'warn' : 'bad'}`}>
+              {t.gitlab.tests ? `${t.gitlab.tests.passed}/${t.gitlab.tests.total} tests` : t.gitlab.pipeline ?? 'no pipeline'}
+            </span>
+          </span>
+          <span className="ce-task">
+            <span>your commits</span>
+            <span className="tiny muted">{t.gitlab.mine ? (t.gitlab.lastCommitAt ? `last ${new Date(t.gitlab.lastCommitAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : 'yes') : 'none yet'}</span>
+          </span>
+        </div>
+      )}
       {t.codeExpert && (
         <div className="ce-tasks" aria-label="Tasks on Code Expert">
           {t.codeExpert.tasks.map((x) => (
@@ -1036,6 +1056,71 @@ function CodeExpertPanel(): ReactElement {
   )
 }
 
+/** Link the course to a GitLab group (a repository per exercise) or repository (a folder per exercise) once. */
+function GitLabPanel(): ReactElement {
+  const app = useApp()
+  const prep = useStore(app.exam)
+  const now = useNow()
+  const link = prep.gitlab ?? null
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const after = (r: { signedIn: boolean } | null): void => {
+    setBusy(null)
+    if (r && !r.signedIn) setNote('Sign in to GitLab in the window that opened, then try again.')
+  }
+  return (
+    <div className="platform-bar ce-panel">
+      <div className="small" style={{ minWidth: 0 }}>
+        <span style={{ fontWeight: 550 }}>GitLab</span>
+        {link ? (
+          <span className="muted">
+            {' '}· Linked to {link.name} ({link.kind === 'group' ? 'a repository per exercise' : 'a folder per exercise'}). Each exercise is a problem set here with your latest CI tests · synced {relTime(link.syncedAt, now)}.
+          </span>
+        ) : (
+          <span className="muted"> · Paste the link of the course's group (a repository per exercise) or of your repository (a folder per exercise). Every exercise comes in with its README and CI test results.</span>
+        )}
+        {note && <div className="tiny warn-text" style={{ marginTop: 4 }}>{note}</div>}
+      </div>
+      {link ? (
+        <div className="row" style={{ gap: 6 }}>
+          <button
+            className="btn sm primary"
+            disabled={!!busy}
+            onClick={() => {
+              setBusy('Syncing…')
+              setNote(null)
+              void app.syncGitLab().then(after)
+            }}
+          >
+            <Icon name="refresh" size={13} /> {busy ?? 'Sync now'}
+          </button>
+          <button className="btn sm ghost" disabled={!!busy} onClick={() => void app.linkGitLab(null)} title="Unlink (the synced problem sets and results stay)">
+            Unlink
+          </button>
+        </div>
+      ) : (
+        <form
+          className="row"
+          style={{ gap: 6 }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!url.trim()) return
+            setBusy('Syncing…')
+            setNote(null)
+            void app.linkGitLab(url.trim()).then(after)
+          }}
+        >
+          <input className="input" style={{ width: 230 }} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://gitlab.ethz.ch/course/group" aria-label="GitLab group or repository" />
+          <button className="btn sm" type="submit" disabled={!url.trim() || !!busy}>
+            {busy ?? 'Link and sync'}
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
 function PlatformBar(): ReactElement {
   const app = useApp()
   const [url, setUrl] = useState('')
@@ -1046,7 +1131,7 @@ function PlatformBar(): ReactElement {
     <div className="platform-bar">
       <div className="small" style={{ minWidth: 0 }}>
         <span style={{ fontWeight: 550 }}>Other platforms</span>
-        <span className="muted"> · Open GitLab, Moodle or any page inside the app and sign in there as usual. Then “Import from page” on a task reads the statement, your code and the test results, and the tutor can read the page too.</span>
+        <span className="muted"> · Open Moodle, Jupyter or any page inside the app and sign in there as usual. Then “Import from page” on a task reads the statement, your code and the test results, and the tutor can read the page too.</span>
       </div>
       <form
         className="row"

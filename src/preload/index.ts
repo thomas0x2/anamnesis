@@ -49,6 +49,7 @@ const api = {
   capturePage: () => ipcRenderer.invoke('platform:capture'),
   signOutPlatforms: () => ipcRenderer.invoke('platform:sign-out'),
   codeExpert: (op: unknown) => ipcRenderer.invoke('codeexpert:run', op),
+  gitlab: (op: unknown) => ipcRenderer.invoke('gitlab:run', op),
   info: () => ipcRenderer.invoke('app:info'),
   onBeforeQuit(fn: () => Promise<void>) {
     ipcRenderer.removeAllListeners('app:before-quit')

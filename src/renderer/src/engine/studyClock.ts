@@ -2,6 +2,7 @@
 // materials or exam prep (and did something in the window within the last few minutes), runs breaks,
 // and tells the tutor when one is due. One log for all courses: study-time.json in the data folder.
 import {
+  onPlatform,
   accrue,
   backFromBreakNote,
   breakNote,
@@ -49,6 +50,8 @@ export class StudyClock {
   /** the break the learner is looking at (opened from the top bar or a tutor card), before it starts */
   readonly offer: Store<BreakOffer | null> = createStore<BreakOffer | null>(null)
   private lastInput = 0
+  /** the last focus or input in the platform window (Code Expert, GitLab…) */
+  private lastPlatform: number | null = null
   private lastTick = 0
   private timer: ReturnType<typeof setInterval> | null = null
   private saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -100,6 +103,10 @@ export class StudyClock {
       },
       { passive: true }
     )
+    this.app.backend.onPlatformActivity?.(() => {
+      this.lastPlatform = Date.now()
+      mark()
+    })
     this.lastInput = Date.now()
     this.lastTick = Date.now()
     this.timer = setInterval(() => this.onTick(), TICK_MS)
@@ -113,7 +120,8 @@ export class StudyClock {
   private context(): StudyContext | null {
     const app = this.app
     const route = app.ui.get().route.name
-    if (!STUDY_ROUTES.has(route)) return null
+    // working on a problem set in the platform window counts for the open course, wherever the main window is
+    if (!STUDY_ROUTES.has(route)) return onPlatform(this.lastPlatform, Date.now()) ? { courseId: app.courseId, session: null } : null
     const sc = app.session.get()
     if ((route === 'session' || route === 'chat') && sc) {
       const s = sc.s
@@ -137,7 +145,7 @@ export class StudyClock {
     const dt = Math.min(t - this.lastTick, TICK_MS * 2)
     this.lastTick = t
     if (!this.loaded) return
-    const visible = typeof document === 'undefined' || document.visibilityState === 'visible'
+    const visible = typeof document === 'undefined' || document.visibilityState === 'visible' || onPlatform(this.lastPlatform, t)
     const clock = this.log.get().clock
     const auto = this.context()
     // a started timer counts for the open course wherever you are in the app

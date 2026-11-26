@@ -49,6 +49,10 @@ const api = {
   platformStatus: () => ipcRenderer.invoke('platform:status'),
   capturePage: () => ipcRenderer.invoke('platform:capture'),
   signOutPlatforms: () => ipcRenderer.invoke('platform:sign-out'),
+  onPlatformActivity(fn: () => void) {
+    ipcRenderer.removeAllListeners('platform:activity')
+    ipcRenderer.on('platform:activity', () => fn())
+  },
   codeExpert: (op: unknown) => ipcRenderer.invoke('codeexpert:run', op),
   gitlab: (op: unknown) => ipcRenderer.invoke('gitlab:run', op),
   info: () => ipcRenderer.invoke('app:info'),

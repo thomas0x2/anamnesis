@@ -874,6 +874,8 @@ export interface Backend {
   transcribeCloud?(req: CloudSttRequest): Promise<{ ok: true; text: string; model: string } | { ok: false; error: string }>
   /** Electron only: run `fn` (save everything) before the window closes. */
   onBeforeQuit?(fn: () => Promise<void>): void
+  /** Electron only: `fn` runs when the learner works in the platform window (focus or input, at most every few seconds). */
+  onPlatformActivity?(fn: () => void): void
 }
 
 export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? (T[K] extends unknown[] ? T[K] : DeepPartial<T[K]>) : T[K] }

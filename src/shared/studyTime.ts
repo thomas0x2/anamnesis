@@ -214,6 +214,15 @@ export function countsNow(mode: TimerMode, x: { studyScreen: boolean; visible: b
   return x.studyScreen && x.visible && x.idleMs < IDLE_MS
 }
 
+/**
+ * Working in the app's platform window (Code Expert, GitLab…) counts as study for the open course: the window
+ * reports focus and input, and the time counts while that was within IDLE_MS, even though the main window
+ * gets no input and may be covered.
+ */
+export function onPlatform(lastPlatformMs: number | null, nowMs: number): boolean {
+  return lastPlatformMs !== null && nowMs - lastPlatformMs >= 0 && nowMs - lastPlatformMs < IDLE_MS
+}
+
 /** Start, pause or go back to automatic counting. */
 export function setTimerMode(log: StudyLog, mode: TimerMode): StudyLog {
   return log.clock.mode === mode ? log : { ...log, clock: { ...log.clock, mode } }

@@ -9,20 +9,6 @@ import { CAPTURE_SCRIPT, mergeCaptures, type PageCapture, type PlatformStatus } 
 
 const PARTITION = 'persist:platforms'
 let win: BrowserWindow | null = null
-let onActivity: (() => void) | null = null
-let lastActivity = 0
-
-/** Tell the app when the learner works in the platform window (focus, typing, clicks), so that time counts as study. */
-export function setPlatformActivity(fn: (() => void) | null): void {
-  onActivity = fn
-}
-
-function activity(): void {
-  const t = Date.now()
-  if (t - lastActivity < 5000) return
-  lastActivity = t
-  onActivity?.()
-}
 let configured = false
 
 const isWeb = (url: string): boolean => /^https?:\/\//i.test(url)
@@ -60,9 +46,6 @@ export function openPlatform(url: string, parent: BrowserWindow | null): boolean
     win.on('closed', () => {
       win = null
     })
-    // input and focus only signal that the learner is there; nothing about the page is passed on
-    win.on('focus', activity)
-    win.webContents.on('before-input-event', activity)
     if (parent && !parent.isDestroyed()) {
       const [x, y] = parent.getPosition()
       win.setPosition(x + 60, y + 40)

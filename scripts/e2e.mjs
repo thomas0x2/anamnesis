@@ -568,6 +568,11 @@ async function flow(page) {
   await welcome.locator('.check-item input').first().check()
   await welcome.getByRole('button', { name: 'Start learning' }).click()
   await welcome.waitFor({ state: 'detached' })
+  // study time counts only once the timer is started
+  await page.locator('.study-timer.paused').waitFor()
+  await page.getByRole('button', { name: 'Start the study timer' }).click()
+  await page.locator('.study-timer.running').waitFor()
+  step('the study timer starts paused and counts once started')
 
   if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-today.png`) })
   // the exam allows a cheat sheet: the tutor gets suggest_cheatsheet and proposes entries while teaching
@@ -662,9 +667,7 @@ async function flow(page) {
   if (!(await page.locator('.study-sessions .session-row').count())) throw new Error('study time: no tutor session was timed')
   if (shotsDir) await page.locator('[aria-label="Study time"]').screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-study-time.png`) })
   step('Stats: study time per day and per tutor session')
-  // the timer in the top bar: Start counts everywhere, Pause stops counting, until Start again
-  await page.getByRole('button', { name: 'Start the study timer' }).click()
-  await page.locator('.study-timer.running').waitFor()
+  // the timer in the top bar: Pause stops counting, until Start again
   await page.getByRole('button', { name: 'Pause the study timer' }).click()
   await page.locator('.study-timer.paused').waitFor()
   await page.getByRole('button', { name: /Study time today .*paused/ }).waitFor()

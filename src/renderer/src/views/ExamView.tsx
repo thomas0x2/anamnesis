@@ -3,6 +3,7 @@
 // solution updates the mind model like answered practice items do. Problem sets without a PDF (coding
 // tasks on Code Expert or GitLab, quizzes on Moodle) are added here as online tasks: they can be marked
 // done, have a result logged (tests passed, points), or have the code itself checked.
+import { guessCourse, type CeCourse } from '@shared/codeExpert'
 import { captureCode, findScore, guessPlatform, testLines, type PageCapture } from '@shared/platform'
 import { cleanUrl, HELP_LABEL, MAX_WORK_FILE_BYTES, onlineTask, PLATFORMS, prepProgress, solutionFor, WORK_EXTENSIONS, workItems, workState, type WorkState } from '@shared/exam'
 import type { Material, OnlineTask, Submission, WorkHelp, WorkTask } from '@shared/types'
@@ -59,6 +60,8 @@ export function ExamView({ materialId }: { materialId?: string }): ReactElement 
       </div>
 
       <GoalsPanel />
+
+      <CodeExpertPanel />
 
       <PlatformBar />
 
@@ -221,6 +224,9 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
   const sol = online ? null : solutionFor(m, materials)
   const graded = ws.submissions.find((s) => s.status === 'graded')
   const checked = ws.submissions.find((s) => s.status === 'graded' && s.source !== 'reported')
+  const ce = online?.codeExpert ?? null
+  const ceSubmitted = !!ce?.tasks.some((t) => t.projectId)
+  const [fetching, setFetching] = useState(false)
   return (
     <div className={`work-row ${open ? 'open' : ''}`}>
       <div className="work-head">
@@ -258,9 +264,26 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           <button className="btn sm ghost" onClick={() => setReporting(true)} title="Log a result without uploading anything: tests passed, points on the platform">
             <Icon name="list" size={14} /> Log result
           </button>
-          <button className={`btn sm ${graded ? '' : 'primary'}`} disabled={ws.status === 'grading'} onClick={() => setSubmitting(true)} title={online ? 'Upload or paste your code or answers to have them checked' : undefined}>
-            <Icon name="check" size={14} /> {checked ? 'Check again' : online ? 'Check my work' : 'Check my solution'}
-          </button>
+          {ce ? (
+            <button
+              className={`btn sm ${checked ? '' : 'primary'}`}
+              disabled={ws.status === 'grading' || fetching || !ceSubmitted}
+              title={ceSubmitted ? 'Fetch the code you submitted on Code Expert for every task of this series and have it checked' : 'Submit on Code Expert first, then sync'}
+              onClick={() => {
+                setFetching(true)
+                void app.checkSeriesCode(m.id).then((id) => {
+                  setFetching(false)
+                  if (id && !open) onToggle()
+                })
+              }}
+            >
+              <Icon name="check" size={14} /> {fetching ? 'Fetching code…' : checked ? 'Check code again' : 'Check my code'}
+            </button>
+          ) : (
+            <button className={`btn sm ${graded ? '' : 'primary'}`} disabled={ws.status === 'grading'} onClick={() => setSubmitting(true)} title={online ? 'Upload or paste your code or answers to have them checked' : undefined}>
+              <Icon name="check" size={14} /> {checked ? 'Check again' : online ? 'Check my work' : 'Check my solution'}
+            </button>
+          )}
         </div>
       </div>
       {open && (
@@ -268,7 +291,9 @@ function WorkRow({ m, open, onToggle }: { m: Material; open: boolean; onToggle: 
           {online && <OnlineInfo t={online} onEdit={() => setEditing(true)} onImport={() => setImporting(true)} />}
           {ws.submissions.length === 0 ? (
             <div className="small muted" style={{ padding: '6px 0 4px' }}>
-              {online
+              {ce
+                ? 'Synced from Code Expert. Submit there; the next sync logs your points, and “Check my code” has the tutor go through what you submitted, task by task.'
+                : online
                 ? `Work on it on ${online.platform || 'the platform'}. Then log your result (e.g. tests passed or points), or upload or paste your code to have each task checked. Either updates ${online.conceptIds.length ? 'the concepts it practises' : 'your mind model'}; a checked solution counts more than a logged result.`
                 : m.kind === 'exam'
                 ? 'Write it timed and without notes, then upload a scan or photos of your answers. Each task is graded and the concepts it tests are updated in your mind model.'
@@ -621,12 +646,14 @@ function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void
         <span className="tiny muted" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t.platform || 'Online'}
           {t.url ? ` · ${t.url.replace(/^https?:\/\//, '')}` : ''}
-          {t.statement ? ' · statement pasted' : ''}
+          {t.codeExpert ? (t.codeExpert.due ? ` · due ${new Date(t.codeExpert.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '') : t.statement ? ' · statement pasted' : ''}
         </span>
         <span className="row" style={{ gap: 6 }}>
-          <button className="btn sm ghost" onClick={onImport} title="Read the task, your code and the test results from the page open in the platform window">
-            <Icon name="copy" size={13} /> Import from page
-          </button>
+          {!t.codeExpert && (
+            <button className="btn sm ghost" onClick={onImport} title="Read the task, your code and the test results from the page open in the platform window">
+              <Icon name="copy" size={13} /> Import from page
+            </button>
+          )}
           <button className="btn sm ghost" onClick={onEdit}>
             <Icon name="edit" size={13} /> Edit
           </button>
@@ -641,6 +668,18 @@ function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void
           )}
         </span>
       </div>
+      {t.codeExpert && (
+        <div className="ce-tasks" aria-label="Tasks on Code Expert">
+          {t.codeExpert.tasks.map((x) => (
+            <span key={x.id} className="ce-task" title={x.feedback ? `TA: ${x.feedback}` : undefined}>
+              <span>{x.name}</span>
+              <span className={`tiny ${x.result === null ? 'muted' : x.result >= 0.85 ? 'good' : x.result >= 0.3 ? 'warn' : 'bad'}`}>
+                {x.result !== null ? `${Math.round(x.result * x.maxPoints * 100) / 100}/${x.maxPoints}` : x.submitted ? 'submitted' : `– /${x.maxPoints}`}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
         {t.conceptIds.length ? (
           t.conceptIds.map((id) => (
@@ -903,6 +942,100 @@ function ReportDialog({ m, online, sub, onClose, onSent }: { m: Material; online
 const PLATFORM_LINKS = ['https://expert.ethz.ch', 'https://gitlab.ethz.ch', 'https://github.com', 'https://moodle-app2.let.ethz.ch']
 
 /** Open a platform (Code Expert, GitLab…) in the app's own window, where the learner signs in once. */
+/** Link the course to Code Expert once; every series then comes in as a problem set with the points earned there. */
+function CodeExpertPanel(): ReactElement {
+  const app = useApp()
+  const prep = useStore(app.exam)
+  const { course } = useStore(app.courseView)
+  const now = useNow()
+  const link = prep.codeExpert ?? null
+  const [courses, setCourses] = useState<CeCourse[] | null>(null)
+  const [pick, setPick] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const connect = async (): Promise<void> => {
+    setBusy('Asking Code Expert…')
+    setNote(null)
+    const r = await app.codeExpertCourses()
+    setBusy(null)
+    if (!r.signedIn) return setNote('Sign in to Code Expert in the window that opened (ETH login), then press Connect again.')
+    if (r.error) return setNote(`Code Expert did not answer: ${r.error}`)
+    if (!r.courses.length) return setNote('No courses found on Code Expert for this account.')
+    setCourses(r.courses)
+    const g = guessCourse(r.courses, `${course.title} ${course.short}`)
+    setPick(g ? `${g.id}/${g.semester}` : '')
+  }
+  const chosen = courses?.find((c) => `${c.id}/${c.semester}` === pick) ?? null
+  return (
+    <div className="platform-bar ce-panel">
+      <div className="small" style={{ minWidth: 0 }}>
+        <span style={{ fontWeight: 550 }}>Code Expert</span>
+        {link ? (
+          <span className="muted">
+            {' '}· Linked to {link.name} ({link.semester}). Every series is a problem set here with your points on Code Expert · synced {relTime(link.syncedAt, now)}.
+          </span>
+        ) : (
+          <span className="muted"> · Link this course once and every series comes in by itself: statements, your points per task, what you submitted. No picking task by task.</span>
+        )}
+        {note && <div className="tiny warn-text" style={{ marginTop: 4 }}>{note}</div>}
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        {link ? (
+          <>
+            <button
+              className="btn sm primary"
+              disabled={!!busy}
+              onClick={() => {
+                setBusy('Syncing…')
+                setNote(null)
+                void app.syncCodeExpert().then((r) => {
+                  setBusy(null)
+                  if (r && !r.signedIn) setNote('Sign in to Code Expert in the window that opened, then sync again.')
+                })
+              }}
+            >
+              <Icon name="refresh" size={13} /> {busy ?? 'Sync now'}
+            </button>
+            <button className="btn sm ghost" disabled={!!busy} onClick={() => void app.linkCodeExpert(null)} title="Unlink (the synced problem sets and results stay)">
+              Unlink
+            </button>
+          </>
+        ) : courses ? (
+          <>
+            <select className="select" style={{ width: 240 }} value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Code Expert course">
+              <option value="">Pick the course…</option>
+              {courses.map((c) => (
+                <option key={`${c.id}/${c.semester}`} value={`${c.id}/${c.semester}`}>
+                  {c.name} ({c.semester})
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn sm primary"
+              disabled={!chosen || !!busy}
+              onClick={() => {
+                if (!chosen) return
+                setBusy('Syncing…')
+                void app.linkCodeExpert(chosen).then((r) => {
+                  setBusy(null)
+                  setCourses(null)
+                  if (r && !r.signedIn) setNote('Sign in to Code Expert in the window that opened, then sync again.')
+                })
+              }}
+            >
+              {busy ?? 'Link and sync'}
+            </button>
+          </>
+        ) : (
+          <button className="btn sm" disabled={!!busy} onClick={() => void connect()}>
+            <Icon name="external" size={13} /> {busy ?? 'Connect Code Expert'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PlatformBar(): ReactElement {
   const app = useApp()
   const [url, setUrl] = useState('')
@@ -912,8 +1045,8 @@ function PlatformBar(): ReactElement {
   return (
     <div className="platform-bar">
       <div className="small" style={{ minWidth: 0 }}>
-        <span style={{ fontWeight: 550 }}>Coding tasks online</span>
-        <span className="muted"> · Open Code Expert, GitLab or Moodle inside the app and sign in there as usual. Then “Import from page” on a task reads the statement, your code and the test results, and the tutor can read the page too.</span>
+        <span style={{ fontWeight: 550 }}>Other platforms</span>
+        <span className="muted"> · Open GitLab, Moodle or any page inside the app and sign in there as usual. Then “Import from page” on a task reads the statement, your code and the test results, and the tutor can read the page too.</span>
       </div>
       <form
         className="row"

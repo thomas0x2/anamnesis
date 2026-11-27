@@ -73,7 +73,7 @@ function ChatStart(): ReactElement {
 export function AgentStatus({ v }: { v: View }): ReactElement | null {
   const label = { off: 'Paused', starting: 'Starting', thinking: 'Thinking', writing: 'Writing', waiting: 'Your turn', idle: 'Your turn' }[v.agent]
   return (
-    <span className={`agent-status ${v.agent}`} title={v.agent === 'off' ? 'The tutor resumes when you write' : undefined}>
+    <span className={`agent-status is-${v.agent}`} title={v.agent === 'off' ? 'The tutor resumes when you write' : undefined}>
       <span className="dot" />
       {label}
     </span>

@@ -8,8 +8,9 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MCP_SERVER, toolShortName, type AgentEvent, type AgentStartRequest, type AgentToolResult } from '../shared/agentTypes'
 import type { LlmErrorKind } from '../shared/types'
-import { applyAuth, authProblem, buildEnv, resolveClaudePath, type CliConfig } from './claudeCli'
+import { applyAuth, authProblem, buildEnv, quietEnv, resolveClaudePath, type CliConfig } from './claudeCli'
 import { McpBridge, type McpEndpoint } from './mcpBridge'
+import { claudeUsage } from './timing'
 
 interface Pending {
   resolve: (r: AgentToolResult) => void
@@ -23,6 +24,11 @@ interface Running {
   busy: boolean
   queue: string[]
   stopped: boolean
+  /** timing of the current model round trip: when the model got its last input (a message or a tool result) */
+  inputAt: number
+  firstAt: number | null
+  tools: string[]
+  usage: Record<string, unknown>
 }
 
 function classify(text: string): LlmErrorKind {
@@ -101,7 +107,7 @@ export class AgentHost {
       })
     })
 
-    const env = applyAuth(await buildEnv(bin), cfg)
+    const env = quietEnv(applyAuth(await buildEnv(bin), cfg))
     // a learner can take a long time to answer: tool calls must not time out on the CLI side
     env.MCP_TOOL_TIMEOUT = String(24 * 3600 * 1000)
     env.MCP_TIMEOUT = '30000'
@@ -111,18 +117,16 @@ export class AgentHost {
     env.CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS = '0'
     env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
     env.CLAUDE_CODE_DISABLE_MCP_TASKS = '1'
-    env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1'
-    // the app keeps the learner model; no Claude Code memory in the tutor
-    env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
-    env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+    // the app keeps the learner model; no Claude Code memory or CLAUDE.md files in the tutor (quietEnv)
     const child = spawn(bin, agentArgs(req, cfg, sysFile, endpoint), { cwd: cfg.workDir, env, stdio: ['pipe', 'pipe', 'pipe'] })
-    const run: Running = { child, endpoint, pending, sysFile, busy: false, queue: [], stopped: false }
+    const run: Running = { child, endpoint, pending, sysFile, busy: false, queue: [], stopped: false, inputAt: 0, firstAt: null, tools: [], usage: {} }
     this.agents.set(chatId, run)
     emit({ chatId, type: 'status', status: 'starting' })
 
     let buf = ''
     let stderr = ''
     let block = 0
+    let lastModel: string | null = null
     const blocks = new Map<number, { kind: 'text' | 'tool' | 'other'; id: string; name?: string; json: string }>()
 
     const handle = (line: string): void => {
@@ -133,11 +137,32 @@ export class AgentHost {
         return
       }
       if (msg.type === 'system' && msg.subtype === 'init') {
+        if (typeof msg.model === 'string') lastModel = msg.model
         emit({ chatId, type: 'status', status: 'ready', model: typeof msg.model === 'string' ? msg.model : null })
       } else if (msg.type === 'stream_event') {
         const ev = msg.event as Record<string, unknown>
+        if (run.firstAt === null && ev?.type === 'content_block_start') run.firstAt = Date.now()
         const index = Number(ev?.index ?? 0)
-        if (ev?.type === 'message_start') blocks.clear()
+        if (ev?.type === 'message_start') {
+          blocks.clear()
+          run.firstAt = null
+          run.tools = []
+          run.usage = { ...((ev.message as { usage?: Record<string, unknown> })?.usage ?? {}) }
+        } else if (ev?.type === 'message_delta') {
+          Object.assign(run.usage, (ev.usage as Record<string, unknown>) ?? {})
+        } else if (ev?.type === 'message_stop') {
+          cfg.timing?.({
+            type: 'agent',
+            provider: 'claude',
+            model: lastModel,
+            chatId,
+            firstMs: run.firstAt === null ? null : run.firstAt - run.inputAt,
+            totalMs: Date.now() - run.inputAt,
+            ...claudeUsage(run.usage),
+            tools: run.tools,
+            ok: true
+          })
+        }
         else if (ev?.type === 'content_block_start') {
           const cb = ev.content_block as Record<string, unknown>
           if (cb?.type === 'text') {
@@ -145,6 +170,7 @@ export class AgentHost {
             emit({ chatId, type: 'status', status: 'writing' })
           } else if (cb?.type === 'tool_use') {
             const name = toolShortName(String(cb.name ?? ''))
+            run.tools.push(name)
             blocks.set(index, { kind: 'tool', id: String(cb.id ?? `t${++block}`), name, json: '' })
             emit({ chatId, type: 'tool_input', toolUseId: String(cb.id), name, json: '', done: false })
           } else {
@@ -225,6 +251,7 @@ export class AgentHost {
 
   private write(run: Running, text: string): void {
     run.busy = true
+    run.inputAt = Date.now()
     const msg = { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } }
     run.child.stdin.write(JSON.stringify(msg) + '\n', 'utf8')
   }
@@ -243,6 +270,8 @@ export class AgentHost {
     const entry = p?.get(callId)
     if (!entry) return false
     p!.delete(callId)
+    // the model's next round trip starts once the last pending call is answered
+    if (!p!.size) this.agents.get(chatId)!.inputAt = Date.now()
     entry.resolve(result)
     return true
   }

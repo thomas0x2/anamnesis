@@ -7,6 +7,7 @@ import { geminiThinking } from '../shared/models'
 import type { AgentEvent, AgentStartRequest, AgentToolResult } from '../shared/agentTypes'
 import type { Effort, LlmErrorKind } from '../shared/types'
 import { chunkParts, GEMINI_BASE, geminiError, geminiSchema, NO_KEY, sseJson, type GeminiContent, type GeminiPart } from './gemini'
+import { geminiUsage, type TimingLog } from './timing'
 
 export interface GeminiAgentConfig {
   apiKey: string | null
@@ -16,6 +17,8 @@ export interface GeminiAgentConfig {
   historyDir: string
   fetch?: typeof fetch
   base?: string
+  /** records how long each model call took (no content) */
+  timing?: TimingLog
 }
 
 interface Run {
@@ -213,6 +216,21 @@ export class GeminiAgentHost {
     const ctl = new AbortController()
     run.ctl = ctl
     run.emit({ chatId, type: 'status', status: 'thinking' })
+    const t0 = Date.now()
+    let firstAt: number | null = null
+    let usage: Record<string, number> | null = null
+    const log = (ok: boolean, parts: GeminiPart[] = []): void =>
+      run.cfg.timing?.({
+        type: 'agent',
+        provider: 'gemini',
+        model: run.cfg.model,
+        chatId,
+        firstMs: firstAt === null ? null : firstAt - t0,
+        totalMs: Date.now() - t0,
+        ...geminiUsage(usage),
+        tools: parts.filter((p) => p.functionCall).map((p) => p.functionCall!.name),
+        ok
+      })
     try {
       const f = run.cfg.fetch ?? fetch
       const res = await f(`${run.cfg.base ?? GEMINI_BASE}/models/${encodeURIComponent(run.cfg.model)}:streamGenerateContent?alt=sse`, {
@@ -223,6 +241,7 @@ export class GeminiAgentHost {
       })
       if (!res.ok) {
         const e = geminiError(res.status, await res.text().catch(() => ''))
+        log(false)
         return { error: e.message, kind: e.kind }
       }
       const parts: GeminiPart[] = []
@@ -232,6 +251,8 @@ export class GeminiAgentHost {
       for await (const ev of sseJson(res.body)) {
         const c = chunkParts(ev)
         if (c.blocked) blocked = c.blocked
+        if (c.usage) usage = c.usage
+        if (firstAt === null && c.parts.length) firstAt = Date.now()
         for (const p of c.parts) {
           parts.push(p)
           if (typeof p.text === 'string' && p.text && !p.thought && !p.functionCall) {
@@ -243,10 +264,12 @@ export class GeminiAgentHost {
           }
         }
       }
+      log(!blocked, parts)
       if (blocked) return { error: `Gemini blocked the request (${blocked}).`, kind: 'invalid' }
       return { parts: mergeParts(parts) }
     } catch (e) {
       if (ctl.signal.aborted) return { error: 'Stopped', kind: 'cancelled' }
+      log(false)
       return { error: `Could not reach Gemini: ${String((e as Error)?.message ?? e)}`, kind: 'other' }
     } finally {
       run.ctl = null

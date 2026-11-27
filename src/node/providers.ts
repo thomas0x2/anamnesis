@@ -10,12 +10,15 @@ import { cancelClaude, runClaude, testClaude, type CliConfig } from './claudeCli
 import { cancelGemini, listGeminiModels, runGemini, testGemini, transcribeGemini, type GeminiConfig } from './gemini'
 import type { CloudSttRequest } from '../shared/stt'
 import { GeminiAgentHost } from './geminiAgent'
+import { timingLog, type TimingLog } from './timing'
 
 export interface ProviderDeps {
   dataDir: () => string
   /** the saved key of a provider, decrypted (null when none) */
   key: (p: KeyProvider) => string | null
   fetch?: typeof fetch
+  /** where model call timings go (default: <data>/logs/model-timing.jsonl) */
+  timing?: TimingLog
 }
 
 type Host = AgentHost | GeminiAgentHost
@@ -24,8 +27,11 @@ export class Providers {
   readonly claudeAgents = new AgentHost()
   readonly geminiAgents = new GeminiAgentHost()
   private hostOf = new Map<string, Host>()
+  private readonly timing: TimingLog
 
-  constructor(private readonly deps: ProviderDeps) {}
+  constructor(private readonly deps: ProviderDeps) {
+    this.timing = deps.timing ?? timingLog(deps.dataDir)
+  }
 
   cliConfig(s: Settings, route?: Route): CliConfig {
     const auth = s.cli.auth === 'api-key' ? 'api-key' : 'subscription'
@@ -37,7 +43,8 @@ export class Providers {
       effort: route?.effort ?? 'medium',
       auth,
       apiKey: auth === 'api-key' ? this.deps.key('anthropic') : null,
-      workDir: join(this.deps.dataDir(), 'claude-workdir')
+      workDir: join(this.deps.dataDir(), 'claude-workdir'),
+      timing: this.timing
     }
   }
 
@@ -49,7 +56,15 @@ export class Providers {
   async generate(req: LlmRequest, s: Settings, onEvent: (e: LlmEvent) => void): Promise<LlmResult & { route: Route }> {
     const route = routeFor(req.kind, s, req.effort)
     const r = { ...req, model: route.model || null, effort: route.effort }
-    const out = route.provider === 'gemini' ? await runGemini(r, this.geminiConfig(s, route), onEvent) : await runClaude(r, this.cliConfig(s, route), onEvent)
+    const started = Date.now()
+    let firstAt: number | null = null
+    const watch = (e: LlmEvent): void => {
+      if (firstAt === null && (e.type === 'partial' || e.type === 'thinking' || (e.type === 'status' && e.status === 'writing'))) firstAt = Date.now()
+      onEvent(e)
+    }
+    const out = route.provider === 'gemini' ? await runGemini(r, this.geminiConfig(s, route), watch) : await runClaude(r, this.cliConfig(s, route), watch)
+    if (req.kind !== 'test')
+      this.timing({ type: 'call', provider: route.provider, model: out.model ?? (route.model || null), kind: req.kind, firstMs: firstAt === null ? null : firstAt - started, totalMs: Date.now() - started, ok: out.ok })
     return { ...out, route }
   }
 
@@ -85,7 +100,7 @@ export class Providers {
     const r = { ...req, model: route.model || undefined, effort: route.effort ?? undefined }
     if (route.provider === 'gemini') {
       this.hostOf.set(req.chatId, this.geminiAgents)
-      return this.geminiAgents.start(r, { apiKey: this.deps.key('google'), model: route.model, effort: route.effort, historyDir: this.historyDir, fetch: this.deps.fetch }, emit)
+      return this.geminiAgents.start(r, { apiKey: this.deps.key('google'), model: route.model, effort: route.effort, historyDir: this.historyDir, fetch: this.deps.fetch, timing: this.timing }, emit)
     }
     // a chat that ran on Gemini has no Claude Code session to resume: start a fresh one with the same id
     const fromGemini = !!req.resume && existsSync(join(this.historyDir, `${req.resume.replace(/[^\w-]/g, '_').slice(0, 80)}.json`))

@@ -9,6 +9,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { parsePartialJson } from '../shared/partialJson'
+import type { TimingLog } from './timing'
 import type { ClaudeAuth, Effort, LlmErrorKind, LlmEvent, LlmRequest, LlmResult, LlmTestResult } from '../shared/types'
 
 export interface CliConfig {
@@ -23,6 +24,21 @@ export interface CliConfig {
   auth?: ClaudeAuth
   /** the learner's Anthropic API key, decrypted in the main process just for this call */
   apiKey?: string | null
+  /** records how long each model call took (no content) */
+  timing?: TimingLog
+}
+
+/**
+ * Environment for a tutor-side CLI run: none of Claude Code's own extras (auto memory, CLAUDE.md files,
+ * update checks and telemetry), which the app does not use and which only slow each start.
+ */
+export function quietEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
+  }
 }
 
 /** Why a call cannot start with this configuration (an API key was chosen but none is saved). */
@@ -179,7 +195,7 @@ export async function runClaude(req: LlmRequest, cfg: CliConfig, onEvent: (e: Ll
   await mkdir(join(cfg.workDir, 'prompts'), { recursive: true })
   const sysFile = join(cfg.workDir, 'prompts', `${req.id.replace(/[^\w-]/g, '_')}.txt`)
   await writeFile(sysFile, req.system, 'utf8')
-  const env = applyAuth(await buildEnv(bin), cfg)
+  const env = quietEnv(applyAuth(await buildEnv(bin), cfg))
 
   return new Promise<LlmResult>((resolve) => {
     const child = spawn(bin, cliArgs(req, cfg, sysFile), { cwd: cfg.workDir, env, stdio: ['pipe', 'pipe', 'pipe'] })

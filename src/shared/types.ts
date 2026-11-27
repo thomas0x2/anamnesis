@@ -201,8 +201,10 @@ export interface OnlineTask {
   /** where it is: "Code Expert", "GitLab", … */
   platform: string
   url: string | null
-  /** the concepts it practises, picked by the learner (a logged result updates these) */
+  /** the concepts it practises, picked by the AI from its statement or by the learner (a logged result updates these) */
   conceptIds: string[]
+  /** who picked conceptIds; absent on older tasks (see needsTopics in taskMap.ts) */
+  topics?: TaskTopics
   /** the task statement, pasted by the learner: the check of a solution grades against it */
   statement: string | null
   addedAt: string
@@ -212,6 +214,16 @@ export interface OnlineTask {
   gitlab?: GitLabExercise
   /** a Jupyter notebook found in the course folder: the learner fills it in where it is */
   notebook?: NotebookFile
+}
+
+export interface TaskTopics {
+  /** ai: mapped from the statement against the course map; learner: picked in Edit (never overwritten); guess: names found in the statement */
+  by: 'ai' | 'learner' | 'guess'
+  at: string
+  /** how many concepts the map had then: a grown map maps the task again */
+  mapSize: number
+  /** fingerprint of the title and statement then: a changed statement maps the task again */
+  key: string
 }
 
 export interface NotebookFile {

@@ -33,9 +33,12 @@ export function App(): ReactElement {
     if (main.current) main.current.scrollTop = 0
   }, [route.name])
 
-  // new PDFs in the course folder are picked up when the window comes to the front
+  // new PDFs in the course folders are picked up when the window comes to the front (the other courses' in the background)
   useEffect(() => {
-    const onFocus = (): void => void app.scanFolder()
+    const onFocus = (): void => {
+      void app.scanFolder()
+      app.background.kick()
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [app])

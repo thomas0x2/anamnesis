@@ -2,11 +2,10 @@
 // rewards, routing and the active session. Each course keeps its own learner model; the learner's
 // profile (how they like to learn) is shared by all courses.
 import numcsJson from '@courses/numcs/course.json'
-import { applyMapDelta, buildCourse, buildMapPrompt, chunkPages, emptyExtension, fakeMapOutput, mapSchema, MAP_SYSTEM, markParts, metaToCourse, newMaterial, nextOffset, normalizeMapOutput, partsDone, removeMaterial, slug } from '@shared/courseMap'
-import { generateWithRetry } from '@shared/retry'
+import { buildCourse, emptyExtension, metaToCourse, newMaterial, removeMaterial, slug } from '@shared/courseMap'
 import type { CourseSnapshot } from '@shared/scheduler'
 import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
-import { isSolutionNotebook, notebookForCheck, notebookKind, notebookText, notebookTitle, parseNotebook } from '@shared/notebook'
+import { notebookForCheck, notebookText, parseNotebook } from '@shared/notebook'
 import { glCode, GL_NOTE, normalizeExercises, normalizeResolved, parseGitLabUrl, planGitLab } from '@shared/gitlab'
 import { guessConcepts, normalizeCourses, normalizeSync, planSync, seriesCode, SYNC_NOTE, type CeCourse, type CeFile } from '@shared/codeExpert'
 import { applyWork, buildWorkPrompt, editReported, emptyPrep, fakeWorkOutput, newOnlineTask, normalizeOnline, normalizePrep, normalizeWork, onlineMaterial, onlineTask, practisedConcepts, reportedSubmission, solutionFor, WORK_SYSTEM, workFilePath, workSchema, type ReportInput } from '@shared/exam'
@@ -47,6 +46,9 @@ import { nowIso, truncate, uid } from '@shared/util'
 import type { AgentMode } from '@shared/agentTools'
 import { ChatController, chatSession, newChatRecord, type ChatIndexEntry, type ChatRecord } from './chat'
 import { MaterialLibrary } from './script'
+import { BackgroundWork } from './background'
+import { learnerTopics } from '@shared/taskMap'
+import { mapTasks, notebookTasks, runQueue, withNotebooks, type CourseHost, type MaterialJob } from '@shared/courseWork'
 import { SessionController } from './session'
 import { createStore, type Store } from './store'
 import { StudyClock } from './studyClock'
@@ -161,12 +163,7 @@ export interface WorkInput {
   minutes: number | null
 }
 
-export interface MaterialJob {
-  materialId: string
-  phase: 'indexing' | 'mapping'
-  progress: number
-  label: string
-}
+export type { MaterialJob } from '@shared/courseWork'
 
 const stateName = (courseId: string): string => (courseId === 'numcs' ? 'state' : `courses/${courseId}/state`)
 const chatsName = (courseId: string): string => (courseId === 'numcs' ? 'chats-index' : `courses/${courseId}/chats-index`)
@@ -209,11 +206,20 @@ export class AppController {
   /** bumps when the watched folder or its settings change */
   readonly folderVersion: Store<number> = createStore(0)
   private savedProfile = ''
+  /** the open course as the build code sees it */
+  private host: CourseHost
+  private tasksMapping = false
+  private tasksAgain = false
+  private taskMapFailedAt = 0
+  /** builds and folder checks of the courses that are not open */
+  readonly background: BackgroundWork
 
   constructor(readonly backend: Backend) {
     this.base = BUILTIN_COURSES[0]
     this.courseView = createStore({ course: this.base, graph: new CourseGraph(this.base) })
     this.script = new MaterialLibrary(backend, this.base.id, true)
+    this.host = this.makeHost(this.base.id)
+    this.background = new BackgroundWork(this)
   }
 
   get course(): Course {
@@ -256,6 +262,7 @@ export class AppController {
     let id = this.settings.get().activeCourse || 'numcs'
     if (!this.courses.get().some((c) => c.id === id)) id = 'numcs'
     await this.openCourse(id)
+    this.background.start()
   }
 
   private refreshCourseList(): void {
@@ -263,6 +270,22 @@ export class AppController {
       ...BUILTIN_COURSES.map((c) => ({ id: c.id, title: c.title, short: c.short, term: c.term, builtin: true })),
       ...this.metas.map((m) => ({ id: m.id, title: m.title, short: m.short || m.title, term: m.term, builtin: false }))
     ])
+  }
+
+  courseIds(): string[] {
+    return this.courses.get().map((c) => c.id)
+  }
+
+  /** What the background needs to build a course that is not open: its base course and watched folder. */
+  async courseSource(id: string): Promise<{ base: Course; builtin: boolean; short: string; folder: { folder: string | null; autoAdd: boolean } } | null> {
+    const builtin = BUILTIN_COURSES.find((c) => c.id === id)
+    if (builtin) {
+      const folder = (await this.backend.readJson<{ folder: string | null; autoAdd: boolean }>(`courses/${id}/folder`).catch(() => null)) || { folder: null, autoAdd: true }
+      return { base: builtin, builtin: true, short: builtin.short || builtin.title, folder }
+    }
+    const meta = this.metas.find((m) => m.id === id)
+    if (!meta) return null
+    return { base: metaToCourse(meta), builtin: false, short: meta.short || meta.title, folder: { folder: meta.folder, autoAdd: meta.autoAdd } }
   }
 
   /** Load a course: its map, materials, learner model and chats, then resume its open session. */
@@ -307,6 +330,7 @@ export class AppController {
     this.pending.set([])
     this.job.set(null)
     this.script = new MaterialLibrary(this.backend, id, !!builtin)
+    this.host = this.makeHost(id)
     await this.script.load(items)
     if (builtin) await this.saveMaterials()
     this.ui.set((u) => ({ ...u, courseKey: id, scriptPeek: null }))
@@ -376,8 +400,12 @@ export class AppController {
     this.queueCancel = this.job.get()?.materialId ?? null
     if (this.mapRequest) void this.backend.cancel(this.mapRequest)
     await this.saveSettings({ activeCourse: id })
+    // the background lets the course go first, so only one side writes its files
+    await this.background.release(id)
     await this.openCourse(id)
     this.go(routeAfterSwitch(this.ui.get().route))
+    // the course just left goes on building in the background
+    this.background.kick()
   }
 
   async createCourse(input: Partial<CourseMeta> & { title: string }): Promise<string> {
@@ -551,132 +579,83 @@ export class AppController {
     void this.saveMaterials()
   }
 
-  /** Read and map queued materials, one at a time. */
+  /** Read and map queued materials, one at a time; then map the topics of online problem sets against the grown map. */
   private async processQueue(): Promise<void> {
     if (this.queueRunning) return
     this.queueRunning = true
-    const courseId = this.courseId
+    const host = this.host
     try {
-      for (;;) {
-        if (courseId !== this.courseId) break
-        const m = this.materials.get().find((x) => x.status === 'queued')
-        if (!m) break
-        this.queueCancel = null
-        await this.runMaterial(m).catch((e) => {
-          if (courseId !== this.courseId) return
-          if (this.queueCancel === m.id) this.patchMaterial(m.id, { status: 'skipped' })
-          else this.patchMaterial(m.id, { status: 'error', error: String((e as Error)?.message ?? e), retryable: !!(e as { retryable?: boolean })?.retryable })
-        })
-        if (courseId !== this.courseId) break
-        this.job.set(null)
-        await this.saveMaterials()
-      }
+      await runQueue(this.backend, host)
     } finally {
       this.queueRunning = false
-      if (courseId === this.courseId) this.job.set(null)
-      else void this.processQueue()
+      if (host.alive()) {
+        this.job.set(null)
+        void this.mapActiveTasks()
+      } else void this.processQueue()
     }
   }
 
-  private async runMaterial(m0: Material): Promise<void> {
-    const courseId = this.courseId
-    const alive = (): boolean => courseId === this.courseId && this.queueCancel !== m0.id
-    let m = m0
-    // 1. read the text (once)
-    let text = this.script.materialText(m.id)
-    if (!text || !m.numPages || m.offset === null) {
-      const offset = m.offset ?? nextOffset(this.materials.get().filter((x) => x.id !== m.id))
-      m = { ...m, offset, status: 'indexing', error: null }
-      this.patchMaterial(m.id, { offset, status: 'indexing', error: null })
-      this.job.set({ materialId: m.id, phase: 'indexing', progress: 0, label: `Reading ${m.title}` })
-      const r = await this.script.index(m, (f) => alive() && this.job.set({ materialId: m.id, phase: 'indexing', progress: f, label: `Reading ${m.title}` }))
-      if (courseId !== this.courseId) return
-      m = { ...m, numPages: r.numPages }
-      this.patchMaterial(m.id, { numPages: r.numPages })
-      text = { pages: r.pages, outline: r.outline }
-      await this.saveMaterials()
-      await this.script.load(this.materials.get())
-    }
-    if (!alive()) {
-      if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
+  /**
+   * Have the AI pick the topics of the open course's online problem sets that need it (new, changed, or mapped
+   * before the map grew). Waits for the material queue: a map that is still growing is mapped against once done.
+   */
+  private async mapActiveTasks(force = false): Promise<void> {
+    if (this.queueRunning) return
+    if (this.tasksMapping) {
+      // a task added or changed meanwhile is mapped right after
+      this.tasksAgain = true
       return
     }
-    // the built-in course's script is mapped already
-    if (BUILTIN_COURSES.some((c) => c.id === courseId) && m.id === 'script') {
-      this.patchMaterial(m.id, { status: 'skipped' })
-      return
-    }
-    // 2. extend the course map, chunk by chunk
-    const chunks = chunkPages(text.pages)
-    this.patchMaterial(m.id, { status: 'mapping', chunksTotal: chunks.length })
-    // the map file records which parts it holds; trust it over the materials list (they are written one after the other)
-    const start = Math.min(chunks.length, partsDone(this.ext, m))
-    const added = start > m.chunksDone ? [...new Set([...m.added, ...this.ext.concepts.filter((c) => c.material === m.id).map((c) => c.id)])] : [...m.added]
-    const linked = new Set(m.linked)
-    if (start > m.chunksDone) this.patchMaterial(m.id, { chunksDone: start, added })
-    for (let k = start; k < chunks.length; k++) {
-      if (!alive()) {
-        if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
-        return
+    if (!force && Date.now() - this.taskMapFailedAt < 10 * 60_000) return
+    const host = this.host
+    this.tasksMapping = true
+    try {
+      const n = await mapTasks(this.backend, host)
+      if (n === null) this.taskMapFailedAt = Date.now()
+      else if (n > 0 && host.alive()) this.toast({ kind: 'info', text: `Linked ${n} online problem set${n === 1 ? '' : 's'} to the topics ${n === 1 ? 'it practises' : 'they practise'}.` }, 6000)
+    } finally {
+      this.tasksMapping = false
+      if (this.tasksAgain && host.alive()) {
+        this.tasksAgain = false
+        void this.mapActiveTasks()
       }
-      const label = chunks.length > 1 ? `Mapping ${m.title} (part ${k + 1} of ${chunks.length})` : `Mapping ${m.title}`
-      this.job.set({ materialId: m.id, phase: 'mapping', progress: k / chunks.length, label })
-      const [a, b] = chunks[k]
-      const pages = text.pages.slice(a - 1, b).map((t, i) => ({ page: a + i, text: t })).filter((p) => p.text.trim())
-      if (pages.length) {
-        const cur = { ...m, numPages: text.pages.length }
-        const course = this.course
-        const prompt = buildMapPrompt({ course, material: cur, pages, chunk: k + 1, chunks: chunks.length, outline: k === 0 ? text.outline : [] })
-        const fake = fakeMapOutput(cur, pages, course)
-        const r = await generateWithRetry(
-          this.backend,
-          () => ({ id: uid('map_'), kind: 'map', system: MAP_SYSTEM, prompt, schema: mapSchema, effort: 'medium', timeoutSec: 900, meta: { fake } }),
-          {
-            alive: () => alive() && this.materials.get().some((x) => x.id === m.id),
-            online: () => typeof navigator === 'undefined' || navigator.onLine !== false,
-            onRequest: (id) => {
-              this.mapRequest = id
-              if (alive()) this.job.set({ materialId: m.id, phase: 'mapping', progress: k / chunks.length, label })
-            },
-            onWait: (w) => {
-              this.mapRequest = null
-              if (!alive()) return
-              const what = chunks.length > 1 ? `part ${k + 1} of ${m.title}` : m.title
-              const msg = w.offline
-                ? `Offline. Mapping ${what} goes on when the connection is back.`
-                : `${w.error.replace(/\.$/, '')}. Trying ${what} again in ${w.secondsLeft} s (attempt ${w.next} of ${w.of}).`
-              this.job.set({ materialId: m.id, phase: 'mapping', progress: k / chunks.length, label: msg })
-            }
-          }
-        )
-        this.mapRequest = null
-        if (courseId !== this.courseId) return
-        if (!alive() || !this.materials.get().some((x) => x.id === m.id)) {
-          if (courseId === this.courseId) this.patchMaterial(m.id, { status: 'skipped' })
-          return
-        }
-        if (!r.ok) {
-          const what = chunks.length > 1 ? `Part ${k + 1} of ${chunks.length} failed after ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}` : `Failed after ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}`
-          const kind = r.errorKind
-          throw Object.assign(new Error(`${what}: ${r.error ?? 'the mapping call failed.'}${k > 0 ? ` Parts 1 to ${k} are in the map; Retry continues from part ${k + 1}.` : ''}`), {
-            retryable: r.stalled || kind === undefined || kind === 'timeout' || kind === 'rate_limit' || kind === 'other'
-          })
-        }
-        const delta = normalizeMapOutput(r.data, this.course, cur, nowIso())
-        const out = applyMapDelta(this.ext, this.base, delta)
-        // the part is marked done in the same write that adds it, so a crash can never add it twice
-        this.ext = markParts(out.ext, m.id, k + 1)
-        await this.backend.writeJson(`courses/${courseId}/map`, this.ext)
-        this.rebuildCourse()
-        added.push(...out.added)
-        for (const id of out.linked) linked.add(id)
-      }
-      this.patchMaterial(m.id, { chunksDone: k + 1, added: [...new Set(added)], linked: [...linked] })
-      await this.saveMaterials()
     }
-    this.patchMaterial(m.id, { status: 'mapped', mappedAt: nowIso() })
-    const n = new Set(added).size
-    this.toast({ kind: 'info', text: `${m.title}: ${n ? `${n} new concept${n === 1 ? '' : 's'}` : 'no new concepts'}${linked.size ? `, ${linked.size} linked` : ''}.` }, 6000)
+  }
+
+  /** The open course as the build code sees it (see courseWork.ts). */
+  private makeHost(courseId: string): CourseHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const app = this
+    return {
+      courseId,
+      builtin: BUILTIN_COURSES.some((c) => c.id === courseId),
+      get script() {
+        return app.script
+      },
+      alive: () => courseId === app.courseId,
+      cancelled: (id) => app.queueCancel === id,
+      onStart: () => {
+        app.queueCancel = null
+      },
+      base: () => app.base,
+      ext: () => app.ext,
+      course: () => app.course,
+      setExt: async (ext) => {
+        app.ext = ext
+        await app.backend.writeJson(`courses/${courseId}/map`, ext)
+        app.rebuildCourse()
+      },
+      materials: () => app.materials.get(),
+      patchMaterial: (id, patch) => app.patchMaterial(id, patch),
+      saveMaterials: () => app.saveMaterials(),
+      prep: () => app.exam.get(),
+      updatePrep: (fn) => app.updatePrep(courseId, fn),
+      setJob: (job) => app.job.set(job),
+      setRequest: (id) => {
+        app.mapRequest = id
+      },
+      toast: (text) => app.toast({ kind: 'info', text }, 6000)
+    }
   }
 
   // ------------------------------------------------------------ exam preparation
@@ -688,7 +667,7 @@ export class AppController {
   private ceSyncing = false
   private glSyncing = false
 
-  private async updatePrep(courseId: string, fn: (p: ExamPrep) => ExamPrep): Promise<void> {
+  async updatePrep(courseId: string, fn: (p: ExamPrep) => ExamPrep): Promise<void> {
     if (courseId === this.courseId) {
       this.exam.set(fn(this.exam.get()))
       await this.saveExam()
@@ -795,14 +774,28 @@ export class AppController {
 
   /** Add a problem set or mock exam that has no PDF (a coding task on Code Expert or GitLab, a Moodle quiz…). */
   async addOnlineTask(input: Parameters<typeof newOnlineTask>[0]): Promise<string | null> {
-    const t = newOnlineTask(input, new Date())
-    if (!t) return null
+    const t0 = newOnlineTask(input, new Date())
+    if (!t0) return null
+    // topics picked here are the learner's; without any, the AI picks them from the statement
+    const t = t0.conceptIds.length ? { ...t0, topics: learnerTopics(t0, this.course.concepts.length, new Date()) } : t0
     await this.updatePrep(this.courseId, (p) => ({ ...p, online: [...p.online, t] }))
+    void this.mapActiveTasks(true)
     return t.id
   }
 
   async updateOnlineTask(id: string, patch: Partial<Omit<OnlineTask, 'id' | 'addedAt'>>): Promise<void> {
-    await this.updatePrep(this.courseId, (p) => ({ ...p, online: p.online.map((t) => (t.id === id ? normalizeOnline({ ...t, ...patch, id: t.id, addedAt: t.addedAt }) ?? t : t)) }))
+    const size = this.course.concepts.length
+    await this.updatePrep(this.courseId, (p) => ({
+      ...p,
+      online: p.online.map((t) => {
+        if (t.id !== id) return t
+        const next = normalizeOnline({ ...t, ...patch, id: t.id, addedAt: t.addedAt }) ?? t
+        // topics changed in Edit are the learner's from now on (the AI leaves them alone); clearing them hands them back
+        if (patch.conceptIds && patch.conceptIds.join() !== t.conceptIds.join()) return next.conceptIds.length ? { ...next, topics: learnerTopics(next, size, new Date()) } : { ...next, topics: undefined }
+        return next
+      })
+    }))
+    void this.mapActiveTasks(true)
   }
 
   /**
@@ -812,32 +805,18 @@ export class AppController {
    */
   private async syncNotebooks(files: FolderFile[]): Promise<void> {
     const courseId = this.courseId
-    const prep = this.exam.get()
-    const known = new Map(prep.online.filter((t) => t.notebook).map((t) => [t.notebook?.path ?? '', t]))
-    const added: OnlineTask[] = []
-    const changed = new Map<string, number>()
-    for (const f of files) {
-      const t = known.get(f.path)
-      if (t) {
-        if (t.notebook && t.notebook.mtimeMs !== f.mtimeMs) changed.set(t.id, f.mtimeMs)
-        continue
-      }
-      if (this.ignored.includes(f.path) || isSolutionNotebook(f.name) || added.length >= 40) continue
-      const cells = parseNotebook((await this.backend.readNotebook(f.path).catch(() => null)) ?? '')
-      if (!cells) continue
-      const statement = notebookText(cells, { outputs: false, limit: 30_000 }) || null
-      const concepts = this.course.concepts.filter((c) => !!this.graph.get(c.id))
-      const task = newOnlineTask({ kind: notebookKind(f.rel), title: notebookTitle(f.name, cells), platform: 'Jupyter', url: null, statement, conceptIds: statement ? guessConcepts(`${f.name}\n${statement}`, concepts) : [] }, new Date())
-      if (task) added.push({ ...task, notebook: { path: f.path, foundMtimeMs: f.mtimeMs, mtimeMs: f.mtimeMs } })
-    }
+    const concepts = this.course.concepts.filter((c) => !!this.graph.get(c.id))
+    const { added, changed } = await notebookTasks(this.backend, files, this.exam.get(), this.ignored, concepts)
     if (courseId !== this.courseId || (!added.length && !changed.size)) return
-    await this.updatePrep(courseId, (p) => ({
-      ...p,
-      online: [...p.online.map((t) => (t.notebook && changed.has(t.id) ? { ...t, notebook: { ...t.notebook, mtimeMs: changed.get(t.id) ?? t.notebook.mtimeMs } } : t)), ...added]
-    }))
+    await this.updatePrep(courseId, (p) =>
+      withNotebooks({ ...p, online: p.online.map((t) => (t.notebook && changed.has(t.id) ? { ...t, notebook: { ...t.notebook, mtimeMs: changed.get(t.id) ?? t.notebook.mtimeMs } } : t)) }, added)
+    )
     const records = this.exam.get().records
     for (const t of this.exam.get().online) if (t.notebook && t.notebook.mtimeMs > t.notebook.foundMtimeMs && (!records[t.id] || records[t.id].status === 'todo')) await this.setWorkStatus(t.id, 'started')
-    if (added.length) this.toast({ kind: 'info', text: `Found ${added.length} Jupyter notebook${added.length === 1 ? '' : 's'} in the course folder: added to Exam prep.` }, 6000)
+    if (added.length) {
+      this.toast({ kind: 'info', text: `Found ${added.length} Jupyter notebook${added.length === 1 ? '' : 's'} in the course folder: added to Exam prep.` }, 6000)
+      void this.mapActiveTasks(true)
+    }
   }
 
   /** Remove an online task with its records (the mind model keeps what it learned from them). */
@@ -919,6 +898,7 @@ export class AppController {
       const logged = await this.logSynced(plan.results, SYNC_NOTE, plan.done, plan.started)
       const parts = [plan.added.length ? `${plan.added.length} new` : '', plan.updated ? `${plan.updated} updated` : '', logged ? `${logged} result${logged === 1 ? '' : 's'} logged` : ''].filter(Boolean)
       this.toast({ kind: 'info', text: `Code Expert: ${series.length} series${parts.length ? `, ${parts.join(', ')}` : ', nothing new'}.` }, 6000)
+      if (plan.added.length || plan.updated) void this.mapActiveTasks(true)
       return { ok: true, signedIn: true, added: plan.added.length, updated: plan.updated, logged, error: null }
     } finally {
       this.ceSyncing = false
@@ -987,6 +967,7 @@ export class AppController {
       const logged = await this.logSynced(plan.results, GL_NOTE, [], plan.started)
       const parts = [plan.added.length ? `${plan.added.length} new` : '', plan.updated ? `${plan.updated} updated` : '', logged ? `${logged} result${logged === 1 ? '' : 's'} logged` : ''].filter(Boolean)
       this.toast({ kind: 'info', text: `GitLab: ${exercises.length} exercise${exercises.length === 1 ? '' : 's'}${parts.length ? `, ${parts.join(', ')}` : ', nothing new'}.` }, 6000)
+      if (plan.added.length || plan.updated) void this.mapActiveTasks(true)
       return { ok: true, signedIn: true, added: plan.added.length, updated: plan.updated, logged, error: null }
     } finally {
       this.glSyncing = false

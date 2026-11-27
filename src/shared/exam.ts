@@ -4,7 +4,7 @@
 // much help the learner had.
 import { applyEvidence, getConcept, recordMisconception, type EvidenceInput } from './mastery'
 import { milestoneReward } from './rewards'
-import type { CodeExpertLink, CodeExpertSeries, GitLabExercise, GitLabLink, NotebookFile, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
+import type { CodeExpertLink, CodeExpertSeries, GitLabExercise, GitLabLink, NotebookFile, TaskTopics, Course, ExamPrep, LearnerModel, Material, OnlineTask, RewardEvent, Submission, WorkHelp, WorkRecord, WorkTask } from './types'
 import { clamp, truncate, uid } from './util'
 
 export const DEFAULT_MOCK_EXAMS = 2
@@ -31,6 +31,12 @@ export function normalizePrep(raw: unknown): ExamPrep {
     codeExpert: normalizeCeLink(r.codeExpert),
     gitlab: normalizeGlLink(r.gitlab)
   }
+}
+
+function normalizeTopics(raw: unknown): TaskTopics | undefined {
+  const r = (raw ?? {}) as Partial<TaskTopics>
+  if (r.by !== 'ai' && r.by !== 'learner' && r.by !== 'guess') return undefined
+  return { by: r.by, at: typeof r.at === 'string' ? r.at : new Date(0).toISOString(), mapSize: Number.isFinite(r.mapSize) ? Math.max(0, Math.round(Number(r.mapSize))) : 0, key: typeof r.key === 'string' ? r.key.slice(0, 40) : '' }
 }
 
 function normalizeNotebook(raw: unknown): NotebookFile | undefined {
@@ -121,7 +127,8 @@ export function normalizeOnline(raw: unknown): OnlineTask | null {
     addedAt: typeof r.addedAt === 'string' ? r.addedAt : new Date(0).toISOString(),
     ...(normalizeCeSeries(r.codeExpert) ? { codeExpert: normalizeCeSeries(r.codeExpert) } : {}),
     ...(normalizeGlExercise(r.gitlab) ? { gitlab: normalizeGlExercise(r.gitlab) } : {}),
-    ...(normalizeNotebook(r.notebook) ? { notebook: normalizeNotebook(r.notebook) } : {})
+    ...(normalizeNotebook(r.notebook) ? { notebook: normalizeNotebook(r.notebook) } : {}),
+    ...(normalizeTopics(r.topics) ? { topics: normalizeTopics(r.topics) } : {})
   }
 }
 

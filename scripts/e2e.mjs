@@ -398,9 +398,10 @@ async function runChat(page, label, { askMidway = false } = {}) {
       await page.locator('.assistant-msg', { hasText: 'you asked: Why are the weights' }).waitFor({ timeout: 15_000 })
       asked = true
       step(`${label}: a question typed mid-card got an answer`)
-      // the tutor's next card waits until the open card is done; a placeholder holds its place meanwhile
-      await page.locator('.card-waiting').waitFor({ timeout: 15_000 })
-      step(`${label}: the next card waits behind a visible placeholder`)
+      // the tutor's next card goes ahead of the card the learner set aside by asking
+      await page.locator('.card.compact .chip', { hasText: 'set aside' }).waitFor({ timeout: 15_000 })
+      if (await page.locator('.card-waiting').count()) throw new Error('the next card waits behind the card the learner set aside')
+      step(`${label}: the tutor's next card goes ahead of the card set aside by the question`)
       if (shotsDir) await page.screenshot({ path: join(shotsDir, `${String(++shotN).padStart(2, '0')}-${label}-asked.png`) })
       continue
     }

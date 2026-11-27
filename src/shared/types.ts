@@ -519,6 +519,8 @@ export interface StepRecord {
   model: string | null
   /** still streaming from the model: cards may grow */
   pending?: boolean
+  /** agent sessions: the learner wrote to the tutor instead of answering; the tutor's next card goes ahead of it */
+  setAside?: boolean
 }
 
 export type PlanNodeState = 'known' | 'pending' | 'active' | 'done' | 'shaky' | 'skipped'

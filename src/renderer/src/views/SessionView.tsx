@@ -364,6 +364,7 @@ function Stream({ sc, v, cc, expanded, toggle }: { sc: SessionController; v: Vie
           target={rec.target}
           prediction={prediction}
           finishing={finishing && lastCard}
+          setAside={!!rec.setAside && si < cursor.step}
         />
       )
     }

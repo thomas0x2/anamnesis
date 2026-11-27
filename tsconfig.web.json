@@ -34,6 +34,7 @@
   "include": [
     "src/renderer/src/**/*",
     "src/shared/**/*",
-    "src/preload/api.d.ts"
+    "src/preload/api.d.ts",
+    "tests/unit/chatInterrupt.test.ts"
   ]
 }

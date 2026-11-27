@@ -151,6 +151,14 @@ export class ChatController {
   private planWaiter: ((s: Record<string, PlanNodeState>) => void) | null = null
   private saveTimer: ReturnType<typeof setTimeout> | null = null
   private running = false
+  /**
+   * What the learner wrote (or a late card answer) while the agent was busy with a turn. The CLI only reads a new
+   * message once the turn ends, and a tutoring turn runs on from card to card, so these go with the next card result
+   * instead (or turn the next card back), never to the end of the turn.
+   */
+  private notes: string[] = []
+  /** block ids count from 1 in every agent process: this keeps a resumed agent's notes off the old ones */
+  private run = ''
 
   constructor(
     private app: AppController,
@@ -225,6 +233,7 @@ export class ChatController {
       return false
     }
     this.running = true
+    this.run = uid('r')
     if (!c.cliStarted) this.patch((x) => ({ ...x, cliStarted: true }))
     return true
   }
@@ -243,10 +252,30 @@ export class ChatController {
     }
     if (waiting && this.running) {
       this.updateItem(waiting.id, (it) => ({ ...(it as ToolItem), status: 'interrupted' }))
-      await this.reply(waiting, { text: `The learner did not answer this card yet. The learner wrote instead: "${t}"` })
+      if (waiting.step !== null) this.cards.setAside(waiting.step)
+      const card = waiting.name === 'ask' ? ' It stays answerable until your next card, which takes its place: ask it again later if it still matters (you are told if they answer it meanwhile).' : ''
+      await this.reply(waiting, { text: `The learner did not answer this card yet. The learner wrote instead: "${t}". Answer them first, in your reply text or the reply field of your next card (they never see your thinking).${card}` })
       return
     }
-    await this.message(t)
+    await this.notify(`The learner wrote: "${t}"`)
+  }
+
+  /** The agent is in the middle of a turn: a message now would only reach it when the turn ends. */
+  private busy(): boolean {
+    const a = this.view.get().agent
+    return this.running && a !== 'idle' && a !== 'off'
+  }
+
+  /** Tell the agent something: now if it is idle, else with its next card (see notes). */
+  private async notify(text: string): Promise<void> {
+    if (this.busy()) this.notes.push(text)
+    else await this.message(text)
+  }
+
+  private takeNotes(): string {
+    const t = this.notes.join('\n')
+    this.notes = []
+    return t
   }
 
   /** Kick off the agent for a fresh chat. */
@@ -255,6 +284,7 @@ export class ChatController {
   }
 
   private async message(text: string): Promise<void> {
+    if (this.notes.length) text = `${this.takeNotes()}\n${text}`
     if (!(await this.ensureAgent())) return
     this.setAgent('thinking')
     const ok = await this.app.backend.agentSend(this.chat.id, text)
@@ -296,7 +326,7 @@ export class ChatController {
         else this.setAgent('starting')
         return
       case 'text': {
-        const id = `a_${e.blockId}`
+        const id = `a_${this.run}_${e.blockId}`
         const exists = this.chat.items.some((it) => it.id === id)
         if (!exists) this.add({ id, kind: 'assistant', text: e.delta, at: nowIso() })
         else this.updateItem(id, (it) => ({ ...(it as Extract<ChatItem, { kind: 'assistant' }>), text: (it as { text: string }).text + e.delta }))
@@ -322,6 +352,7 @@ export class ChatController {
         if (e.costUsd) this.patch((c) => ({ ...c, costUsd: c.costUsd + (e.costUsd ?? 0) }))
         if (!e.ok) this.add({ id: uid('n_'), kind: 'note', tone: 'error', text: e.error || 'The tutor stopped with an error.', at: nowIso() })
         this.setAgent(this.hasWaiting() ? 'waiting' : 'idle')
+        if (this.notes.length) void this.message(this.takeNotes())
         return
       case 'exit':
         this.running = false
@@ -348,7 +379,14 @@ export class ChatController {
     if (item) this.updateItem(item.id, (it) => ({ ...(it as ToolItem), callId, args, status: 'running' }))
     else this.add({ id: uid('tl_'), kind: 'tool', name, toolUseId: null, callId, json: JSON.stringify(args), args, status: 'running', step: null, result: null, at: nowIso() })
     item = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === callId)!
-    if (CARD_TOOLS.has(name) || name === 'show_plan') this.setAgent('waiting')
+    const shows = CARD_TOOLS.has(name) || name === 'show_plan'
+    if (shows && this.notes.length) {
+      // the learner wrote while this card was being written: answer them before the lesson goes on
+      const what = name === 'show_plan' ? 'plan' : 'card'
+      await this.reply(item, { text: `This ${what} was not shown, because the learner wrote to you while you prepared it:\n${this.takeNotes()}\nAnswer them now, in your reply text or the reply field of the card you show next (they never see your thinking), then show the ${what} again if it still fits.` })
+      return
+    }
+    if (shows) this.setAgent('waiting')
     let result: AgentToolResult
     try {
       result = await this.execute(item, name, args)
@@ -356,6 +394,7 @@ export class ChatController {
       result = { text: `Tool error: ${String((e as Error)?.message ?? e)}`, isError: true }
     }
     const now = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.id === item!.id)
+    if (shows && now && now.status !== 'interrupted' && this.notes.length) result = { ...result, text: `${result.text}\nMeanwhile: ${this.takeNotes()}` }
     if (now && now.status !== 'interrupted') await this.reply(now, result)
   }
 
@@ -368,6 +407,8 @@ export class ChatController {
         if (!card) return { text: 'The card was empty or invalid: it needs blocks (explain) or an interaction (ask).', isError: true }
         if (name === 'ask' && card.interaction?.type === 'continue') return { text: 'ask needs a real interaction (mcq, numeric, free, order or fill). Use explain for content.', isError: true }
         this.followPhase(card)
+        // the tutor's answer to what the learner wrote goes above the card, as one of its notes
+        if (typeof args.reply === 'string' && args.reply.trim()) this.add({ id: uid('a_'), kind: 'assistant', text: args.reply.trim(), at: nowIso() })
         const target = this.target(args.item)
         const step = this.cards.pushStep([card], card.nodeId, target)
         this.updateItem(item.id, (it) => ({ ...(it as ToolItem), step }))
@@ -496,24 +537,25 @@ export class ChatController {
     if (w) return w(nodeState)
     // the plan tool call is gone (the learner wrote meanwhile, or the app restarted)
     const nodes = this.cards.s.plan?.plan.nodes ?? []
-    void this.message(
+    void this.notify(
       `[The learner confirmed the plan. Already known: ${nodes.filter((n) => nodeState[n.id] === 'known').map((n) => n.id).join(', ') || 'none'}. To teach: ${nodes.filter((n) => nodeState[n.id] !== 'known').map((n) => n.id).join(', ') || 'none'}.]`
     )
   }
 
   private cardDone(step: number, resp: CardResponse): void {
+    const item = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.step === step)
     const w = this.waiters.get(step)
     if (w) {
       this.waiters.delete(step)
       w(resp)
-      return
+      // the tool call already got the learner's message as its result: this answer goes on its own below
+      if (item?.status !== 'interrupted') return
     }
     // a card whose tool call is gone (the learner wrote instead, or the app restarted)
-    const item = this.chat.items.find((it): it is ToolItem => it.kind === 'tool' && it.step === step)
     const card = this.cards.s.steps[step]?.step.cards[0]
     if (!item || !card || card.interaction?.type === 'continue') return
     this.updateItem(item.id, (it) => ({ ...(it as ToolItem), result: describeForAgent(card, resp) }))
-    void this.message(`[The learner went back and answered the earlier card "${truncate(card.interaction?.prompt ?? card.title ?? '', 120)}": ${describeForAgent(card, resp)}]`)
+    void this.notify(`[The learner went back and answered the earlier card "${truncate(card.interaction?.prompt ?? card.title ?? '', 120)}": ${describeForAgent(card, resp)}]`)
   }
 
   // ------------------------------------------------------------ look-ups

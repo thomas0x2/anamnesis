@@ -16,5 +16,6 @@
     "noEmit": true,
     "composite": false
   },
-  "include": ["electron.vite.config.ts", "vite.web.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/node/**/*", "src/shared/**/*", "scripts/**/*.ts", "tests/**/*.ts"]
+  "include": ["electron.vite.config.ts", "vite.web.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/node/**/*", "src/shared/**/*", "scripts/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["tests/unit/chatInterrupt.test.ts"]
 }

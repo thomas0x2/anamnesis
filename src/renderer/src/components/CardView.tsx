@@ -63,6 +63,8 @@ export interface CardViewProps {
   target: PracticeTarget | null;
   prediction?: PredictionRef | null;
   finishing: boolean;
+  /** the learner wrote to the tutor instead of answering, and the tutor moved on */
+  setAside?: boolean;
 }
 
 function cardSpeech(card: Card): string {
@@ -710,6 +712,7 @@ function CompactCard({
   card,
   response,
   onToggle,
+  setAside,
 }: CardViewProps): ReactElement {
   const verdict = response?.verdict ?? null;
   const title =
@@ -734,6 +737,11 @@ function CompactCard({
           <Markdown text={title.split("\n")[0].slice(0, 140)} inline />
         </span>
         <span className="spacer" />
+        {setAside && !response && card.interaction?.type !== "continue" && (
+          <span className="chip" title="You asked the tutor instead; it may come back to this">
+            set aside
+          </span>
+        )}
         {verdict && verdict !== "seen" && card.kind !== "probe" && (
           <span
             className={`chip verdict-chip ${verdict === "correct" ? "good" : verdict === "partial" ? "warn" : verdict === "incorrect" ? "bad" : ""}`}

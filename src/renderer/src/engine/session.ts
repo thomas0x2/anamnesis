@@ -136,7 +136,7 @@ function initialCursor(s: Session): { step: number; card: number } {
   for (let i = 0; i < s.steps.length; i++) {
     const rec = s.steps[i];
     for (let j = 0; j < rec.step.cards.length; j++)
-      if (!rec.responses[j]) return { step: i, card: j };
+      if (!rec.responses[j] && !rec.setAside) return { step: i, card: j };
   }
   const last = s.steps.length - 1;
   return last >= 0
@@ -1257,10 +1257,12 @@ export class SessionController {
     // move on to the new card only once the learner is past the previous one
     const { cursor } = this.view.get();
     const prev = this.s.steps[index - 1];
+    // ... or once the learner set the previous card aside by writing to the tutor instead (its answer comes first)
     const atEnd =
       index === 0 ||
       cursor.step >= index ||
-      (cursor.step === index - 1 && cursor.card >= (prev?.step.cards.length ?? 0));
+      (cursor.step === index - 1 &&
+        (cursor.card >= (prev?.step.cards.length ?? 0) || !!prev?.setAside));
     const rec: StepRecord = {
       id: uid("st_"),
       phase: this.s.phase === "chat" ? "chat" : this.s.phase,
@@ -1276,6 +1278,12 @@ export class SessionController {
     this.patch((s) => ({ ...s, steps: [...s.steps, rec] }));
     if (atEnd) this.view.set((v) => ({ ...v, cursor: { step: index, card: 0 } }));
     return index;
+  }
+
+  /** Agent mode: the learner wrote instead of answering this step's card. It stays answerable until the next card. */
+  setAside(step: number): void {
+    if (!this.s.steps[step]) return;
+    this.updateStep(step, (r) => ({ ...r, setAside: true }));
   }
 
   /** The learner compares an open prediction with the reveal. */

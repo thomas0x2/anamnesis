@@ -110,8 +110,10 @@ export class FakeAgentHost {
     const r = ask
       ? await this.tool(chatId, run, 'ask', { kind: c.kind, title: c.title ?? null, blocks: c.blocks, interaction: c.interaction, speech: c.speech ?? null, nodeId: c.nodeId ?? null, item })
       : await this.tool(chatId, run, 'explain', { title: c.title ?? null, blocks: c.blocks, speech: c.speech ?? null, nodeId: c.nodeId ?? null })
-    const wrote = /learner wrote(?: instead)?: "([\s\S]*)"/i.exec(r.text)?.[1]
+    const wrote = /learner wrote(?: instead)?: "([\s\S]*?)"/i.exec(r.text)?.[1]
     if (wrote) await this.say(chatId, run, `Good question. Think about what stays the same for every $j$. *(demo tutor; you asked: ${wrote.slice(0, 80)})* `)
+    // the learner wrote while the card was on its way: it was not shown, so show it again after the answer
+    if (/^This card was not shown/.test(r.text)) await this.card(chatId, run, c, item)
   }
 
   private async turn(chatId: string, run: Run, text: string): Promise<void> {

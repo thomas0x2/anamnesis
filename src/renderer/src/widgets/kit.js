@@ -30,15 +30,17 @@
     }
   }
   var reported = {}
-  function report(e) {
+  function report(e, phase) {
     var msg = String((e && (e.message || e)) || 'unknown error')
     if (reported[msg]) return
     reported[msg] = true
-    post({ type: 'widget-error', message: msg.slice(0, 300) })
+    // the tutor gets this back with the card result and fixes the code; say where it failed
+    post({ type: 'widget-error', message: ((phase ? 'in ' + phase + ': ' : '') + msg).slice(0, 300) })
     var root = document.getElementById('k-root')
     if (root && !root.querySelector('.k-error')) {
       var d = el('div', 'k-error')
-      d.textContent = 'This widget hit an error: ' + msg
+      d.textContent = 'This demo could not be drawn. The tutor has been told and will fix it if it shows it again.'
+      el('div', 'k-error-detail', d).textContent = msg
       root.appendChild(d)
     }
   }
@@ -68,6 +70,40 @@
   }
   function finite(v) {
     return typeof v === 'number' && isFinite(v)
+  }
+  // Tutor code is generated on the fly, so the kit takes the shapes it is likely to get, not only the
+  // documented one: an array, any iterable, an array-like, a plain object (its values) or one item.
+  function list(x) {
+    if (Array.isArray(x)) return x
+    if (x === null || x === undefined) return []
+    if (typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean' || typeof x === 'bigint') return [x]
+    if (typeof x === 'object' || typeof x === 'function') {
+      if (typeof x[Symbol.iterator] === 'function') return Array.from(x)
+      if (typeof x.length === 'number') return Array.from(x)
+      if (typeof x === 'object')
+        return Object.keys(x).map(function (k) {
+          return x[k]
+        })
+    }
+    return [x]
+  }
+  /** Points as [[x, y], ...]: also takes { x, y } objects, [xs, ys] column pairs and { x: [...], y: [...] }. */
+  function points(pts) {
+    if (pts && !Array.isArray(pts) && Array.isArray(pts.x) && Array.isArray(pts.y)) pts = [pts.x, pts.y]
+    var a = list(pts)
+    if (a.length === 2 && Array.isArray(a[0]) && Array.isArray(a[1]) && a[0].length === a[1].length && a[0].length !== 2)
+      a = a[0].map(function (x, i) {
+        return [x, a[1][i]]
+      })
+    return a
+      .map(function (p) {
+        if (Array.isArray(p)) return [Number(p[0]), Number(p[1])]
+        if (p && typeof p === 'object') return [Number(p.x), Number(p.y)]
+        return null
+      })
+      .filter(function (p) {
+        return p !== null
+      })
   }
 
   // ---------------------------------------------------------------- numbers
@@ -214,8 +250,17 @@
   }
   function choice(o) {
     o = o || {}
-    var opts = (o.options || []).map(function (x) {
-      return typeof x === 'object' ? x : { value: x, label: String(x) }
+    var raw = o.options
+    // { value: label } written as a plain object
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && typeof raw[Symbol.iterator] !== 'function' && typeof raw.length !== 'number')
+      raw = Object.keys(raw).map(function (k) {
+        return { value: k, label: String(raw[k]) }
+      })
+    var opts = list(raw).map(function (x) {
+      if (x && typeof x === 'object' && !Array.isArray(x) && 'value' in x) return x
+      if (Array.isArray(x)) return { value: x, label: x.join(' ') }
+      if (x && typeof x === 'object') return { value: x, label: x.label !== undefined ? String(x.label) : JSON.stringify(x) }
+      return { value: x, label: String(x) }
     })
     return { kind: 'choice', label: o.label, options: opts, value: o.value !== undefined ? o.value : opts.length ? opts[0].value : null }
   }
@@ -262,22 +307,21 @@
     var pts = []
     for (var i = 0; i <= n; i++) {
       var t = t0 + ((t1 - t0) * i) / n
-      var p = g(t)
-      pts.push([p[0], p[1]])
+      pts.push(g(t))
     }
-    return this._push('path', pts, o)
+    return this._push('path', points(pts), o)
   }
   P.path = function (pts, o) {
-    return this._push('path', pts, o)
+    return this._push('path', points(pts), o)
   }
   P.points = function (pts, o) {
-    return this._push('points', pts, o)
+    return this._push('points', points(pts), o)
   }
   P.stems = function (pts, o) {
-    return this._push('stems', pts, o)
+    return this._push('stems', points(pts), o)
   }
   P.bars = function (pts, o) {
-    return this._push('bars', pts, o)
+    return this._push('bars', points(pts), o)
   }
   P.line = function (x1, y1, x2, y2, o) {
     return this._push('segment', [x1, y1, x2, y2], o)
@@ -311,7 +355,7 @@
     return this._push('heat', F, o)
   }
   P.level = function (F, levels, o) {
-    return this._push('level', { F: F, levels: Array.isArray(levels) ? levels : [levels] }, o)
+    return this._push('level', { F: F, levels: list(levels) }, o)
   }
   /** A draggable point; its position lives in the demo state under `name` and survives redraws. */
   P.handle = function (name, o) {
@@ -818,18 +862,27 @@
     var wrap = el('div', 'k-cells-wrap', this.body)
     if (o.title) el('div', 'k-cells-title', wrap).textContent = o.title
     var row = el('div', 'k-cells', wrap)
-    var hl = o.highlight || {}
+    var hl = o.highlight === undefined || o.highlight === null ? {} : typeof o.highlight === 'number' ? [o.highlight] : o.highlight
+    if (hl && typeof hl === 'object' && !Array.isArray(hl) && typeof hl[Symbol.iterator] === 'function') hl = Array.from(hl)
+    var labels = o.labels
+    // a string is its characters (a C string in memory); a plain object is its values, labelled by its keys
+    if (typeof values === 'string') values = Array.from(values)
+    else if (values && typeof values === 'object' && !Array.isArray(values) && typeof values[Symbol.iterator] !== 'function' && typeof values.length !== 'number') {
+      if (labels === undefined) labels = Object.keys(values)
+      values = list(values)
+    } else values = list(values)
+    if (labels !== undefined && labels !== null && typeof labels !== 'function') labels = list(labels)
     values.forEach(function (v, i) {
       var c = el('div', 'k-cell', row)
-      var tone = Array.isArray(hl) ? (hl.indexOf(i) >= 0 ? 'brand' : null) : hl[i]
+      var tone = Array.isArray(hl) ? (hl.indexOf(i) >= 0 ? 'brand' : null) : hl && typeof hl === 'object' ? hl[i] : null
       if (tone) {
         c.classList.add('on')
         c.style.borderColor = color(tone)
         c.style.color = color(tone)
       }
       if (o.width) c.style.minWidth = o.width + 'px'
-      el('div', 'k-cell-v', c).textContent = v === null || v === undefined ? '' : String(v)
-      var lab = o.labels ? o.labels[i] : o.index ? (typeof o.index === 'function' ? o.index(i) : i) : null
+      el('div', 'k-cell-v', c).textContent = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+      var lab = labels ? (typeof labels === 'function' ? labels(i) : labels[i]) : o.index ? (typeof o.index === 'function' ? o.index(i) : i) : null
       if (lab !== null && lab !== undefined) el('div', 'k-cell-i', c).textContent = String(lab)
     })
     return this
@@ -838,10 +891,11 @@
     o = o || {}
     width = width || 8
     var bits = []
-    var v = typeof value === 'bigint' ? value : BigInt(Math.trunc(Number(value)) || 0)
+    var num = Math.trunc(Number(value))
+    var v = typeof value === 'bigint' ? value : BigInt(isFinite(num) ? num : 0)
     if (v < 0n) v = (1n << BigInt(width)) + v
     for (var i = width - 1; i >= 0; i--) bits.push(Number((v >> BigInt(i)) & 1n))
-    var groups = o.groups || null
+    var groups = o.groups ? list(o.groups).map(Number) : null
     var hl = {}
     if (groups) {
       var at = 0
@@ -862,7 +916,7 @@
     })
     if (o.labels && groups) {
       var lr = el('div', 'k-tags', wrap)
-      o.labels.forEach(function (l, gi) {
+      list(o.labels).forEach(function (l, gi) {
         var t = el('span', 'k-tag', lr)
         t.style.borderColor = color(gi)
         t.textContent = l
@@ -872,14 +926,14 @@
   }
   Panel.prototype.tags = function (items) {
     var row = el('div', 'k-tags', this.body)
-    items.forEach(function (t, i) {
-      var o = typeof t === 'object' ? t : { label: t }
+    list(items).forEach(function (t, i) {
+      var o = t && typeof t === 'object' ? t : { label: t }
       var s = el('span', 'k-tag', row)
       if (o.color !== undefined) {
         s.style.borderColor = color(o.color, i)
         s.style.color = color(o.color, i)
       }
-      s.textContent = o.label
+      s.textContent = o.label === undefined ? '' : String(o.label)
     })
     return this
   }
@@ -889,8 +943,47 @@
     return d
   }
   Panel.prototype.text = function (s) {
-    el('div', 'k-text', this.body).textContent = s
+    el('div', 'k-text', this.body).textContent = s === undefined || s === null ? '' : String(s)
     return this
+  }
+  // A demo with one view hands draw that view, a demo with several an array. Generated code mixes the
+  // two up (draw(p, [g]) with one view, g.cells(...) with several), so a single view also behaves as a
+  // one-element array ([g] = g, g[0], for...of) and the array forwards view methods to its first view
+  // that has them (see viewArg).
+  ;[Plot.prototype, Panel.prototype].forEach(function (proto) {
+    proto[Symbol.iterator] = function () {
+      var done = false
+      var self = this
+      return {
+        next: function () {
+          if (done) return { done: true, value: undefined }
+          done = true
+          return { done: false, value: self }
+        }
+      }
+    }
+    Object.defineProperty(proto, '0', {
+      get: function () {
+        return this
+      }
+    })
+    Object.defineProperty(proto, 'length', { value: 1 })
+  })
+  function viewArg(views) {
+    if (views.length === 1) return views[0]
+    var arr = views.slice()
+    var names = {}
+    ;[Plot.prototype, Panel.prototype].forEach(function (proto) {
+      Object.keys(proto).forEach(function (k) {
+        if (k.charAt(0) !== '_' && typeof proto[k] === 'function' && !(k in arr)) names[k] = true
+      })
+    })
+    Object.keys(names).forEach(function (k) {
+      arr[k] = function () {
+        for (var i = 0; i < views.length; i++) if (typeof views[i][k] === 'function') return views[i][k].apply(views[i], arguments)
+      }
+    })
+    return arr
   }
 
   function plot(o) {
@@ -910,9 +1003,11 @@
     var state = {}
     var params = spec.params || {}
     var viewSpecs = spec.views || (spec.view ? [spec.view] : spec.plot ? [plot(spec.plot)] : [plot({})])
-    if (!Array.isArray(viewSpecs)) viewSpecs = [viewSpecs]
+    viewSpecs = Array.isArray(viewSpecs) ? viewSpecs : viewSpecs && viewSpecs.kind ? [viewSpecs] : list(viewSpecs)
+    if (!viewSpecs.length) viewSpecs = [plot({})]
     var viewsEl = el('div', 'k-views' + (viewSpecs.length > 1 ? ' k-views-' + (spec.layout === 'column' ? 'col' : 'row') : ''), root)
     var views = viewSpecs.map(function (v) {
+      if (v instanceof Plot || v instanceof Panel) v = { kind: v instanceof Panel ? 'panel' : 'plot', o: v.o }
       var view = v && v.kind === 'panel' ? new Panel(v.o) : new Plot(v && v.kind === 'plot' ? v.o : v)
       view._state = state
       view._redraw = schedule
@@ -1018,6 +1113,7 @@
           schedule()
         })
       } else if (p.kind === 'choice') {
+        if (!Array.isArray(p.options)) p = choice(p)
         state[key] = p.value
         var wrap = el('span', 'k-ctl', controls)
         if (label) el('span', 'k-ctl-label', wrap).textContent = label
@@ -1075,19 +1171,25 @@
     out.table = function (headers, rows) {
       var t = el('table', 'k-table', readout)
       var hr = el('tr', null, el('thead', null, t))
-      headers.forEach(function (hh) {
-        el('th', null, hr).textContent = hh
+      list(headers).forEach(function (hh) {
+        el('th', null, hr).textContent = String(hh)
       })
       var tb = el('tbody', null, t)
-      rows.forEach(function (r) {
+      list(rows).forEach(function (r) {
         var tr = el('tr', null, tb)
-        r.forEach(function (c) {
-          el('td', null, tr).textContent = typeof c === 'number' ? fmt(c) : String(c)
+        list(r).forEach(function (c) {
+          el('td', null, tr).textContent = typeof c === 'number' ? fmt(c) : c && typeof c === 'object' ? JSON.stringify(c) : String(c)
         })
       })
     }
 
-    if (typeof spec.setup === 'function') spec.setup(state)
+    if (typeof spec.setup === 'function') {
+      try {
+        spec.setup(state)
+      } catch (e) {
+        report(e, 'setup')
+      }
+    }
 
     var pending = false
     function schedule() {
@@ -1108,7 +1210,14 @@
       })
       readout.innerHTML = ''
       try {
-        if (typeof spec.draw === 'function') spec.draw(state, views.length === 1 ? views[0] : views, out)
+        if (typeof spec.draw === 'function') {
+          try {
+            spec.draw(state, viewArg(views), out)
+          } catch (e) {
+            e._kPhase = 'draw'
+            throw e
+          }
+        }
         var width = viewsEl.clientWidth || document.documentElement.clientWidth || 600
         var each = views.length > 1 && spec.layout !== 'column' ? (width - 16 * (views.length - 1)) / views.length : width
         views.forEach(function (v) {
@@ -1118,7 +1227,7 @@
       } catch (e) {
         // a failed first draw leaves only the error; a later failure keeps the last good picture
         if (!drawnOnce) viewsEl.style.display = 'none'
-        report(e)
+        report(e, e && e._kPhase)
       }
       if (viewsEl.style.display !== 'none') drawnOnce = true
       readout.style.display = readout.children.length ? '' : 'none'

@@ -83,11 +83,12 @@ Write plain JavaScript (no imports, HTML or CSS) that calls K.demo once. The app
 K.demo({
   params: { a: K.slider({ label, min, max, step, value, log }), b: K.choice({ label, options: [values or { value, label }], value }), c: K.toggle({ label, value }), d: K.button({ label, onClick(p) {} }) },
   plot: { xMin, xMax, yMin, yMax, height, xLabel, yLabel, logX, logY, equal, axes, title },  // one plot; a missing range is fitted to what is drawn
-  views: [K.plot({ ... }), K.panel({ title })], layout: "row" or "column",  // several views instead of plot; draw then gets an array
+  views: [K.plot({ ... }), K.panel({ title })], layout: "row" or "column",  // views instead of plot; with two or more, draw gets them as an array: draw(p, [plot, mem], out)
   play: { from, to, speed, loop, label },  // a Play button and a time slider; the time is p.t
   setup(p) {},  // once before the first draw
-  draw(p, g, out) {}  // on every change: p = current values (also handle positions), g = the view(s), out = the readout below
+  draw(p, g, out) {}  // on every change: p = current values (also handle positions), g = the view (one view) or the array of views, out = the readout below
 })
+Shapes: every list in the API is a plain array ([...], never an object or a Set): options, values, labels, highlight indices, groups, points as [[x, y], ...], table rows. A choice's value in p is exactly the option value you gave (a string stays a string).
 Plot methods (data coordinates; style o: color = 0-3 for the series colours, "brand" for the one thing to watch, "muted", "good", "bad", "text"; width, dash, label adds a legend entry, opacity, r):
 g.fn(x => y, o) · g.curve(t => [x, y], t0, t1, o) · g.path([[x, y], ...], o) · g.points(pts, o) · g.stems(pts, o) · g.bars(pts, o) · g.line(x1, y1, x2, y2, o) · g.arrow(x1, y1, x2, y2, o) · g.vline(x, o) · g.hline(y, o) · g.area(f, a, b, o) · g.rect(x, y, w, h, o) (o.fill, o.label) · g.circle(x, y, r, o) · g.text(x, y, "s", o) (o.anchor "start", "middle" or "end") · g.field((x, y) => [u, v], o) (direction field, phase portrait) · g.heat((x, y) => v, o) · g.level((x, y) => v, [levels], o) (level curves) · g.handle("name", { x, y, axis: "x", "y" or "xy", label }) returns the draggable point [x, y], kept in p.name · g.set({ yMin, yMax }) changes the range inside draw.
 Panel methods (no axes: memory, arrays, registers, data structures, bit patterns): g.cells(values, { title, labels, index, highlight: [i, ...] or { i: colour } }) · g.bits(value, width, { title, groups: [1, 8, 23], labels: ["sign", "exponent", "fraction"] }) · g.tags([label or { label, color }]) · g.text("s").
@@ -104,7 +105,7 @@ K.demo({
     out("regime", p.zeta < 1 ? "underdamped" : p.zeta === 1 ? "critical" : "overdamped")
   }
 })
-Keep a widget to one idea, 1-4 controls and under ~60 lines. Make the thing to notice stand out (colour "brand", a readout) and let the caption say what to try or predict. Check the code before you send it (names, array shapes, division by zero): a broken widget costs the learner time. If a card result says a widget failed, fix it.
+Keep a widget to one idea, 1-4 controls and under ~60 lines. Make the thing to notice stand out (colour "brand", a readout) and let the caption say what to try or predict. Check the code before you send it (names, array shapes, how many views draw gets, division by zero): a broken widget costs the learner time. If a card result says a widget failed, fix it.
 
 # Built-in demos (ready-made, from numerical analysis; id: what it shows; params)
 - interpolation: polynomial interpolation of f with n+1 nodes, equispaced or Chebyshev, optional Lagrange basis and error curve; {"f":"1/(1+25*x^2)","a":-1,"b":1,"n":10,"nodes":"equispaced","showBasis":false,"showError":true}

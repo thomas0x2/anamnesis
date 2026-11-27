@@ -371,7 +371,7 @@ async function runChat(page, label, { askMidway = false } = {}) {
   page.setDefaultTimeout(5_000)
   for (let i = 0; i < 500; i++) {
     await page.waitForTimeout(200)
-    const idle = (await page.locator('.agent-status.idle').count()) > 0
+    const idle = (await page.locator('.agent-status.is-idle').count()) > 0
     const open = page.locator('.session .card.current:not(.plan-review)')
     if (idle && (await page.locator('.done-hero').count()) && !(await open.count())) {
       const pts = Number(((await page.locator('.done-hero .pts').textContent()) ?? '').replace(/[^\d]/g, ''))
@@ -385,7 +385,7 @@ async function runChat(page, label, { askMidway = false } = {}) {
       await walk.click().catch(() => {})
       continue
     }
-    if (askMidway && !asked && (await page.locator('.agent-status.waiting').count()) && (await open.count())) {
+    if (askMidway && !asked && (await page.locator('.agent-status.is-waiting').count()) && (await open.count())) {
       // write to the tutor while it waits on a card: the message becomes the card's result and gets an answer
       const box = page.getByRole('textbox', { name: 'Message to the tutor' })
       await box.fill('Why are the weights computed only once?')

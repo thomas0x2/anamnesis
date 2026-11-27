@@ -238,7 +238,7 @@ function SessionHeader({ sc, v, cc, onChat }: { sc: SessionController; v: View; 
         </div>
       )}
       <span className="session-points" title="Insight points earned in this session">
-        <Icon name="star" size={16} /> {s.pointsEarned}
+        <Icon name="star" size={16} /> {s.pointsEarned} pts
       </span>
       {cc ? (
         <AgentStatusOf cc={cc} />

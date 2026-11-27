@@ -6,6 +6,7 @@ import { fileParts, generateBody, geminiError, runGemini, sseJson } from '../../
 import { GeminiAgentHost, mergeParts, pushUser, settledHistory } from '../../src/node/geminiAgent'
 import { GEMINI_DEFAULT_MODEL, geminiHasXhigh, geminiThinking, looksLikeGoogleKey, migrateSettings, MODEL_SUGGESTIONS, normalizeTask, routeFor, taskOf, textGeminiModels } from '../../src/shared/models'
 import type { AgentEvent } from '../../src/shared/agentTypes'
+import type { TimingRecord } from '../../src/node/timing'
 import { DEFAULT_SETTINGS, type LlmEvent, type Settings } from '../../src/shared/types'
 
 /** A fetch that answers each call with the next scripted list of SSE events (or an HTTP error). */
@@ -207,6 +208,58 @@ describe('Gemini tutor agent', () => {
     const c2 = again.calls[0].body.contents as { role: string }[]
     expect(c2.map((c) => c.role)).toEqual(['user', 'model', 'user', 'model', 'user'])
     host2.stop('c1')
+  })
+
+  it('runs bookkeeping calls and the next card from one response in a single round trip, and times each call', async () => {
+    const { f, calls } = sseFetch([
+      [
+        textChunk('', { thought: true }),
+        {
+          candidates: [
+            {
+              content: {
+                role: 'model',
+                parts: [
+                  { functionCall: { name: 'update_plan', args: { nodeId: 'n1', status: 'done' } } },
+                  { functionCall: { name: 'update_plan', args: { nodeId: 'n2', status: 'current' } } },
+                  { functionCall: { name: 'ask', args: { q: 'next?' } } }
+                ]
+              }
+            }
+          ],
+          usageMetadata: { promptTokenCount: 9000, cachedContentTokenCount: 8000, candidatesTokenCount: 120, thoughtsTokenCount: 30 }
+        }
+      ],
+      [textChunk('Good.')]
+    ])
+    const timings: TimingRecord[] = []
+    const host = new GeminiAgentHost()
+    const order: string[] = []
+    const idle = new Promise<void>((resolve) => {
+      void host.start(
+        { chatId: 'p', system: 'tutor', tools: [], resume: null, sessionId: 'sp' },
+        { apiKey: 'k', model: 'gemini-4-neon', effort: 'low', historyDir: mkdtempSync(join(tmpdir(), 'anam-gp-')), fetch: f, timing: (r) => timings.push(r) },
+        (e) => {
+          if (e.type === 'tool_call') {
+            order.push(`${e.name}:${String(e.args.status ?? e.args.q)}`)
+            setTimeout(() => host.toolResult('p', e.callId, { text: e.name === 'ask' ? 'correct' : 'ok' }), 0)
+          }
+          if (e.type === 'status' && e.status === 'idle') resolve()
+        }
+      )
+    })
+    host.send('p', 'go')
+    await idle
+    expect(order).toEqual(['update_plan:done', 'update_plan:current', 'ask:next?'])
+    // one model call for all three tools, then one for the reply
+    expect(calls).toHaveLength(2)
+    const contents = calls[1].body.contents as { role: string; parts: Record<string, any>[] }[]
+    expect(contents[2].parts.map((p) => p.functionResponse.name)).toEqual(['update_plan', 'update_plan', 'ask'])
+    expect(timings).toHaveLength(2)
+    expect(timings[0]).toMatchObject({ type: 'agent', provider: 'gemini', model: 'gemini-4-neon', chatId: 'p', promptTokens: 9000, cachedTokens: 8000, outputTokens: 150, tools: ['update_plan', 'update_plan', 'ask'], ok: true })
+    expect(timings[0].firstMs).toBeGreaterThanOrEqual(0)
+    expect(timings[1]).toMatchObject({ tools: [], ok: true })
+    host.stop('p')
   })
 
   it('reports an error turn and refuses to start without a key', async () => {

@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'vitest'
 import courseJson from '../../courses/numcs/course.json'
-import { agentArgs } from '../../src/node/agent'
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { AgentHost, agentArgs } from '../../src/node/agent'
+import type { TimingRecord } from '../../src/node/timing'
 import { McpBridge } from '../../src/node/mcpBridge'
 import { AGENT_TOOLS, buildAgentSystemPrompt } from '../../src/shared/agentTools'
 import type { AgentEvent } from '../../src/shared/agentTypes'
@@ -70,6 +74,67 @@ describe('agent CLI arguments', () => {
   })
 })
 
+// A stand-in for the Claude Code CLI: answers each stream-json user message with one streamed text message.
+const FAKE_CLI = `#!/usr/bin/env node
+const fs = require('node:fs')
+fs.writeFileSync('env.json', JSON.stringify({ traffic: process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, memory: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, mds: process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS }))
+const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
+out({ type: 'system', subtype: 'init', model: 'claude-test' })
+let buf = ''
+process.stdin.on('data', (d) => {
+  buf += d
+  let nl
+  while ((nl = buf.indexOf('\\n')) >= 0) {
+    buf = buf.slice(nl + 1)
+    const ev = (event) => out({ type: 'stream_event', event })
+    ev({ type: 'message_start', message: { usage: { input_tokens: 10, cache_read_input_tokens: 5000, cache_creation_input_tokens: 0 } } })
+    setTimeout(() => {
+      ev({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
+      ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi.' } })
+      ev({ type: 'content_block_stop', index: 0 })
+      ev({ type: 'message_delta', usage: { output_tokens: 7 } })
+      ev({ type: 'message_stop' })
+      out({ type: 'result', subtype: 'success', is_error: false, result: 'Hi.', num_turns: 1 })
+    }, 20)
+  }
+})
+process.stdin.on('end', () => process.exit(0))
+`
+
+describe('agent host', () => {
+  it('starts the CLI without Claude Code extras, streams the reply and times each model round trip', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'anam-agent-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, FAKE_CLI)
+    chmodSync(bin, 0o755)
+    const timings: TimingRecord[] = []
+    const host = new AgentHost()
+    const events: AgentEvent[] = []
+    const done = new Promise<void>((resolve) => {
+      void host
+        .start(
+          { chatId: 'c', system: 'tutor', tools: [], resume: null, sessionId: 's' },
+          { path: bin, model: '', effort: 'low', fallbackModel: null, timeoutSec: 60, workDir: dir, timing: (r) => timings.push(r) },
+          (e) => {
+            events.push(e)
+            if (e.type === 'turn_end') resolve()
+          }
+        )
+        .then((r) => {
+          expect(r.ok).toBe(true)
+          host.send('c', 'hello')
+        })
+    })
+    await done
+    host.stopAll()
+    expect(events.filter((e) => e.type === 'text').map((e) => (e as { delta: string }).delta).join('')).toBe('Hi.')
+    expect(JSON.parse(readFileSync(join(dir, 'env.json'), 'utf8'))).toEqual({ traffic: '1', memory: '1', mds: '1' })
+    expect(timings).toHaveLength(1)
+    expect(timings[0]).toMatchObject({ type: 'agent', provider: 'claude', model: 'claude-test', chatId: 'c', promptTokens: 5010, cachedTokens: 5000, outputTokens: 7, tools: [], ok: true })
+    expect(timings[0].firstMs).toBeGreaterThanOrEqual(15)
+  })
+})
+
 describe('agent system prompt', () => {
   it('carries the doctrine, the tools flow and the goal, without the JSON-output framing', () => {
     const goal = course.concepts.find((c) => c.requires.length > 0)!
@@ -79,6 +144,8 @@ describe('agent system prompt', () => {
     expect(p).toContain('# Built-in demos')
     expect(p).toContain(`Goal concept: ${goal.title} (id ${goal.id})`)
     expect(p).toContain('ask: one question')
+    // bookkeeping goes with the next card instead of costing a round trip of its own
+    expect(p).toContain('go in the same response as the next card')
     expect(p).not.toContain('Exactly one JSON object')
     expect(p).not.toContain('You never chat freely')
     expect(p).not.toContain('Mode: OPEN')

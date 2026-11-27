@@ -85,6 +85,7 @@ No Claude yet? Choose **Use the demo tutor** in the welcome tour or in Settings.
 * The script's title page asks that it not be uploaded to generative AI without the author's consent. The author agreed to this use for this app demo. If that agreement does not cover you, turn off **Settings → Lecture notes → Ground steps in the script**; the tutor then works from section and theorem numbers, and you can still open every page in the app.
 * Solutions you upload for checking are copied to your data folder (`courses/<id>/work/`) and read by Claude from there. For that one request the CLI gets the Read tool, limited to that submission's folder.
 * Your learner model, sessions, settings, courses and their maps are JSON files in `~/Library/Application Support/Anamnesis` (written atomically, with one backup each).
+* How long each model call takes is logged to `logs/model-timing.jsonl` in that folder: times, token counts and tool names only, never prompts or answers. `node scripts/timing-report.mjs` summarises it (time to first output, cache hits, round trips spent only on bookkeeping).
 * The CLI runs with no built-in tools, no slash commands and no settings, in an empty working folder. The tutor agent can only use the app's own tools (cards, plan, mind model, script pages), served on 127.0.0.1 with a per-chat token. It cannot read or change anything else on your computer.
 
 ## Development

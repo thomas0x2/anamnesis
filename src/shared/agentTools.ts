@@ -57,7 +57,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'update_plan',
-    description: 'Mark a plan node as the current one, done, shaky or needing more work. Returns at once.',
+    description: 'Mark a plan node as the current one, done, shaky or needing more work. Returns at once: call it in the same response as the next card.',
     inputSchema: {
       type: 'object',
       properties: { nodeId: str, status: { type: 'string', enum: ['current', 'done', 'shaky', 'needs_more'] } },
@@ -198,7 +198,7 @@ The learner works through a stream of cards, one at a time; you create every car
 - show_plan: the dependency tree of reasoning steps toward the goal; the learner reviews it (marks steps as known or to be taught) and you get the result. update_plan: progress in the side panel.
 - suggest_break (when offered): a break card when one is due or the learner asks for one.
 - read_script, course, learner: look things up. platform_page: the coding task (and the learner's code) open in the app's platform window. update_learner: record what you concluded. finish: the closing summary.
-Call tools one at a time and react to each result before the next step. Do not write a question in plain text when it should be an ask card; plain text is for short talk. When the learner writes in the chat instead of answering a card, the card's result says so: answer them first (briefly, a tool card if it needs a visual), then continue.
+Show one card at a time (explain, ask, show_plan) and react to its result before the next step. Every round trip to you makes the learner wait, so do not spend one on bookkeeping: tools that return at once without telling you anything new (update_plan, update_learner, suggest_cheatsheet) go in the same response as the next card, called before it. For example, after a passed check, call update_plan done, update_plan current for the next node and the next ask together. Lookups you need at the same time (read_script, course, learner) can also go together in one response. Do not write a question in plain text when it should be an ask card; plain text is for short talk. When the learner writes in the chat instead of answering a card, the card's result says so: answer them first (briefly, a tool card if it needs a visual), then continue.
 
 A learning session for a goal concept usually goes:
 1. Probe: 1-3 ask cards of kind probe, cheap to answer, each on a different prerequisite or aspect. Neutral feedback; do not teach yet.

@@ -712,8 +712,13 @@ function OnlineInfo({ t, onEdit, onImport }: { t: OnlineTask; onEdit: () => void
             </button>
           ))
         ) : (
-          <span className="tiny muted">No concepts picked: a logged result only marks it done. Edit to pick what it practises.</span>
+          <span className="tiny muted">
+            {t.topics?.by === 'ai'
+              ? 'The AI could not tell from the statement what it practises: a logged result only marks it done. Edit to pick its concepts.'
+              : 'No concepts yet: the AI picks them from the statement once the course map has concepts. Or Edit to pick them yourself.'}
+          </span>
         )}
+        {t.conceptIds.length > 0 && t.topics?.by === 'ai' && <span className="tiny muted" title="Picked again when the course map grows or the statement changes. Edit to pick them yourself; the AI then leaves them alone.">picked by the AI</span>}
       </div>
     </div>
   )

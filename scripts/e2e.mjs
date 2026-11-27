@@ -333,9 +333,14 @@ async function coursesFlow(page) {
   step('the plan puts the course with an exam date first, with its daily time and next steps')
   await nav(page, 'Today').click()
 
+  // a file that arrives in the folder of a course that is not open is added and mapped in the background
+  writeFileSync(join(folder, '04-Background.pdf'), makePdf(['Background slide 1: Kalman filter', 'Background slide 2: Kalman filter']))
   await page.locator('.course-btn').click()
   await page.getByRole('menuitemradio', { name: /NumCS/ }).click()
   await page.locator('.course-btn', { hasText: 'NumCS' }).waitFor()
+  await page.locator('.toast', { hasText: 'FS: added 1 new file from the course folder' }).waitFor({ timeout: 30000 })
+  await page.locator('.toast', { hasText: /FS: .*Background: (\d+ new concepts?|no new concepts)/ }).waitFor({ timeout: 60000 })
+  step('a PDF added to the folder of a course that is not open was added and mapped in the background')
   const pointsAfter = (await page.locator('.points').textContent())?.trim()
   if (pointsAfter !== pointsBefore) throw new Error(`switching back changed the points: ${pointsBefore} -> ${pointsAfter}`)
   step('switching back to the first course keeps its progress')

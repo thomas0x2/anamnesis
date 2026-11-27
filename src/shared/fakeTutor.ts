@@ -316,7 +316,9 @@ export const FAKE_FAIL_ONCE = '[fake: fail once]'
 const failedOnce = new Set<string>()
 
 export async function fakeGenerate(req: LlmRequest, onEvent?: (e: LlmEvent) => void, delayMs = 250): Promise<LlmResult> {
-  if (req.kind === 'map' && req.prompt.includes(FAKE_FAIL_ONCE) && !failedOnce.has(req.prompt)) {
+  // only the material's own pages count: a concept named after a flaky fixture must not make later materials fail
+  const pages = req.prompt.split('Text extracted from the PDF').slice(1).join('')
+  if (req.kind === 'map' && pages.includes(FAKE_FAIL_ONCE) && !failedOnce.has(req.prompt)) {
     failedOnce.add(req.prompt)
     await new Promise((r) => setTimeout(r, delayMs))
     return { id: req.id, ok: false, errorKind: 'auth', error: 'Demo: this part failed once on purpose.' }

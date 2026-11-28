@@ -756,9 +756,11 @@ export interface BreakSettings {
   longEveryMin: number
   /** length of a long break */
   longMin: number
+  /** once started, the plan keeps you on a course for at least this many minutes; 0 = no blocks */
+  blockMin: number
 }
 
-export const DEFAULT_BREAKS: BreakSettings = { enabled: true, workMin: 50, shortMin: 10, longEveryMin: 150, longMin: 25 }
+export const DEFAULT_BREAKS: BreakSettings = { enabled: true, workMin: 50, shortMin: 10, longEveryMin: 150, longMin: 25, blockMin: 90 }
 
 export const DEFAULT_SETTINGS: Settings = {
   activeCourse: 'numcs',

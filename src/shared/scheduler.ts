@@ -12,6 +12,17 @@
 // - The order for today: the course with the most of its daily share still open goes first (time studied
 //   today counts, from the study time log when there is one); a course well behind its recent pace, or
 //   with an earlier exam, moves up.
+// - Blocks: once the learner has started on a course, it stays first for a block of at least
+//   `blockMin` minutes (90 by default, a setting), even when another course has become a little more
+//   urgent. Without this, studying one course lowers what it still needs today, the other course
+//   moves up, and the plan flips between courses with similar shares. Switching subjects costs: each
+//   switch needs a warm-up (Monsell 2003) and part of the attention stays on the last task (attention
+//   residue, Leroy 2009), while the benefit of interleaving comes from mixing similar problem types
+//   within one subject, which practice already does (Brunmair and Richter 2019). Courses are spaced
+//   across blocks and days instead. See docs/LEARNING_SCIENCE.md, "Course blocks". After the minimum,
+//   the block goes on while its course is still about as urgent as the next one (hysteresis: the
+//   other must lead by SWITCH_MARGIN), and the plan suggests switching at the next break once it
+//   clearly leads or the course's share for today is done. The learner can always switch themselves.
 // It only knows what is in the app: concepts from lectures that are not out yet add to the estimate
 // once their materials are added.
 import { daysUntil, workItems, workState } from './exam'
@@ -21,6 +32,7 @@ import { dueConcepts } from './selection'
 import type { ConceptStatus, ConceptTier, Course, CourseConcept, ExamPrep, LearnerModel, Material } from './types'
 
 export { isCovered } from './ordering'
+import { liveBlock, normalizeBlock, type FocusBlock } from './studyTime'
 import { clamp, dayKey } from './util'
 
 /** Minutes to bring a concept from its status to proficient (learn, practise, check). */
@@ -34,6 +46,10 @@ export const DEFAULT_SET_MIN = 120
 export const DEFAULT_MOCK_MIN = 180
 /** Days before the exam that are kept for revision: the plan aims to finish the rest by then. */
 export const BUFFER_DAYS = 7
+/** The default minimum block on one course, in minutes. */
+export const BLOCK_MIN = 90
+/** After the minimum, another course takes over only when its priority is this much higher. */
+export const SWITCH_MARGIN = 1.3
 
 export interface CourseSnapshot {
   course: Pick<Course, 'id' | 'title' | 'short' | 'concepts'>
@@ -127,6 +143,32 @@ export interface StudyPlan {
   /** average minutes a day over the last two weeks across all courses; null without a log */
   recentPerDay: number | null
   hasLog: boolean
+  /** the course block running now, when it is on a scheduled course; null otherwise */
+  focus: Focus | null
+}
+
+/**
+ * The block on one course that is running now.
+ * hold: under the minimum, the course stays first whatever else moved up;
+ * extend: past the minimum, but no other course clearly leads, so it stays first;
+ * switch: past the minimum and another course clearly leads (or this one's share for today is done):
+ * the plan suggests moving on at the next break.
+ */
+export interface Focus {
+  courseId: string
+  short: string
+  state: 'hold' | 'extend' | 'switch'
+  /** minutes studied in the block */
+  minutes: number
+  /** the minimum block */
+  target: number
+  /** the course the plan would pick without the block (the one to switch to); null when none */
+  nextId: string | null
+}
+
+export interface PlanOptions {
+  /** minimum block on one course in minutes; 0 turns blocks off (default BLOCK_MIN) */
+  blockMin?: number
 }
 
 const conceptWeight = (c: CourseConcept): number => TIER_WEIGHT[c.tier] ?? 1
@@ -316,10 +358,14 @@ export function planCourse(snap: CourseSnapshot, now: Date, days: StudyDays | nu
 }
 
 /** The plan across all courses, the one to work on first at the top. */
-export function studyPlan(snaps: CourseSnapshot[], now: Date, log: unknown = null): StudyPlan {
+export function studyPlan(snaps: CourseSnapshot[], now: Date, log: unknown = null, opts: PlanOptions = {}): StudyPlan {
   const days = studyDays(log)
-  const courses = snaps.map((s) => planCourse(s, now, days))
+  let courses = snaps.map((s) => planCourse(s, now, days))
   courses.sort((a, b) => b.priority - a.priority || (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999) || a.title.localeCompare(b.title))
+  const block = liveBlock(normalizeBlock((log as { block?: unknown } | null)?.block), now)
+  const focus = focusOf(courses, block, opts.blockMin ?? BLOCK_MIN)
+  // the block's course goes first while it holds, the rest keep their order
+  if (focus && focus.state !== 'switch') courses = [...courses.filter((c) => c.id === focus.courseId), ...courses.filter((c) => c.id !== focus.courseId)]
   const scheduled = courses.filter((c) => c.perDay !== null)
   const perDay = scheduled.reduce((a, c) => a + (c.perDay ?? 0), 0)
   const studiedToday = courses.reduce((a, c) => a + c.studiedToday, 0)
@@ -335,7 +381,36 @@ export function studyPlan(snaps: CourseSnapshot[], now: Date, log: unknown = nul
     perDayParts.sets += c.perDayParts?.sets ?? 0
     perDayParts.mocks += c.perDayParts?.mocks ?? 0
   }
-  return { courses, perDay, perDayParts, todayLeft, studiedToday, recentPerDay: recent, hasLog: !!days }
+  return { courses, perDay, perDayParts, todayLeft, studiedToday, recentPerDay: recent, hasLog: !!days, focus }
+}
+
+/** Courses the plan can send the learner to: an exam date and work left. */
+export const scheduledCourses = (courses: CoursePlan[]): CoursePlan[] => courses.filter((c) => c.perDay !== null && c.pace !== 'done')
+
+/** The course to work on now: the block's course while it holds, else the first with today's share open. */
+export function firstCourse(plan: StudyPlan): CoursePlan | null {
+  const open = scheduledCourses(plan.courses)
+  const f = plan.focus
+  if (f && f.state !== 'switch') {
+    const c = open.find((x) => x.id === f.courseId)
+    if (c) return c
+  }
+  return open.find((c) => c.todayLeft >= 5) ?? null
+}
+
+function focusOf(sorted: CoursePlan[], block: FocusBlock | null, blockMin: number): Focus | null {
+  if (!block || blockMin <= 0) return null
+  const open = scheduledCourses(sorted)
+  const cur = open.find((c) => c.id === block.courseId)
+  if (!cur) return null
+  const minutes = block.sec / 60
+  const leader = open.find((c) => c.todayLeft >= 5 && c.id !== cur.id) ?? null
+  let state: Focus['state']
+  if (minutes < blockMin) state = 'hold'
+  else if (cur.todayLeft < 5 && leader) state = 'switch'
+  else if (leader && leader.priority > cur.priority * SWITCH_MARGIN) state = 'switch'
+  else state = 'extend'
+  return { courseId: cur.id, short: cur.short, state, minutes, target: blockMin, nextId: leader?.id ?? null }
 }
 
 /** Round a duration for display: to 5 minutes under an hour, to a quarter hour above. */

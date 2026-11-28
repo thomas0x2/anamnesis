@@ -6383,3 +6383,19 @@ svg.pace {
 .topbar.fit-4 .pm-track {
   width: 36px;
 }
+
+/* the block on one course that is running now (Plan page) */
+.plan-focus {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 4px 0 18px;
+}
+@media (max-width: 720px) {
+  .plan-focus {
+    flex-wrap: wrap;
+  }
+}

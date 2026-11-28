@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { newMaterial } from '../../src/shared/courseMap'
 import { emptyPrep } from '../../src/shared/exam'
-import { BUFFER_DAYS, DEFAULT_SET_MIN, fmtDuration, LEARN_MIN, planCourse, planSets, studyPlan, typicalMinutes, type CourseSnapshot } from '../../src/shared/scheduler'
+import { BUFFER_DAYS, DEFAULT_SET_MIN, firstCourse, fmtDuration, LEARN_MIN, planCourse, planSets, studyPlan, typicalMinutes, type CourseSnapshot } from '../../src/shared/scheduler'
 import type { ConceptStatus, CourseConcept, ExamPrep, LearnerModel, Material, Submission } from '../../src/shared/types'
 import { dayKey } from '../../src/shared/util'
 import { NOW, at } from './helpers'
@@ -171,6 +171,59 @@ describe('studyPlan', () => {
   it('survives a damaged study log', () => {
     expect(() => studyPlan([snap({ prep: { examDate: iso(at(10)) } })], NOW, { days: 'x' })).not.toThrow()
     expect(studyPlan([snap()], NOW, 42).hasLog).toBe(false)
+  })
+})
+
+describe('blocks on one course', () => {
+  // a and b need about the same time a day; studying a lowers its share left, so b would lead
+  const pair = (setsA = 40, setsB = 40): CourseSnapshot[] => [
+    snap({ id: 'a', prep: { examDate: iso(at(40)), problemSets: setsA } }),
+    snap({ id: 'b', prep: { examDate: iso(at(40)), problemSets: setsB } })
+  ]
+  const logFor = (courseId: string, minutes: number, lastAt = NOW): unknown => ({
+    days: { [iso(NOW)]: { [courseId]: { tutor: minutes * 60, other: 0 } } },
+    block: { courseId, startedAt: new Date(lastAt.getTime() - minutes * 60_000).toISOString(), lastAt: lastAt.toISOString(), sec: minutes * 60, detour: null }
+  })
+
+  it('keeps the started course first under the minimum, though the other now leads', () => {
+    const noBlock = studyPlan(pair(), NOW, { days: (logFor('a', 30) as { days: unknown }).days })
+    expect(firstCourse(noBlock)?.id).toBe('b')
+    const plan = studyPlan(pair(), NOW, logFor('a', 30))
+    expect(plan.focus).toMatchObject({ courseId: 'a', state: 'hold', target: 90, nextId: 'b' })
+    expect(plan.courses[0].id).toBe('a')
+    expect(firstCourse(plan)?.id).toBe('a')
+  })
+
+  it('holds even when the started course has done its share for today', () => {
+    const plan = studyPlan(pair(4, 4), NOW, logFor('a', 60))
+    expect(plan.courses.find((c) => c.id === 'a')?.todayLeft).toBe(0)
+    expect(plan.focus?.state).toBe('hold')
+    expect(firstCourse(plan)?.id).toBe('a')
+  })
+
+  it('carries on past the minimum while no other course clearly leads', () => {
+    const plan = studyPlan(pair(60, 40), NOW, logFor('a', 95))
+    const [a, b] = ['a', 'b'].map((id) => plan.courses.find((c) => c.id === id)!)
+    expect(b.priority).toBeGreaterThan(a.priority)
+    expect(plan.focus?.state).toBe('extend')
+    expect(firstCourse(plan)?.id).toBe('a')
+  })
+
+  it('suggests switching once another course clearly leads after the minimum', () => {
+    const plan = studyPlan(pair(), NOW, logFor('a', 100))
+    expect(plan.focus).toMatchObject({ state: 'switch', nextId: 'b' })
+    expect(firstCourse(plan)?.id).toBe('b')
+  })
+
+  it('ignores a block that ended (a long pause or another day) and can be turned off', () => {
+    expect(studyPlan(pair(), NOW, logFor('a', 30, new Date(NOW.getTime() - 2 * 3600_000))).focus).toBeNull()
+    expect(studyPlan(pair(), NOW, logFor('a', 30), { blockMin: 0 }).focus).toBeNull()
+    expect(studyPlan(pair(), NOW, logFor('a', 30), { blockMin: 20 }).focus?.state).toBe('extend')
+  })
+
+  it('ignores a block on a course without an exam date', () => {
+    const plan = studyPlan([...pair(), snap({ id: 'x' })], NOW, logFor('x', 30))
+    expect(plan.focus).toBeNull()
   })
 })
 

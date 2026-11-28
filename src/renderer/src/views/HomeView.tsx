@@ -3,7 +3,7 @@
 // status in plan order, and study time over the last two weeks by course. Each course's own dashboard
 // is the Course screen (CourseView).
 import { dueSoon, overviewTotals, whenLabel, type DueItem } from '@shared/overview'
-import { fmtDuration, fmtParts, type CoursePlan, type StudyPlan } from '@shared/scheduler'
+import { firstCourse, fmtDuration, fmtParts, scheduledCourses, type CoursePlan, type StudyPlan } from '@shared/scheduler'
 import { daySeries, fmtStudy, fmtStudyShort, totalsSince } from '@shared/studyTime'
 import { dayKey } from '@shared/util'
 import { useMemo, type ReactElement } from 'react'
@@ -13,7 +13,7 @@ import { useApp } from '../engine/app'
 import { useStore } from '../engine/store'
 import { plural } from '../lib/format'
 import { useNow } from '../lib/hooks'
-import { PACE, runStep, stepLabel, usePlanData } from './PlanView'
+import { focusText, PACE, runStep, stepLabel, SwitchButton, usePlanData } from './PlanView'
 
 /** One colour per course, in the order of the course menu. */
 export const COURSE_COLORS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)']
@@ -25,15 +25,17 @@ export function HomeView(): ReactElement {
   const hour = now.getHours()
   const greeting = hour < 5 ? 'Still up' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-  const scheduled = plan?.courses.filter((c) => c.perDay !== null && c.pace !== 'done') ?? []
-  const first = scheduled.find((c) => c.todayLeft >= 5) ?? null
+  const scheduled = plan ? scheduledCourses(plan.courses) : []
+  const first = plan ? firstCourse(plan) : null
   const totals = plan ? overviewTotals(plan.courses) : null
   const due = useMemo(() => (data ? dueSoon(data.snaps, data.plan.courses, now) : []), [data, now])
 
   const summary = !plan
     ? 'Working out the day…'
     : first
-      ? `Start with ${first.short}: about ${fmtDuration(first.todayLeft)} today.`
+      ? plan.focus && plan.focus.state !== 'switch' && plan.focus.courseId === first.id
+        ? `Stay with ${first.short} for now.`
+        : `Start with ${first.short}: about ${fmtDuration(first.todayLeft)} today.`
       : scheduled.length
         ? 'Today’s share is done for every course.'
         : totals?.due
@@ -146,10 +148,12 @@ function OverviewGlance({ plan, totals }: { plan: StudyPlan; totals: ReturnType<
 /** The course to start with and its first step, straight from the plan. */
 function StartHere({ plan, first }: { plan: StudyPlan; first: CoursePlan | null }): ReactElement | null {
   const app = useApp()
-  const open = plan.courses.filter((c) => c.perDay !== null && c.pace !== 'done')
+  const open = scheduledCourses(plan.courses)
   if (!open.length) return null
   const then = open.filter((c) => c.todayLeft >= 5 && c !== first).slice(0, 2)
   const step = first?.steps[0]
+  const f = plan.focus
+  const block = f ? focusText(plan, f) : null
   return (
     <div className="today-block wide plan-notice">
       <div className="grow">
@@ -173,7 +177,13 @@ function StartHere({ plan, first }: { plan: StudyPlan; first: CoursePlan | null 
           {step ? <Markdown text={step.why} inline /> : null}
           {then.length ? ` Then ${then.map((c) => `${c.short} (${fmtDuration(c.todayLeft)})`).join(', ')}.` : ''}
         </div>
+        {block && f && (
+          <div className="tiny muted plan-block-line" style={{ marginTop: 6 }}>
+            <span style={{ color: f.state === 'switch' ? 'var(--brand)' : undefined }}>{block.title}.</span> {block.desc}
+          </div>
+        )}
       </div>
+      {block && f && f.state !== 'switch' && block.next && <SwitchButton to={block.next} primary={false} app={app} />}
       <button className="btn ghost go" onClick={() => app.go({ name: 'plan' })}>
         See the plan
       </button>

@@ -2,7 +2,7 @@
 // every course on track for its exam, and the next steps in each (reviews, the problem sets whose
 // topics are covered, what to learn to unlock the next set, mock exams near the end). See
 // src/shared/scheduler.ts for the model.
-import { fmtDuration, fmtParts, studyPlan, type CoursePlan, type CourseSnapshot, type PaceStatus, type PlanStep, type SetPlan, type StudyPlan } from '@shared/scheduler'
+import { firstCourse, fmtDuration, fmtParts, scheduledCourses, studyPlan, type CoursePlan, type Focus, type CourseSnapshot, type PaceStatus, type PlanStep, type SetPlan, type StudyPlan } from '@shared/scheduler'
 import { useEffect, useState, type ReactElement } from 'react'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
@@ -10,6 +10,7 @@ import { useApp, type AppController } from '../engine/app'
 import { useStore } from '../engine/store'
 import { useNow } from '../lib/hooks'
 import { pct, plural } from '../lib/format'
+import { normalizeBreakSettings } from '@shared/studyTime'
 
 /** The plan, recomputed when the active course changes (answers, checked solutions, goals) and every few minutes. */
 export function usePlan(): StudyPlan | null {
@@ -23,20 +24,28 @@ export function usePlanData(): { plan: StudyPlan; snaps: CourseSnapshot[] } | nu
   const prep = useStore(app.exam)
   const materials = useStore(app.materials)
   const courses = useStore(app.courses)
+  const blockMin = useStore(app.settings, (s) => normalizeBreakSettings(s.breaks).blockMin)
+  // the block's course changes when the learner switches or spends a while on another course
+  const blockCourse = useStore(app.study.log, (l) => l.block?.courseId ?? null)
   const now = useNow(5 * 60_000)
   const [plan, setPlan] = useState<{ plan: StudyPlan; snaps: CourseSnapshot[] } | null>(null)
   useEffect(() => {
     let live = true
     const t = setTimeout(() => {
       void Promise.all([app.planSnapshots(), app.readStudyLog()])
-        .then(([snaps, log]) => live && setPlan({ plan: studyPlan(snaps, new Date(), log), snaps }))
+        .then(([snaps, file]) => {
+          // the clock's own copy of the block is newer than the file (saved about once a minute)
+          const block = app.study.log.get().block
+          const log = block && file && typeof file === 'object' ? { ...file, block } : file
+          if (live) setPlan({ plan: studyPlan(snaps, new Date(), log, { blockMin }), snaps })
+        })
         .catch(() => live && setPlan(null))
     }, 150)
     return () => {
       live = false
       clearTimeout(t)
     }
-  }, [app, learner, prep, materials, courses, now])
+  }, [app, learner, prep, materials, courses, now, blockMin, blockCourse])
   return plan
 }
 
@@ -53,8 +62,8 @@ export function PlanView(): ReactElement {
   const plan = usePlan()
   const now = useNow()
   const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-  const scheduled = plan?.courses.filter((c) => c.perDay !== null && c.pace !== 'done') ?? []
-  const first = scheduled.find((c) => c.todayLeft >= 5) ?? null
+  const scheduled = plan ? scheduledCourses(plan.courses) : []
+  const first = plan ? firstCourse(plan) : null
   const unscheduled = plan?.courses.filter((c) => c.perDay === null || c.pace === 'done') ?? []
 
   return (
@@ -77,6 +86,8 @@ export function PlanView(): ReactElement {
       </div>
 
       {plan && scheduled.length > 0 && <PlanGlance plan={plan} />}
+
+      {plan?.focus && <FocusNote plan={plan} focus={plan.focus} />}
 
       {plan && scheduled.length > 0 && (
         <section className="plan-list" aria-label="Courses in order">
@@ -262,6 +273,57 @@ function PlanMeter({ label, done, total }: { label: string; done: number; total:
   )
 }
 
+const BLOCK_LABEL = 'the block length you set (90 minutes by default)'
+
+/** Where the learner is in the block on one course, and the way out. */
+export function focusText(plan: StudyPlan, f: Focus): { title: string; desc: string; next: CoursePlan | null } {
+  const next = plan.courses.find((c) => c.id === f.nextId) ?? null
+  const done = fmtDuration(f.minutes)
+  if (f.state === 'hold')
+    return {
+      title: `${f.short} block: ${f.minutes < 5 ? 'just started' : `${done} in`}, about ${fmtDuration(Math.max(5, f.target - f.minutes))} to go`,
+      desc: `Staying with one course for at least ${fmtDuration(f.target)} lets you go deep instead of warming up again after each switch.${next ? ` ${next.short} comes next.` : ''}`,
+      next
+    }
+  if (f.state === 'extend')
+    return { title: `${f.short} block: ${done}`, desc: `The minimum block is done, and no other course needs the time clearly more, so carrying on is fine. Switch at your next break if you want a change.`, next }
+  return { title: `${f.short} block: ${done}, a good point to switch`, desc: next ? `${next.short} needs the time more now. Finish what you are on, take your break, then move on.` : 'Finish what you are on and take your break.', next }
+}
+
+function FocusNote({ plan, focus }: { plan: StudyPlan; focus: Focus }): ReactElement {
+  const app = useApp()
+  const t = focusText(plan, focus)
+  return (
+    <div className="plan-focus" aria-label="Current block">
+      <div className="grow">
+        <div className="eyebrow" style={{ color: focus.state === 'switch' ? 'var(--brand)' : undefined }}>
+          {focus.state === 'switch' ? 'time to switch' : 'current block'}
+        </div>
+        <div className="small" style={{ marginTop: 4 }}>
+          {t.title}
+        </div>
+        <div className="tiny muted">{t.desc}</div>
+      </div>
+      {t.next && <SwitchButton to={t.next} primary={focus.state === 'switch'} app={app} />}
+    </div>
+  )
+}
+
+/** Move on to another course now: the block starts there, and its first step opens. */
+export function SwitchButton({ to, primary, app }: { to: CoursePlan; primary: boolean; app: AppController }): ReactElement {
+  const step = to.steps[0]
+  const go = async (): Promise<void> => {
+    app.study.switchBlock(to.id)
+    if (step) await runStep(app, to.id, step)
+    else await app.openIn(to.id, { name: 'course' })
+  }
+  return (
+    <button className={`btn ${primary ? 'primary' : 'ghost'} go`} onClick={() => void go()}>
+      Switch to {to.short} <Icon name="chev-right" size={14} />
+    </button>
+  )
+}
+
 function HowItWorks(): ReactElement {
   return (
     <details className="plan-how">
@@ -274,6 +336,11 @@ function HowItWorks(): ReactElement {
         <p>The work should be done a week before each exam, so the last week stays free for revision. The courses are summed, so the number at the top is what all exams together need a day.</p>
         <p>
           The course with the most of today’s share still open comes first; being behind your recent pace or a close exam moves a course up. Your pace and what you studied today come from the study time the app logs.
+        </p>
+        <p>
+          Once you have started on a course, it stays first for a block of at least {BLOCK_LABEL} (Settings → Learning), even if another course has become a little more urgent in the meantime. Each switch between subjects costs a warm-up, and part of your attention
+          stays on the last one for a while, so going deep on one course and spacing courses across blocks and days works better than flipping between them. After the minimum the block goes on until another course clearly needs the time more or this one’s
+          share for today is done; then the plan suggests switching at your next break. A few minutes on another course do not end a block, about ten do. You can always switch yourself.
         </p>
         <p>
           A problem set is marked as one you can fully solve when you have covered every topic it practises (started it in the app, or marked it known). For the others the plan names the missing topics, and suggests learning the one that brings a set closest to

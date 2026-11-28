@@ -32,7 +32,7 @@ describe.skipIf(!chromium)('widget kit', () => {
   })
 
   /** Runs widget code the way widget.html does; returns the frame's text, the errors it posted and whether it showed the error box. */
-  async function run(code: string): Promise<{ text: string; errors: string[]; failed: boolean }> {
+  async function run(code: string, after?: string): Promise<{ text: string; errors: string[]; failed: boolean }> {
     if (!browser) return { text: '', errors: [], failed: false }
     const page = await browser.newPage()
     await page.setContent('<div id="k-root"></div>')
@@ -40,6 +40,10 @@ describe.skipIf(!chromium)('widget kit', () => {
     await page.addScriptTag({ content: kit })
     await page.addScriptTag({ content: 'try {\n' + code + '\n} catch (err) { window.K && K._report(err) }' })
     await page.waitForTimeout(150)
+    if (after) {
+      await page.evaluate(after)
+      await page.waitForTimeout(150)
+    }
     // a string, not a function: the test project has no DOM types
     const res = await page.evaluate<{ text: string; errors: string[]; failed: boolean }>(
       "({ text: document.getElementById('k-root').innerText, errors: window.__errs, failed: !!document.querySelector('.k-error') })"
@@ -95,6 +99,52 @@ describe.skipIf(!chromium)('widget kit', () => {
     expect(r.errors).toEqual([])
     expect(r.text).toContain('Mode A')
     expect(r.text).toContain('rdi')
+  })
+
+  // clicks the choice button with this label, as a learner switching the element type would
+  const click = (label: string): string =>
+    `Array.from(document.querySelectorAll('.k-seg button')).find(b => b.textContent === ${JSON.stringify(label)}).click()`
+
+  it('adds the views draw destructures but the spec never made (the byte-addressed memory widget)', async () => {
+    const r = await run(
+      `K.demo({
+      params: { type: K.choice({ label: "Element type", options: [{ value: 1, label: "char (1 B)" }, { value: 4, label: "int (4 B)" }, { value: 8, label: "double (8 B)" }] }) },
+      views: [K.panel({ title: "Bytes" })],
+      draw(p, [bytes, elems], out) {
+        const n = 16
+        bytes.cells(Array.from({ length: n }, (_, i) => "0x" + (0x1000 + i).toString(16)), { highlight: Array.from({ length: p.type }, (_, i) => i) })
+        elems.cells(Array.from({ length: n / p.type }, (_, i) => "a[" + i + "]"), { title: "Elements" })
+        out("next element at", "0x" + (0x1000 + p.type).toString(16))
+      }
+    })`,
+      click('double (8 B)')
+    )
+    expect(r.errors).toEqual([])
+    expect(r.failed).toBe(false)
+    expect(r.text).toContain('a[1]')
+    expect(r.text).toContain('0x1008')
+  })
+
+  it('gives draw the views by name: views as an object, { mem } destructuring, g.mem and g[1]', async () => {
+    const byObject = await run(`K.demo({ views: { mem: K.panel({ title: "memory" }), plot: K.plot({}) }, draw(p, g) { g.mem.cells([1, 2]); g.plot.fn(x => x) } })`)
+    expect(byObject.errors).toEqual([])
+    const destructured = await run(`K.demo({ views: [K.panel({ title: "Memory" })], draw(p, { memory, regs }) { memory.cells([1, 2]); regs.cells(["rax"]) } })`)
+    expect(destructured.errors).toEqual([])
+    expect(destructured.text).toContain('rax')
+    const dotted = await run(`K.demo({ view: K.panel({}), draw(p, g) { g.stack.cells([1]); g.heap.cells(["h"]) } })`)
+    expect(dotted.errors).toEqual([])
+    expect(dotted.text).toContain('h')
+    const indexed = await run(`K.demo({ views: [K.plot({})], draw(p, g) { g[0].fn(x => x); g[1].cells(["second"]) } })`)
+    expect(indexed.errors).toEqual([])
+    expect(indexed.text).toContain('second')
+    const panelKey = await run(`K.demo({ panel: { title: "regs" }, draw(p, g) { g.cells(["rip"]) } })`)
+    expect(panelKey.errors).toEqual([])
+  })
+
+  it('leaves non-view properties alone', async () => {
+    const r = await run(`K.demo({ views: [K.panel({ title: "t" })], draw(p, g, out) { out("title", g.o.title); g.cells([g.length]) } })`)
+    expect(r.errors).toEqual([])
+    expect(r.text).toContain('title')
   })
 
   it('still reports a real mistake, says where, and tells the learner plainly', async () => {

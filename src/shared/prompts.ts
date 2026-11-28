@@ -83,7 +83,7 @@ Write plain JavaScript (no imports, HTML or CSS) that calls K.demo once. The app
 K.demo({
   params: { a: K.slider({ label, min, max, step, value, log }), b: K.choice({ label, options: [values or { value, label }], value }), c: K.toggle({ label, value }), d: K.button({ label, onClick(p) {} }) },
   plot: { xMin, xMax, yMin, yMax, height, xLabel, yLabel, logX, logY, equal, axes, title },  // one plot; a missing range is fitted to what is drawn
-  views: [K.plot({ ... }), K.panel({ title })], layout: "row" or "column",  // views instead of plot; with two or more, draw gets them as an array: draw(p, [plot, mem], out)
+  views: [K.plot({ ... }), K.panel({ title })], layout: "row" or "column",  // views instead of plot; with two or more, draw gets them as an array: draw(p, [plot, mem], out); or name them, views: { mem: K.panel(), plot: K.plot() }, and draw gets g.mem, g.plot
   play: { from, to, speed, loop, label },  // a Play button and a time slider; the time is p.t
   setup(p) {},  // once before the first draw
   draw(p, g, out) {}  // on every change: p = current values (also handle positions), g = the view (one view) or the array of views, out = the readout below

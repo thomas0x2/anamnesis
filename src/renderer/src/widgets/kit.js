@@ -969,9 +969,19 @@
     })
     Object.defineProperty(proto, 'length', { value: 1 })
   })
-  function viewArg(views) {
-    if (views.length === 1) return views[0]
+  function viewArg(views, named) {
+    named = named || {}
+    if (views.length === 1) {
+      var only = views[0]
+      Object.keys(named).forEach(function (k) {
+        if (!(k in only)) only[k] = named[k]
+      })
+      return only
+    }
     var arr = views.slice()
+    Object.keys(named).forEach(function (k) {
+      if (!(k in arr)) arr[k] = named[k]
+    })
     var names = {}
     ;[Plot.prototype, Panel.prototype].forEach(function (proto) {
       Object.keys(proto).forEach(function (k) {
@@ -984,6 +994,226 @@
       }
     })
     return arr
+  }
+
+  // Generated draw code often asks for views the spec never made: draw(p, [mem, info]) with one view,
+  // draw(p, { mem }) or g.mem.cells(...) for a view it only named in its head, g[1] past the end. Reading
+  // draw's own source tells which views it expects, so the kit can name the ones that exist and add the
+  // missing ones before the first draw instead of failing with "reading 'cells' of undefined".
+  function viewMethods(kind) {
+    var out = {}
+    Object.keys(kind === 'panel' ? Panel.prototype : Plot.prototype).forEach(function (k) {
+      if (k.charAt(0) !== '_') out[k] = true
+    })
+    return out
+  }
+  function splitTop(s) {
+    var parts = []
+    var depth = 0
+    var start = 0
+    var quote = null
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i)
+      if (quote) {
+        if (c === '\\') i++
+        else if (c === quote) quote = null
+      } else if (c === '"' || c === "'" || c === '`') quote = c
+      else if (c === '(' || c === '[' || c === '{') depth++
+      else if (c === ')' || c === ']' || c === '}') depth--
+      else if (c === ',' && depth === 0) {
+        parts.push(s.slice(start, i))
+        start = i + 1
+      }
+    }
+    parts.push(s.slice(start))
+    return parts
+      .map(function (x) {
+        return x.trim()
+      })
+      .filter(function (x) {
+        return x.length
+      })
+  }
+  function stripDefault(s) {
+    var d = 0
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i)
+      if (c === '(' || c === '[' || c === '{') d++
+      else if (c === ')' || c === ']' || c === '}') d--
+      else if (c === '=' && d === 0 && s.charAt(i + 1) !== '>') return s.slice(0, i).trim()
+    }
+    return s.trim()
+  }
+  var IDENT = /^[A-Za-z_$][\w$]*$/
+  function drawShape(fn) {
+    var src
+    try {
+      src = Function.prototype.toString.call(fn)
+    } catch (e) {
+      return null
+    }
+    var open = src.indexOf('(')
+    var arrow = src.indexOf('=>')
+    if (open < 0 || (arrow >= 0 && arrow < open)) return null
+    var depth = 0
+    var close = -1
+    for (var i = open; i < src.length; i++) {
+      var c = src.charAt(i)
+      if (c === '(') depth++
+      else if (c === ')' && --depth === 0) {
+        close = i
+        break
+      }
+    }
+    if (close < 0) return null
+    var params = splitTop(src.slice(open + 1, close))
+    if (params.length < 2) return null
+    var g = stripDefault(params[1])
+    var body = src.slice(close + 1)
+    var shape = { src: body, array: null, object: null, name: null }
+    var first = g.charAt(0)
+    if (first === '[' || first === '{') {
+      var inner = splitTop(g.slice(1, -1))
+      if (first === '[') {
+        shape.array = inner.map(function (x) {
+          x = stripDefault(x)
+          return IDENT.test(x) ? x : x.indexOf('...') === 0 ? null : '_'
+        })
+      } else {
+        shape.object = []
+        inner.forEach(function (x) {
+          x = stripDefault(x)
+          if (x.indexOf('...') === 0) return
+          var colon = x.indexOf(':')
+          var key = (colon >= 0 ? x.slice(0, colon) : x).trim().replace(/^["']|["']$/g, '')
+          var alias = colon >= 0 ? x.slice(colon + 1).trim() : key
+          if (IDENT.test(key)) shape.object.push({ key: key, alias: IDENT.test(alias) ? alias : null })
+        })
+      }
+    } else if (IDENT.test(g)) shape.name = g
+    return shape
+  }
+  function escRe(s) {
+    return s.replace(/[$.]/g, '\\$&')
+  }
+  /** The kind of view the code draws into through `name` (panel, plot or null when it cannot tell). */
+  function kindUsed(src, name) {
+    if (!name) return null
+    var re = new RegExp('(?:^|[^\\w$.])' + escRe(name) + '\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*\\(', 'g')
+    return kindOfMethods(src, re)
+  }
+  var PANEL_ONLY = null
+  var PLOT_ONLY = null
+  function kindOfMethods(src, re) {
+    if (!PANEL_ONLY) {
+      var pa = viewMethods('panel')
+      var pl = viewMethods('plot')
+      PANEL_ONLY = {}
+      PLOT_ONLY = {}
+      Object.keys(pa).forEach(function (k) {
+        if (!pl[k]) PANEL_ONLY[k] = true
+      })
+      Object.keys(pl).forEach(function (k) {
+        if (!pa[k]) PLOT_ONLY[k] = true
+      })
+    }
+    var m
+    var kind = null
+    while ((m = re.exec(src))) {
+      if (PANEL_ONLY[m[1]]) return 'panel'
+      if (PLOT_ONLY[m[1]] && !kind) kind = 'plot'
+    }
+    return kind
+  }
+  function norm(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+  }
+  /**
+   * Adds views draw expects but the spec did not make, and returns the names draw uses for them.
+   * declared: names given in the spec ({ mem: K.panel() } or K.panel({ name })), by view index.
+   */
+  function fitViews(fn, views, declared, make) {
+    var named = {}
+    declared.forEach(function (n, i) {
+      if (n) named[n] = views[i]
+    })
+    var shape = typeof fn === 'function' ? drawShape(fn) : null
+    if (!shape) return named
+    var src = shape.src
+    var lastKind = views.length && views[views.length - 1] instanceof Panel ? 'panel' : 'plot'
+    // draw(p, [a, b, c]) with fewer views
+    if (shape.array) {
+      shape.array.forEach(function (n, i) {
+        if (i < views.length || n === null) return
+        make((n !== '_' && kindUsed(src, n)) || lastKind)
+      })
+    }
+    // g[2].cells(...) past the end
+    if (shape.name) {
+      var reIdx = new RegExp('(?:^|[^\\w$.])' + escRe(shape.name) + '\\s*\\[\\s*(\\d+)\\s*\\]', 'g')
+      var mi
+      var maxIdx = -1
+      while ((mi = reIdx.exec(src))) maxIdx = Math.max(maxIdx, Number(mi[1]))
+      for (var j = views.length; j <= Math.min(maxIdx, 7); j++) {
+        var reK = new RegExp('(?:^|[^\\w$.])' + escRe(shape.name) + '\\s*\\[\\s*' + j + '\\s*\\]\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*\\(', 'g')
+        make(kindOfMethods(src, reK) || lastKind)
+      }
+    }
+    // names: draw(p, { mem, info }) or g.mem.cells(...)
+    var wanted = []
+    if (shape.object)
+      shape.object.forEach(function (e) {
+        wanted.push({ key: e.key, kind: kindUsed(src, e.alias) })
+      })
+    if (shape.name) {
+      var reName = new RegExp('(?:^|[^\\w$.])' + escRe(shape.name) + '\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*(?=[.\\[])', 'g')
+      var mn
+      var seen = {}
+      while ((mn = reName.exec(src))) {
+        var key = mn[1]
+        if (seen[key]) continue
+        seen[key] = true
+        wanted.push({ key: key, kind: kindUsed(src, shape.name + '.' + key) })
+      }
+    }
+    var reserved = {}
+    ;['length', 'constructor', 'prototype', 'o', 'node', 'body', 'svg', 'list', 'handles', 'id', 'legendEl'].forEach(function (k) {
+      reserved[k] = true
+    })
+    Object.keys(viewMethods('panel')).concat(Object.keys(viewMethods('plot'))).forEach(function (k) {
+      reserved[k] = true
+    })
+    Object.getOwnPropertyNames(Array.prototype).forEach(function (k) {
+      reserved[k] = true
+    })
+    var claimed = []
+    Object.keys(named).forEach(function (k) {
+      claimed.push(named[k])
+    })
+    var fits = function (v, kind) {
+      return !kind || (kind === 'panel') === v instanceof Panel
+    }
+    wanted.forEach(function (w) {
+      if (reserved[w.key] || named[w.key]) return
+      // g.mem.x(...) where mem is not a view: only take it when it is used like one
+      if (!shape.object && !w.kind) return
+      var k = norm(w.key)
+      var pick = null
+      views.forEach(function (v) {
+        var t = norm(v.o && (v.o.name || v.o.id || v.o.title))
+        if (!pick && t && claimed.indexOf(v) < 0 && fits(v, w.kind) && (t === k || t.indexOf(k) >= 0 || k.indexOf(t) >= 0)) pick = v
+      })
+      if (!pick)
+        views.forEach(function (v) {
+          if (!pick && claimed.indexOf(v) < 0 && fits(v, w.kind)) pick = v
+        })
+      if (!pick) pick = make(w.kind || (/plot|graph|chart|axes/i.test(w.key) ? 'plot' : 'panel'))
+      claimed.push(pick)
+      named[w.key] = pick
+    })
+    return named
   }
 
   function plot(o) {
@@ -1002,18 +1232,40 @@
     var root = document.getElementById('k-root') || el('div', null, document.body)
     var state = {}
     var params = spec.params || {}
-    var viewSpecs = spec.views || (spec.view ? [spec.view] : spec.plot ? [plot(spec.plot)] : [plot({})])
-    viewSpecs = Array.isArray(viewSpecs) ? viewSpecs : viewSpecs && viewSpecs.kind ? [viewSpecs] : list(viewSpecs)
+    var viewSpecs = spec.views || (spec.view ? [spec.view] : spec.plot ? [plot(spec.plot)] : spec.panel ? [panel(spec.panel)] : [plot({})])
+    var declared = []
+    if (viewSpecs && typeof viewSpecs === 'object' && !Array.isArray(viewSpecs) && !viewSpecs.kind && !(viewSpecs instanceof Plot) && !(viewSpecs instanceof Panel) && typeof viewSpecs[Symbol.iterator] !== 'function') {
+      // views: { mem: K.panel(), plot: K.plot() }: keep the names for draw
+      declared = Object.keys(viewSpecs)
+      viewSpecs = declared.map(function (k) {
+        return viewSpecs[k]
+      })
+    } else viewSpecs = Array.isArray(viewSpecs) ? viewSpecs : viewSpecs && (viewSpecs.kind || viewSpecs instanceof Plot || viewSpecs instanceof Panel) ? [viewSpecs] : list(viewSpecs)
     if (!viewSpecs.length) viewSpecs = [plot({})]
-    var viewsEl = el('div', 'k-views' + (viewSpecs.length > 1 ? ' k-views-' + (spec.layout === 'column' ? 'col' : 'row') : ''), root)
-    var views = viewSpecs.map(function (v) {
+    var viewsEl = el('div', 'k-views', root)
+    var makeView = function (v) {
       if (v instanceof Plot || v instanceof Panel) v = { kind: v instanceof Panel ? 'panel' : 'plot', o: v.o }
       var view = v && v.kind === 'panel' ? new Panel(v.o) : new Plot(v && v.kind === 'plot' ? v.o : v)
       view._state = state
       view._redraw = schedule
       viewsEl.appendChild(view.node)
       return view
+    }
+    var views = viewSpecs.map(makeView)
+    views.forEach(function (v, i) {
+      if (!declared[i] && v.o && typeof v.o.name === 'string' && IDENT.test(v.o.name)) declared[i] = v.o.name
     })
+    var namedViews = {}
+    try {
+      namedViews = fitViews(spec.draw, views, declared, function (kind) {
+        var v = makeView({ kind: kind, o: {} })
+        views.push(v)
+        return v
+      })
+    } catch (e) {
+      namedViews = {}
+    }
+    if (views.length > 1) viewsEl.className = 'k-views k-views-' + (spec.layout === 'column' ? 'col' : 'row')
     var controls = el('div', 'k-controls', root)
     var readout = el('div', 'k-readout', root)
 
@@ -1212,7 +1464,7 @@
       try {
         if (typeof spec.draw === 'function') {
           try {
-            spec.draw(state, viewArg(views), out)
+            spec.draw(state, viewArg(views, namedViews), out)
           } catch (e) {
             e._kPhase = 'draw'
             throw e

@@ -1,6 +1,7 @@
 // The window: top bar navigation, the routed view, toasts, the script drawer and onboarding.
 import { dueConcepts } from '@shared/selection'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { ProgressMeter, useTopProgress } from './components/CourseProgress'
 import { BrandMark, Icon } from './components/Icon'
 import { ScriptPeek } from './components/PdfPage'
 import { BreakLayer, StudyPill } from './components/StudyTime'
@@ -130,6 +131,7 @@ function TopBar(): ReactElement {
   const jobRunning = useStore(app.job, (j) => !!j)
   const pending = useStore(app.pending, (p) => p.length)
   const checking = useStore(app.exam, (e) => e.submissions.filter((x) => x.status === 'grading').length)
+  const progress = useTopProgress(route)
 
   // Fold the bar only as far as it has to: try the full bar, and step down while it overflows.
   const bar = useRef<HTMLElement>(null)
@@ -140,7 +142,7 @@ function TopBar(): ReactElement {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  const content = `${width}|${route}|${!!sc}|${rewards.total}|${due}|${pending}|${jobRunning}|${checking}`
+  const content = `${width}|${route}|${!!sc}|${rewards.total}|${due}|${pending}|${jobRunning}|${checking}|${progress?.label}|${progress?.pct}`
   useLayoutEffect(() => setFit(0), [content])
   useLayoutEffect(() => {
     const el = bar.current
@@ -186,6 +188,7 @@ function TopBar(): ReactElement {
         ))}
       </nav>
       <div className="topbar-end">
+        {progress && <ProgressMeter p={progress} />}
         <StudyPill />
         <button className={`nav-item icon ${route === 'settings' ? 'active' : ''}`} onClick={() => app.go({ name: 'settings' })} aria-label="Settings" title="Settings">
           <Icon name="settings" size={16} />

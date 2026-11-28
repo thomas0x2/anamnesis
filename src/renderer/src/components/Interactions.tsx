@@ -5,7 +5,7 @@ import type { Interaction } from '@shared/types'
 import { hashString, shuffle } from '@shared/util'
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { AnswerPayload } from '../engine/session'
-import { fmtNum } from './Chart'
+import { fmtValue } from '../lib/axes'
 import { Icon } from './Icon'
 import { Markdown } from './Markdown'
 import { VoiceButton } from './Voice'
@@ -112,8 +112,8 @@ export function NumericInput({ it, disabled, final, onChange, onSubmit, initial 
           spellCheck={false}
           aria-label="your answer"
         />
-        {v.trim() && !final && <span className="numeric-preview">{val === null ? 'not a number yet' : v.trim() === String(val) ? '' : `= ${fmtNum(val)}`}</span>}
-        {final && expected !== null && <span className="numeric-preview">answer: {it.answer!.value}{String(expected) !== it.answer!.value ? ` = ${fmtNum(expected)}` : ''}</span>}
+        {v.trim() && !final && <span className="numeric-preview">{val === null ? 'not a number yet' : v.trim() === String(val) ? '' : `= ${fmtValue(val)}`}</span>}
+        {final && expected !== null && <span className="numeric-preview">answer: {it.answer!.value}{String(expected) !== it.answer!.value ? ` = ${fmtValue(expected)}` : ''}</span>}
       </div>
     </div>
   )

@@ -16,10 +16,22 @@ export function fmtNum(v: number): string {
     return `${v < 0 ? '−' : ''}${mant.replace(/\.0$/, '')}e${e}`
   }
   const digits = a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : 3
-  return v
-    .toFixed(digits)
-    .replace(/\.?0+$/, '')
-    .replace('-', '−')
+  let s = v.toFixed(digits)
+  // trim trailing zeros of the decimals only: 450 must stay "450", not "45"
+  if (s.includes('.')) s = s.replace(/\.?0+$/, '')
+  return s.replace('-', '−')
+}
+
+/**
+ * Format a computed answer for a learner to read back (e.g. the "= …" preview
+ * next to an answer field). Keeps up to 10 significant digits, so 12345 stays
+ * 12345 instead of the axis-style 1.2e4.
+ */
+export function fmtValue(v: number): string {
+  if (!Number.isFinite(v)) return String(v)
+  const a = Math.abs(v)
+  const s = a !== 0 && (a >= 1e15 || a < 1e-6) ? v.toExponential(6).replace(/\.?0+e/, 'e').replace('e+', 'e') : String(Number(v.toPrecision(10)))
+  return s.replace(/^-/, '−')
 }
 
 export function niceTicks(lo: number, hi: number, count = 5): number[] {

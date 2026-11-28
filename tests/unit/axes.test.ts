@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoRange, fmtNum, logTicks, niceTicks, sample } from '../../src/renderer/src/lib/axes'
+import { autoRange, fmtNum, fmtValue, logTicks, niceTicks, sample } from '../../src/renderer/src/lib/axes'
 
 describe('axis ticks', () => {
   it('puts ticks on round numbers and hits zero exactly', () => {
@@ -28,6 +28,24 @@ describe('number formatting', () => {
     expect(fmtNum(-2.5e6)).toBe('−2.5e6')
     expect(fmtNum(9.96e-4)).toBe('1e-3')
     expect(fmtNum(Infinity)).toBe('Infinity')
+  })
+
+  it('keeps trailing zeros of whole numbers (450 is not 45)', () => {
+    expect(fmtNum(450)).toBe('450')
+    expect(fmtNum(100)).toBe('100')
+    expect(fmtNum(-2000)).toBe('−2000')
+    expect(fmtNum(10)).toBe('10')
+    expect(fmtNum(20.0)).toBe('20')
+  })
+
+  it('shows answer previews exactly enough to check them', () => {
+    expect(fmtValue(2482 - 2032)).toBe('450')
+    expect(fmtValue(12345)).toBe('12345')
+    expect(fmtValue(1 / 3)).toBe('0.3333333333')
+    expect(fmtValue(0.1 + 0.2)).toBe('0.3')
+    expect(fmtValue(-1500)).toBe('−1500')
+    expect(fmtValue(2 ** -30)).toBe('9.313226e-10')
+    expect(fmtValue(1e20)).toBe('1e20')
   })
 })
 

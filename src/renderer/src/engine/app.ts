@@ -3,7 +3,8 @@
 // profile (how they like to learn) is shared by all courses.
 import numcsJson from '@courses/numcs/course.json'
 import { buildCourse, emptyExtension, metaToCourse, newMaterial, removeMaterial, slug } from '@shared/courseMap'
-import type { CourseSnapshot } from '@shared/scheduler'
+import { planCourse, REVIEW_MIN, type CourseSnapshot } from '@shared/scheduler'
+import { MAX_REVIEWS, reviewCap } from '@shared/ordering'
 import { emptyCheatsheet, normalizeCheatItem, normalizeCheatsheet, normalizeRules, type CheatItem, type CheatRules, type Cheatsheet } from '@shared/cheatsheet'
 import { notebookForCheck, notebookText, parseNotebook } from '@shared/notebook'
 import { glCode, GL_NOTE, normalizeExercises, normalizeResolved, parseGitLabUrl, planGitLab } from '@shared/gitlab'
@@ -38,6 +39,7 @@ import type {
   Settings,
   Submission,
   WorkHelp,
+  LearnerModel,
   WorkRecord
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
@@ -682,6 +684,17 @@ export class AppController {
   }
 
   // ------------------------------------------------------------ study plan across courses
+  /** How many due reviews one review session takes: the same cap as the study plan's review step (ordering.ts). */
+  reviewLimit(now: Date = new Date()): number {
+    const plan = planCourse({ course: this.course, learner: this.state.get().learner, materials: this.materials.get(), prep: this.exam.get() }, now, null)
+    return plan.due ? reviewCap(plan.due, { dailyMinutes: plan.perDay, minutesPerReview: REVIEW_MIN, newLeft: plan.left.learn > 0 }) : MAX_REVIEWS
+  }
+
+  /** Concepts ready to learn in the active course, best first: the same order as the study plan (ordering.ts). */
+  nextConcepts(learner: LearnerModel = this.state.get().learner): string[] {
+    return this.graph.frontier(learner, { materials: this.materials.get(), prep: this.exam.get() })
+  }
+
   /** Every course as the study plan needs it: the active one as it is on screen, the others from their files. */
   async planSnapshots(): Promise<CourseSnapshot[]> {
     const out: CourseSnapshot[] = []
@@ -1432,7 +1445,7 @@ export class AppController {
     if (mode === 'practice' || mode === 'review') {
       const now = new Date()
       const learner = this.state.get().learner
-      const queue = mode === 'practice' ? practiceQueue(this.graph, learner, scope, this.settings.get().learning.practiceItems, now) : reviewQueue(this.graph, learner, now, 10)
+      const queue = mode === 'practice' ? practiceQueue(this.graph, learner, scope, this.settings.get().learning.practiceItems, now) : reviewQueue(this.graph, learner, now, this.reviewLimit(now))
       if (!queue.length) {
         this.toast({ kind: 'info', text: mode === 'review' ? 'Nothing is due for review right now.' : 'Nothing to practice yet: learn a concept first.' })
         return

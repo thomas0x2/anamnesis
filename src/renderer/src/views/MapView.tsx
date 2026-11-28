@@ -121,7 +121,7 @@ export function MapView({ conceptId }: { conceptId?: string }): ReactElement {
   );
   const initialChapter = (): number | "all" => {
     if (conceptId && graph.get(conceptId)) return graph.get(conceptId)!.chapter;
-    const f = graph.frontier(learner)[0];
+    const f = app.nextConcepts(learner)[0];
     return f ? graph.get(f)!.chapter || 1 : 1;
   };
   const [chapter, setChapter] = useState<number | "all">(initialChapter);

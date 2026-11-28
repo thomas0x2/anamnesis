@@ -701,7 +701,7 @@ function DoneScreen({ sc }: { sc: SessionController }): ReactElement {
     if (s.goalConceptId) set.add(s.goalConceptId)
     return [...set].filter((id) => app.graph.get(id))
   }, [sum, s.goalConceptId, app.graph])
-  const next = app.graph.frontier(app.state.get().learner).filter((id) => !ids.includes(id))[0]
+  const next = app.nextConcepts().filter((id) => !ids.includes(id))[0]
   const acc = sum && sum.items ? sum.correct / sum.items : null
   return (
     <>

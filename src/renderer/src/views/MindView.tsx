@@ -22,7 +22,7 @@ export function MindView({ conceptId }: { conceptId?: string }): ReactElement {
   const now = useNow()
   const started = useMemo(() => app.course.concepts.filter((c) => (learner.concepts[c.id]?.status ?? 'unseen') !== 'unseen'), [app, learner])
   const lastSeen = useMemo(() => [...started].sort((a, b) => (learner.concepts[b.id]?.lastSeen ?? '').localeCompare(learner.concepts[a.id]?.lastSeen ?? ''))[0]?.id ?? null, [started, learner])
-  const [selected, setSelected] = useState<string | null>(conceptId ?? lastSeen ?? graph.frontier(learner)[0] ?? null)
+  const [selected, setSelected] = useState<string | null>(conceptId ?? lastSeen ?? app.nextConcepts(learner)[0] ?? null)
   const [filter, setFilter] = useState<Filter>(started.length ? 'started' : 'all')
 
   useEffect(() => {

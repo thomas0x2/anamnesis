@@ -14,10 +14,13 @@
 //   with an earlier exam, moves up.
 // It only knows what is in the app: concepts from lectures that are not out yet add to the estimate
 // once their materials are added.
-import { daysUntil, practisedConcepts, workItems, workState } from './exam'
+import { daysUntil, workItems, workState } from './exam'
 import { statusRank } from './mastery'
+import { openWork, rankConcepts, reviewCap } from './ordering'
 import { dueConcepts } from './selection'
 import type { ConceptStatus, ConceptTier, Course, CourseConcept, ExamPrep, LearnerModel, Material } from './types'
+
+export { isCovered } from './ordering'
 import { clamp, dayKey } from './util'
 
 /** Minutes to bring a concept from its status to proficient (learn, practise, check). */
@@ -128,8 +131,6 @@ export interface StudyPlan {
 
 const conceptWeight = (c: CourseConcept): number => TIER_WEIGHT[c.tier] ?? 1
 const rankOf = (learner: LearnerModel, id: string): number => statusRank(learner.concepts[id]?.status ?? 'unseen')
-/** A topic counts as covered once the learner has started it in the app (introduced or beyond), or marked it known. */
-export const isCovered = (learner: LearnerModel, id: string): boolean => rankOf(learner, id) >= 1
 
 function median(xs: number[]): number | null {
   if (!xs.length) return null
@@ -173,34 +174,28 @@ export function studyDays(raw: unknown): StudyDays | null {
 /** Problem sets and mock exams not yet done, marked by whether every topic they practise is covered. */
 export function planSets(snap: CourseSnapshot): SetPlan[] {
   const { course, learner, materials, prep } = snap
-  const { sets, mocks } = workItems(materials, prep)
-  const order = new Map(course.concepts.map((c, i) => [c.id, i]))
-  const known = new Set(course.concepts.map((c) => c.id))
-  const out: SetPlan[] = []
-  for (const m of [...sets, ...mocks]) {
-    if (workState(prep, m.id).done) continue
-    const kind = m.kind === 'exam' ? 'exam' : 'exercises'
-    const ids = practisedConcepts(m, course.concepts, prep).filter((id) => known.has(id))
-    if (!ids.length) {
-      out.push({ material: m, kind, covered: null, readiness: 'unlinked', missing: [], missingTitles: [], conceptCount: 0 })
-      continue
-    }
-    const missing = ids.filter((id) => !isCovered(learner, id)).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
-    const covered = (ids.length - missing.length) / ids.length
-    out.push({ material: m, kind, covered, readiness: missing.length ? 'partial' : 'solvable', missing, missingTitles: missing.map((id) => course.concepts.find((c) => c.id === id)?.title ?? id), conceptCount: ids.length })
-  }
+  const title = (id: string): string => course.concepts.find((c) => c.id === id)?.title ?? id
   // in course order (Serie 1 before Serie 2), problem sets before mock exams
-  return out
+  return openWork(course.concepts, learner, { materials, prep }).map(({ material, kind, ids, missing }) =>
+    ids.length
+      ? { material, kind, covered: (ids.length - missing.length) / ids.length, readiness: missing.length ? 'partial' : 'solvable', missing, missingTitles: missing.map(title), conceptCount: ids.length }
+      : { material, kind, covered: null, readiness: 'unlinked', missing: [], missingTitles: [], conceptCount: 0 }
+  )
 }
 
-/** Concepts to learn next: not yet developing, every prerequisite at least developing, core first, in course order. */
-function learnable(course: CourseSnapshot['course'], learner: LearnerModel): CourseConcept[] {
-  const tier: Record<ConceptTier, number> = { core: 0, support: 1, extra: 2 }
-  return course.concepts
-    .map((c, i) => ({ c, i }))
-    .filter(({ c }) => rankOf(learner, c.id) < 2 && c.requires.every((r) => rankOf(learner, r) >= 2 || !course.concepts.some((x) => x.id === r)))
-    .sort((a, b) => tier[a.c.tier] - tier[b.c.tier] || (a.c.chapter || 99) - (b.c.chapter || 99) || a.i - b.i)
-    .map(({ c }) => c)
+/** Every concept that builds on `id`, directly or not. */
+function descendantsOf(concepts: CourseConcept[], id: string): string[] {
+  const out = new Set<string>()
+  const stack = [id]
+  while (stack.length) {
+    const x = stack.pop() as string
+    for (const c of concepts)
+      if (c.requires.includes(x) && !out.has(c.id)) {
+        out.add(c.id)
+        stack.push(c.id)
+      }
+  }
+  return [...out]
 }
 
 /** The plan for one course. */
@@ -256,46 +251,42 @@ export function planCourse(snap: CourseSnapshot, now: Date, days: StudyDays | nu
   const setPlans = planSets(snap)
   const steps: PlanStep[] = []
   if (daysLeft === null) steps.push({ kind: 'date', title: 'Set the exam date', why: 'The plan paces each course to its exam; without a date this one is not scheduled.', minutes: null })
-  if (due > 0) steps.push({ kind: 'review', title: `Review ${due === 1 ? 'one concept' : `${due} concepts`}`, why: 'They are starting to fade: recalling them now keeps them for the exam at little cost.', minutes: Math.max(3, Math.round(Math.min(due, 10) * REVIEW_MIN)) })
-
-  // learn what the closest problem set still needs (fewest topics missing), else what comes next in the course.
-  // A missing topic whose prerequisites are not in place yet is reached through them.
-  const next = learnable(course, learner)
-  const byId = new Map(course.concepts.map((c) => [c.id, c]))
-  const towards = (ids: string[]): string[] => {
-    const seen = new Set<string>()
-    const stack = [...ids]
-    while (stack.length) {
-      const id = stack.pop() as string
-      if (seen.has(id)) continue
-      seen.add(id)
-      for (const r of byId.get(id)?.requires ?? []) if (rankOf(learner, r) < 2) stack.push(r)
-    }
-    return next.filter((c) => seen.has(c.id)).map((c) => c.id)
-  }
-  const target = setPlans
-    .filter((x) => x.readiness === 'partial')
-    .map((x) => ({ x, unlock: towards(x.missing) }))
-    .filter((t) => t.unlock.length)
-    .sort((a, b) => a.x.missing.length - b.x.missing.length)[0]
-  if (target) {
-    const id = target.unlock.find((u) => target.x.missing.includes(u)) ?? target.unlock[0]
-    const direct = target.x.missing.includes(id)
-    const rest = target.x.missing.length - (direct ? 1 : 0)
+  // reviews come first but get a modest share of the day while there is new material left, so a backlog
+  // of reviews cannot crowd it out; the rest stay due for the next days
+  const reviews = reviewCap(due, { dailyMinutes: perDay, minutesPerReview: REVIEW_MIN, newLeft: left.learn > 0 })
+  if (reviews > 0) {
+    const later = due - reviews
     steps.push({
-      kind: 'learn',
-      title: `Learn ${title(id)}`,
-      why: !direct
-        ? `${target.x.material.title} needs ${target.x.missingTitles.slice(0, 2).join(', ')}, which build${target.x.missing.length === 1 ? 's' : ''} on it.`
-        : rest
-          ? `${target.x.material.title} still needs it and ${rest === 1 ? 'one more topic' : `${rest} more topics`}.`
-          : `It is the last topic ${target.x.material.title} needs: after it you can solve the whole set.`,
-      minutes: LEARN_MIN[learner.concepts[id]?.status ?? 'unseen'],
-      conceptId: id,
-      materialId: target.x.material.id
+      kind: 'review',
+      title: `Review ${reviews === 1 ? 'one concept' : `${reviews} concepts`}`,
+      why: later
+        ? `They are fading the most. The other ${later} due can wait a day or two, so new material keeps most of today's time.`
+        : 'They are starting to fade: recalling them now keeps them for the exam at little cost.',
+      minutes: Math.max(3, Math.round(reviews * REVIEW_MIN))
     })
-  } else if (next[0]) {
-    steps.push({ kind: 'learn', title: `Learn ${next[0].title}`, why: 'Next in the course, and everything it builds on is in place.', minutes: LEARN_MIN[learner.concepts[next[0].id]?.status ?? 'unseen'], conceptId: next[0].id })
+  }
+
+  // learn the concept the exam work needs most (see ordering.ts): it leads to the most topics of the
+  // problem sets and mock exams not done yet, and brings one of them closest to solvable
+  const top = rankConcepts(course.concepts, learner, { materials, prep })[0]
+  if (top) {
+    const id = top.concept.id
+    const w = top.towards
+    const plan = w ? setPlans.find((x) => x.material.id === w.material.id) : undefined
+    let why = 'Next in the course, and everything it builds on is in place.'
+    if (w && plan) {
+      const rest = w.missing.length - (top.direct ? 1 : 0)
+      const kids = new Set(descendantsOf(course.concepts, id))
+      const builds = plan.missing.filter((m) => kids.has(m)).map((m) => title(m))
+      const named = builds.length ? builds : plan.missingTitles
+      why = !top.direct
+        ? `${w.material.title} needs ${named.slice(0, 2).join(', ')}, which build${named.length === 1 ? 's' : ''} on it.`
+        : rest
+          ? `${w.material.title} still needs it and ${rest === 1 ? 'one more topic' : `${rest} more topics`}.`
+          : `It is the last topic ${w.material.title} needs: after it you can solve the whole ${w.kind === 'exam' ? 'exam' : 'set'}.`
+      if (top.value >= 3) why += ` It leads to ${top.value} topics across your problem sets and mock exams.`
+    }
+    steps.push({ kind: 'learn', title: `Learn ${top.concept.title}`, why, minutes: LEARN_MIN[learner.concepts[id]?.status ?? 'unseen'], conceptId: id, ...(w ? { materialId: w.material.id } : {}) })
   }
 
   return {

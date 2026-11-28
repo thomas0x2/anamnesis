@@ -1,5 +1,5 @@
 // Course graph and plan-tree utilities.
-import { statusRank } from './mastery'
+import { conceptOrder, type ExamContext } from './ordering'
 import type { Course, CourseConcept, LearnerModel, Plan, PlanNode } from './types'
 
 export class CourseGraph {
@@ -68,13 +68,13 @@ export class CourseGraph {
     return [...out]
   }
 
-  /** Concepts that are ready to learn: not yet developing, all prerequisites at least developing. */
-  frontier(model: LearnerModel): string[] {
-    const st = (id: string): number => statusRank(model.concepts[id]?.status ?? 'unseen')
-    return this.course.concepts
-      .filter((c) => st(c.id) < 2 && c.requires.every((r) => st(r) >= 2))
-      .sort((a, b) => (a.chapter === 0 ? 99 : a.chapter) - (b.chapter === 0 ? 99 : b.chapter) || (this.order.get(a.id)! - this.order.get(b.id)!))
-      .map((c) => c.id)
+  /**
+   * Concepts that are ready to learn (not yet developing, all prerequisites at least developing), best first.
+   * With the course's materials and exam prep, the order puts what the problem sets and mock exams need first;
+   * see ordering.ts, which the study plan uses too.
+   */
+  frontier(model: LearnerModel, exam: ExamContext | null = null): string[] {
+    return conceptOrder(this.course.concepts, model, exam)
   }
 
   chapterConcepts(ch: number): CourseConcept[] {

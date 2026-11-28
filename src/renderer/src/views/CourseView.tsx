@@ -22,10 +22,12 @@ export function CourseView(): ReactElement {
   const sc = useStore(app.session, (s) => s)
   const now = useNow()
   const learner = state.learner
+  const materials = useStore(app.materials, (m) => m)
+  const prep = useStore(app.exam, (p) => p)
   const graph = app.graph
 
   const due = useMemo(() => dueConcepts(learner, now).filter((id) => graph.get(id)), [learner, now, graph])
-  const frontier = useMemo(() => graph.frontier(learner).slice(0, 5), [learner, graph])
+  const frontier = useMemo(() => app.nextConcepts(learner).slice(0, 5), [learner, app, materials, prep])
   const learned = useMemo(() => app.course.concepts.filter((c) => statusRank(learner.concepts[c.id]?.status ?? 'unseen') >= 1).map((c) => c.id), [learner, app])
   const here = (sc ? sc.view.get().session.goalConceptId : null) ?? frontier[0] ?? null
   const upcoming = nextDue(learner)

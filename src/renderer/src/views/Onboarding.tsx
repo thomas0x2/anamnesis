@@ -40,7 +40,7 @@ export function Onboarding(): ReactElement {
     app.setProfile([...seeds, ...keep, ...own])
     close()
   }
-  const first = app.graph.frontier(app.state.get().learner)[0]
+  const first = app.nextConcepts()[0]
 
   return (
     <Modal onClose={close} width={720} label="Welcome">

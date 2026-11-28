@@ -81,7 +81,30 @@ export interface StudyLog {
   sessions: StudySessionRec[]
   breaks: BreakRec[]
   clock: BreakClock
+  /** the course block running now (see FocusBlock); null before the first study of the day */
+  block: FocusBlock | null
 }
+
+/**
+ * The block of study on one course that is running now, so the plan can keep the learner on it for a
+ * while instead of flipping between courses whose shares are close (see scheduler.ts, "Blocks"). A
+ * short detour to another course (a quick look at its materials) does not end it; about ten minutes
+ * there, a pause of more than an hour, or a new day does.
+ */
+export interface FocusBlock {
+  courseId: string
+  startedAt: string
+  lastAt: string
+  /** seconds studied on the course in this block */
+  sec: number
+  /** time on another course since the last minute on this one */
+  detour: { courseId: string; sec: number } | null
+}
+
+/** Time on another course after which the block moves to it. */
+export const DETOUR_MIN = 10
+/** A pause longer than this (more than any long break) ends the block. */
+export const BLOCK_GAP_MIN = 60
 
 export interface StudyContext {
   courseId: string
@@ -97,7 +120,7 @@ export function emptyClock(): BreakClock {
 }
 
 export function emptyStudyLog(): StudyLog {
-  return { version: 1, days: {}, sessions: [], breaks: [], clock: emptyClock() }
+  return { version: 1, days: {}, sessions: [], breaks: [], clock: emptyClock(), block: null }
 }
 
 const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? x : 0)
@@ -162,7 +185,41 @@ export function normalizeStudyLog(raw: unknown): StudyLog {
     current: c.current ? normalizeBreak(c.current) : null,
     mode: c.mode === 'running' ? 'running' : 'paused'
   }
-  return { version: 1, days, sessions, breaks, clock }
+  return { version: 1, days, sessions, breaks, clock, block: normalizeBlock(r.block) }
+}
+
+export function normalizeBlock(raw: unknown): FocusBlock | null {
+  const b = (raw ?? {}) as Partial<FocusBlock>
+  const startedAt = iso(b.startedAt)
+  const lastAt = iso(b.lastAt)
+  if (!raw || typeof b.courseId !== 'string' || !b.courseId || !startedAt || !lastAt) return null
+  const d = (b.detour ?? null) as Partial<{ courseId: string; sec: number }> | null
+  return { courseId: b.courseId, startedAt, lastAt, sec: num(b.sec), detour: d && typeof d.courseId === 'string' ? { courseId: d.courseId, sec: num(d.sec) } : null }
+}
+
+/** The block still running at `now`: the same day and no pause longer than BLOCK_GAP_MIN. */
+export function liveBlock(block: FocusBlock | null, now: Date): FocusBlock | null {
+  if (!block) return null
+  const gap = (now.getTime() - Date.parse(block.lastAt)) / 60_000
+  return gap <= BLOCK_GAP_MIN && dayKey(block.lastAt) === dayKey(now) ? block : null
+}
+
+/** Count `sec` seconds on `courseId` (ending at `now`) toward the block. */
+export function trackBlock(block: FocusBlock | null, courseId: string, sec: number, now: Date): FocusBlock {
+  const at = now.toISOString()
+  const fresh = (s: number): FocusBlock => ({ courseId, startedAt: new Date(now.getTime() - s * 1000).toISOString(), lastAt: at, sec: s, detour: null })
+  const live = liveBlock(block, new Date(now.getTime() - sec * 1000))
+  if (!live) return fresh(sec)
+  if (live.courseId === courseId) return { ...live, lastAt: at, sec: live.sec + sec, detour: null }
+  const away = live.detour?.courseId === courseId ? live.detour.sec + sec : sec
+  if (away >= DETOUR_MIN * 60) return fresh(away)
+  return { ...live, lastAt: at, detour: { courseId, sec: away } }
+}
+
+/** The learner chose to switch course: a new block starts there now. */
+export function switchBlock(log: StudyLog, courseId: string, now: Date): StudyLog {
+  const at = now.toISOString()
+  return { ...log, block: { courseId, startedAt: at, lastAt: at, sec: 0, detour: null } }
 }
 
 /** Settings from the file or the UI, kept in sensible ranges. */
@@ -175,12 +232,13 @@ export function normalizeBreakSettings(raw: Partial<BreakSettings> | null | unde
     workMin: clamp(Math.round(n(r.workMin, DEFAULT_BREAKS.workMin)), 1, 180),
     shortMin: clamp(Math.round(n(r.shortMin, DEFAULT_BREAKS.shortMin)), 1, 30),
     longEveryMin: longEvery <= 0 ? 0 : clamp(longEvery, 30, 480),
-    longMin: clamp(Math.round(n(r.longMin, DEFAULT_BREAKS.longMin)), 5, 90)
+    longMin: clamp(Math.round(n(r.longMin, DEFAULT_BREAKS.longMin)), 5, 90),
+    blockMin: Math.round(n(r.blockMin, DEFAULT_BREAKS.blockMin)) <= 0 ? 0 : clamp(Math.round(n(r.blockMin, DEFAULT_BREAKS.blockMin)), 30, 240)
   }
 }
 
 /** Ready-made rhythms the settings offer. */
-export const BREAK_PRESETS: { id: string; label: string; desc: string; s: Omit<BreakSettings, 'enabled'> }[] = [
+export const BREAK_PRESETS: { id: string; label: string; desc: string; s: Omit<BreakSettings, 'enabled' | 'blockMin'> }[] = [
   { id: 'default', label: '50 / 10', desc: '50 minutes of work, 10 off; 25 minutes off every 2.5 hours (the default)', s: { workMin: 50, shortMin: 10, longEveryMin: 150, longMin: 25 } },
   { id: 'short', label: '25 / 5', desc: 'Pomodoro: 25 minutes of work, 5 off; 20 minutes off every 2 hours', s: { workMin: 25, shortMin: 5, longEveryMin: 120, longMin: 20 } },
   { id: 'long', label: '90 / 15', desc: 'long focus blocks: 90 minutes of work, 15 off; 30 minutes off every 3 hours', s: { workMin: 90, shortMin: 15, longEveryMin: 180, longMin: 30 } }
@@ -235,6 +293,7 @@ export function accrue(log: StudyLog, ctx: StudyContext, sec: number, now: Date,
     ...log,
     days: { ...log.days, [day]: per },
     sessions,
+    block: trackBlock(log.block ?? null, ctx.courseId, sec, now),
     clock: { ...log.clock, workSec: log.clock.workSec + sec, sinceLongSec: log.clock.sinceLongSec + sec, lastActiveAt: now.toISOString() }
   }
 }

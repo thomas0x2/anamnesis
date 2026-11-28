@@ -20,6 +20,7 @@ Anamnesis is built on a handful of well-replicated findings about how people lea
 | Words and pictures, small steps | interactive widgets built per idea, 14 ready-made demos, plots and diagrams; short cards | `src/renderer/src/widgets/`, `src/renderer/src/demos/`, `prompts.ts` (rules 2 and 6) |
 | Open learner model | The mind model is visible, explained and editable | `src/renderer/src/views/MindView.tsx` |
 | Breaks | Active study time is counted; the tutor suggests a break away from the screen when one is due (adjustable rhythm) | `src/shared/studyTime.ts`, `src/renderer/src/engine/studyClock.ts` |
+| Course blocks | Once started, a course stays first in the plan for at least 90 minutes; switching is suggested at a break once another course clearly leads | `src/shared/scheduler.ts`, `src/shared/studyTime.ts` |
 
 ## 1. Retrieval practice
 
@@ -159,6 +160,12 @@ A concept comes back for review when its predicted recall falls to the target re
 
 **In the app.** The learner controls the study clock with Start and Pause in the top bar; nothing counts by itself. While it runs, every minute counts for the open course (and the tutor session on screen), per day, course and tutor session, and shows in Stats, on Today and in the top bar. The default rhythm is 50 minutes of study and a 10-minute break, with a 25-minute break after about 2.5 hours; Settings → Study time and breaks offers 25/5 and 90/15 or any rhythm of your own, or turns suggestions off. When a break is coming up or due, the tutor is told in its tool results and suggests one at the next natural pause (`suggest_break`), preferring quiet rest right after new material; it restarts with a quick recall when you are back. A break counts when it lasts at least half its planned length, and a pause long enough counts as a break. If the tutor does not suggest the due break, or in guided sessions, the app reminds you itself. Study time never earns points or counts toward mastery.
 
+## 16. Course blocks
+
+**Evidence.** Switching between tasks has a cost: performance right after a switch is slower and less accurate, because the new task has to be set up again (Monsell, 2003). After leaving an unfinished task, part of the attention stays on it for a while and lowers performance on the next one ("attention residue", Leroy, 2009). Interleaving helps when the mixed items are similar and hard to tell apart, within one subject (Brunmair & Richter, 2019, see section 6); nothing in that work suggests that flipping between unrelated courses within an hour helps. How long a block should be is not settled; 50 to 90 minutes matches the range over which attention on demanding work tends to fade (section 15).
+
+**In the app.** The study plan keeps the course you started on first for a block of at least 90 minutes (Settings → Study time and breaks; 45 minutes to 3 hours, or no minimum), even when another course becomes a little more urgent as you work. Without it, studying one course lowers what it still needs today, the other moves up, and the plan flips between courses whose shares are close. A few minutes on another course (a look at its materials) do not end a block; about ten minutes there, a pause of more than an hour or a new day do. After the minimum the block goes on while no other course clearly needs the time more (another course has to lead by 30 %, so the order does not flip at the threshold), and the plan suggests switching at your next break once one does or this course's share for today is done. Today and the Plan page show where you are in the block, and you can always switch yourself (`studyPlan` in `src/shared/scheduler.ts`, `trackBlock` in `src/shared/studyTime.ts`). Courses are spaced across blocks and days, while mixing within a course stays the job of practice.
+
 ## What LLM tutors add, and what can go wrong
 
 The evidence on LLM tutors is new and mixed. It is the main reason for the guardrails in the design.
@@ -194,6 +201,8 @@ Read for this project (the figures above come from these):
 * Barbieri, C. A., et al. (2023). A meta-analysis of the worked examples effect on mathematics performance. *Educational Psychology Review, 35*, 11. <https://doi.org/10.1007/s10648-023-09745-1>
 * Bastani, H., et al. (2025). Generative AI without guardrails can harm learning: Evidence from high school mathematics. *PNAS, 122*(26). <https://papers.ssrn.com/abstract=4895486>
 * Brod, G. (2021). Predicting as a learning strategy. *Psychonomic Bulletin & Review*. <https://pmc.ncbi.nlm.nih.gov/articles/PMC8642250>
+* Leroy, S. (2009). Why is it so hard to do my work? The challenge of attention residue when switching between work tasks. *Organizational Behavior and Human Decision Processes, 109*(2). <https://doi.org/10.1016/j.obhdp.2009.04.002>
+* Monsell, S. (2003). Task switching. *Trends in Cognitive Sciences, 7*(3). <https://doi.org/10.1016/S1364-6613(03)00028-7>
 * Brunmair, M., & Richter, T. (2019). Similarity matters: A meta-analysis of interleaved learning and its moderators. *Psychological Bulletin*. <https://pubmed.ncbi.nlm.nih.gov/31556629/>
 * Expertium. Benchmark of spaced repetition algorithms. <https://expertium.github.io/Benchmark.html>; A technical explanation of FSRS-6. <https://expertium.github.io/Algorithm.html>
 * Instructor-designed AI improves learning in a randomized trial across 19 universities (2026). arXiv 2611.19099. <https://arxiv.org/html/2611.19099v1>

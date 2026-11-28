@@ -698,6 +698,20 @@ function BreakSettingsPanel({ s, save }: { s: Settings; save: (patch: Parameters
         </select>
       </Row>
       {b.longEveryMin > 0 && slider('Long break', 'longMin', 10, 45, 5)}
+      <Row
+        name="Stay with one course for"
+        desc="Once you start on a course, the plan keeps it first for at least this long, even if another course becomes a little more urgent. Each switch costs a warm-up, so courses are spaced across blocks and days instead of flipping within an hour."
+      >
+        <select className="select" style={{ width: 140 }} aria-label="Stay with one course for" value={b.blockMin} onChange={(e) => save({ breaks: { blockMin: Number(e.target.value) } })}>
+          {[...new Set([0, 45, 60, 90, 120, 150, 180, b.blockMin])]
+            .sort((x, y) => x - y)
+            .map((m) => (
+              <option key={m} value={m}>
+                {m === 0 ? 'no minimum' : m < 60 ? `${m} minutes` : `${Math.round((m / 60) * 10) / 10} hours`}
+              </option>
+            ))}
+        </select>
+      </Row>
     </div>
   )
 }

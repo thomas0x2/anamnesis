@@ -7,6 +7,7 @@ import {
   breakStatus,
   countsNow,
   setTimerMode,
+  switchBlock,
   emptyStudyLog,
   endBreak,
   normalizeBreakSettings,
@@ -158,6 +159,11 @@ export class StudyClock {
   /** Pause: nothing counts until Start. */
   pauseTimer(): void {
     this.commit((l) => setTimerMode(l, 'paused'))
+  }
+
+  /** The learner chose to move on to another course: the plan's block starts there now. */
+  switchBlock(courseId: string): void {
+    this.commit((l) => switchBlock(l, courseId, new Date()))
   }
 
   // ------------------------------------------------------------ breaks

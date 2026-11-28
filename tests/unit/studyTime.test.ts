@@ -19,6 +19,11 @@ import {
   normalizeStudyLog,
   startBreak,
   totalsSince,
+  trackBlock,
+  liveBlock,
+  switchBlock,
+  DETOUR_MIN,
+  BLOCK_GAP_MIN,
   type StudyContext,
   type StudyLog
 } from '../../src/shared/studyTime'
@@ -169,5 +174,46 @@ describe('start and pause', () => {
     expect(emptyStudyLog().clock.mode).toBe('paused')
     expect(normalizeStudyLog({ days: {}, clock: { workSec: 5 } }).clock.mode).toBe('paused')
     expect(normalizeStudyLog({ days: {}, clock: { mode: 'auto' } }).clock.mode).toBe('paused')
+  })
+})
+
+describe('the block on one course', () => {
+  const T0 = new Date('2026-11-20T10:00:00')
+  const plus = (min: number): Date => new Date(T0.getTime() + min * 60_000)
+
+  it('grows while you stay, survives a short detour and moves after about ten minutes elsewhere', () => {
+    let b = trackBlock(null, 'a', 60, plus(1))
+    for (let m = 2; m <= 30; m++) b = trackBlock(b, 'a', 60, plus(m))
+    expect(b).toMatchObject({ courseId: 'a', sec: 30 * 60, detour: null })
+    for (let m = 31; m <= 35; m++) b = trackBlock(b, 'b', 60, plus(m))
+    expect(b.courseId).toBe('a')
+    expect(b.detour).toEqual({ courseId: 'b', sec: 300 })
+    b = trackBlock(b, 'a', 60, plus(36))
+    expect(b).toMatchObject({ courseId: 'a', sec: 31 * 60, detour: null })
+    for (let m = 37; m <= 46; m++) b = trackBlock(b, 'b', 60, plus(m))
+    expect(b).toMatchObject({ courseId: 'b', sec: DETOUR_MIN * 60, detour: null })
+  })
+
+  it('starts again after a long pause', () => {
+    const b = trackBlock(trackBlock(null, 'a', 60, plus(1)), 'a', 60, plus(1 + BLOCK_GAP_MIN + 5))
+    expect(b.sec).toBe(60)
+    expect(liveBlock(b, plus(1 + BLOCK_GAP_MIN + 5 + BLOCK_GAP_MIN + 1))).toBeNull()
+  })
+
+  it('is kept by accrue and the log, and the learner can switch', () => {
+    let log = setTimerMode(emptyStudyLog(), 'running')
+    log = accrue(log, { courseId: 'a', session: null }, 60, plus(1), DEFAULT_BREAKS)
+    expect(log.block?.courseId).toBe('a')
+    const back = normalizeStudyLog(JSON.parse(JSON.stringify(log)))
+    expect(back.block).toEqual(log.block)
+    expect(normalizeStudyLog({ ...log, block: { courseId: 3 } }).block).toBeNull()
+    expect(switchBlock(log, 'b', plus(2)).block).toMatchObject({ courseId: 'b', sec: 0 })
+  })
+
+  it('keeps the block length setting in range', () => {
+    expect(normalizeBreakSettings({}).blockMin).toBe(90)
+    expect(normalizeBreakSettings({ blockMin: 0 }).blockMin).toBe(0)
+    expect(normalizeBreakSettings({ blockMin: 10 }).blockMin).toBe(30)
+    expect(normalizeBreakSettings({ blockMin: 999 }).blockMin).toBe(240)
   })
 })
